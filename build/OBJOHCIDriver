@@ -1,0 +1,8 @@
+OBJS = \
+ohcimodhead.o \
+ohcimodule.o \
+ohci.o \
+port.o \
+call_veneer.o \
+triggercbs.o \
+ohcimsgs.o

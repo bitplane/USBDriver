@@ -1,0 +1,18 @@
+OBJS = \
+usbmodhead.o \
+usbmodule.o \
+port.o \
+usb.o \
+usbdi.o \
+usb_subr.o \
+usbdi_util.o \
+usb_quirks.o \
+uhub.o \
+ums.o \
+usbmouse.o \
+usbkboard.o \
+hid.o \
+bufman.o \
+triggercbs.o \
+usbmsgs.o
+#ugen.o

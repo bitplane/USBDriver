@@ -1,0 +1,108 @@
+/* Copyright 2003 Tematic Ltd
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+#ifndef __usb_service_h
+#define __usb_service_h
+
+#include "dev/usb/usb.h"
+
+#define Service_USBDriver                   0xD2
+#define Service_USBDriver_Attach            0x00
+#define Service_USBDriver_Connected         0x01
+#define Service_USBDriver_Detach            0x02
+#define Service_USBDriver_Starting          0x03
+#define Service_USBDriver_Dying             0x04
+
+/* allow for the obsolete service call interface that Castle adapted from
+   some vague thoughts I had a couple of years ago */
+//#define OBSOLETE_SERVICE_CALLS 1
+
+#ifdef OBSOLETE_SERVICE_CALLS
+/*
+   The following definitions are a combination of some ideas I had a couple
+   of years ago (which hadn't been fully thought through) with some extensions
+   by Castle. Hopefully they won't still be around more than a couple of years!
+   DRE Fri 29th November 2002
+*/
+
+typedef struct USBDevFSDevice USBDevFSDevice; // rest of definition below
+
+typedef struct USBDevFSEndpoint{
+ USBDevFSDevice*            dev;           // the device containing this
+ uint8_t                   ifc;           // primary interface number
+ uint8_t                   altifc;        // alternate interface number
+ usb_endpoint_descriptor_t*     ep;            // endpoint
+ int                        device_handle; // device and stream handles
+ int                        stream_handle; // for this endpoint
+ char                       device_name[20];// device name
+} USBDevFSEndpoint;
+
+struct USBDevFSDevice{                      // part defined above
+ uint8_t                    address;        // USB address of device
+ usb_port_status_t          port_status;    // status bits
+ USBDevFSEndpoint           ep_default;     // structure for default endpoint
+ usb_device_descriptor_t    dev;            // Device Descriptor from device
+ usb_config_descriptor_t    *config;         // points to the Config recovered
+ usb_interface_descriptor_t **ifcs;           // array if interface structures
+ USBDevFSEndpoint         **eps;            // array of endpoint structures
+ uint32_t                   str_default;    // default stream
+ char                       name[20];       // device name
+};
+
+typedef struct USBServiceCall{
+USBDevFSDevice          dev;         // root device
+USBDevFSEndpoint      * ep;          // pointer to base of an array
+usb_endpoint_descriptor_t * epd;     // pointer to base of an array
+usb_interface_descriptor_t* ifc;     // pointer to base of an array
+uint16_t                neps;        // number of endpoints in the array
+uint16_t                nifs;        // number of interfaces in the array
+uint8_t                 hostaddr;    // usb address of upstream (hub)device
+uint8_t                 hostport;    // which port on the hub
+uint8_t                 bus;         // to achieve word alignment again
+uint8_t                 spare2;      // to achieve word alignment again
+void                  * end;         // marker for end of this structure
+}USBServiceCall;
+
+#else
+
+typedef struct USBServiceCall {
+ uint16_t                sclen;       // length, incl length bytes
+ uint16_t                descoff;     // offset to descriptors
+ char                    devname[20]; // e.g.USBD37  NULL terminated
+ uint8_t                 bus;         // bus num, 0-255
+ uint8_t                 devaddr;     // usb addr,1-127
+ uint8_t                 hostaddr;    // usb addr of upstream port 0-127
+ uint8_t                 hostport;    // port on host addr
+ uint8_t                 speed;       // 0:full speed, 1:low speed, 2:hi speed
+ uint8_t                 spare1;      // spare, set NULL
+ uint8_t                 spare2;      // spare, set NULL
+ uint8_t                 spare3;      // spare, set NULL
+ usb_device_descriptor_t ddesc;       // std device descriptor
+                                      // followed immediately by the entire
+                                      // config string from the device
+                                      // (with no word alignment gaps)
+                            // 1 or more NULLs to achieve word alignment
+} USBServiceCall;
+
+#endif
+
+// and a linked list element for use when a client inquires what devices
+// are enumerated so far
+typedef struct  USBServiceAnswer USBServiceAnswer;
+struct  USBServiceAnswer{
+USBServiceAnswer     * link;         // pointer to next chunk
+USBServiceCall         svc;          // a copy of the information
+};
+
+#endif

@@ -1,0 +1,420 @@
+/* Copyright 2003 Tematic Ltd
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <stdlib.h>
+#include "DebugLib/DebugLib.h"
+#include "callx/callx.h"
+#include "stdarg.h"
+#include "swis.h"
+#include "sys/callout.h"
+#include "sys/time.h"
+#include "Global/HALEntries.h"
+
+#define Service_USBDriver 0xD2
+#define Service_USBDriver_Starting 0x0
+#define Service_USBDriver_Dying    0x1
+#define Service_USBDriver_Attach    0x02
+#define Service_USBDriver_Dettach   0x03
+
+#ifdef USB_DEBUG
+extern int usbdebug;
+int total_sleep;
+#endif
+
+
+extern void detach_hub (struct device*);
+extern void detach_device (struct device*);
+
+static void gettime (struct timeval * tv)
+{
+    int cs, u2s;
+    _swix (OS_ReadMonotonicTime, _OUT(0), &cs);
+    tv->tv_sec = cs / 100;
+    _swix (OS_Hardware, _INR(8,9)|_OUT(0),
+        0, EntryNo_HAL_CounterRead, &u2s);
+    tv->tv_usec = (cs % 100) * 10000 + (2000000 - u2s) / 200;
+}
+
+/* cold starting */
+int cold = 0;
+
+int hz = 1000;
+
+/* disable interrupt for input */
+int spltty (void)
+{
+    return 0;
+}
+
+void splx (int s)
+{
+    if (s == 0) _kernel_irqs_on ();
+}
+
+int splbio (void)
+{
+    int s = _kernel_irqs_disabled ();
+    _kernel_irqs_off ();
+    return s;
+}
+
+
+char panic_string[255];
+
+void panic (const char* str, ...)
+{
+    va_list p;
+    va_start (p, str);
+    /* aargh! */
+    dprintf (("Port", "panicking:"));
+    dvprintf (("Port", str, p));
+    vsnprintf(panic_string, sizeof panic_string, str, p);
+}
+
+extern int gettimeofday(struct timeval *, struct timezone *);
+
+void
+delay (int d)
+{
+#ifdef USB_DEBUG
+    if (usbdebug > 19)
+    {
+        time_t t;
+        time (&t);
+        dprintf (("Port", "wait for %dus at %s", d, ctime(&t)));
+    }
+#endif
+    _swix (OS_Hardware, _IN(0)|_INR(8,9), d, 0, EntryNo_HAL_CounterDelay);
+}
+
+void
+microtime(struct timeval *thetime)
+{
+    gettime (thetime);
+}
+
+void
+selrecord(struct proc *selector, struct selinfo *selinfo)
+{
+    dprintf (("Port", "selecting record\n"));
+}
+
+void
+selwakeup(struct selinfo *selinfo)
+{
+    dprintf (("Port", "selwakeup called\n"));
+}
+
+typedef int devclass_t;
+typedef int caddr_t;
+
+void*
+devclass_get_softc (devclass_t dc, int unit)
+{
+    return 0; /* TODO make this return something that won't make it crash.. */
+}
+
+int
+config_deactivate (struct device* dev)
+{
+    dprintf (("Port", "deactivating device\n"));
+    return 0;
+}
+
+struct uio;
+
+int
+uiomove(caddr_t poo, int wobble, struct uio * fred)
+{
+    dprintf (("Port", "uiomove\n"));
+    return 0;
+}
+
+void
+psignal(unsigned sig, const char *s) {
+    dprintf (("Port", "wow - we've received signal %d: %s\n", sig, s));
+}
+
+/*
+ * Callouts
+ */
+extern int private_word;
+extern void callout_veneer (void);
+
+void
+callout_init (struct callout* c)
+{
+#ifdef USB_DEBUG
+    if (usbdebug > 15) dprintf (("Port", "callout init %p\n", c));
+#endif
+    memset (c, 0, sizeof c);
+}
+
+_kernel_oserror*
+callout_handler (_kernel_swi_regs* r, void* pw, void* _c) {
+    struct callout* c = _c;
+#ifdef USB_DEBUG
+    if (usbdebug > 15) dprintf (("Port", "callout %p called\n", c));
+#endif
+    c->c_func (c->c_arg);
+    return NULL;
+}
+
+void
+callout_stop (struct callout *c) {
+#ifdef USB_DEBUG
+    if (usbdebug > 15) dprintf (("Port", "callout stop %p\n", c));
+#endif
+    callx_remove_callafter (callout_handler, c);
+}
+
+void
+callout_reset (struct callout *c, int i, void (*f)(void *), void *v) {
+    if (i <= 0) i = 1;
+    c->c_arg = v;
+    c->c_func = f;
+    c->c_next = (void*) private_word; /* hacky thing to get handler to work */
+#ifdef USB_DEBUG
+    if (usbdebug > 15) dprintf (("Port", "callout %p reset %dms\n", c, i));
+#endif
+    callx_add_callafter ((i + 9) / 10, callout_handler, c);
+}
+
+int kthread_create (void (f) (void*), void* h) {
+    (void) f;
+    (void) h;
+    dprintf (("Port", "creating thread\n"));
+
+    return 0;
+}
+
+int kthread_create1 (int (f) (void*), void* a, void* b, char* c, char* d)
+{
+    (void) f;
+    (void) a;
+    (void) b;
+    (void) c;
+    (void) d;
+
+    return 0;
+}
+
+void* t_handles[100];
+int t_locks[100];
+int nhandles = 0;
+
+extern void triggercbs (void);
+
+int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
+{
+    int i;
+
+    int cs0, cs1;
+
+    int s = _kernel_irqs_disabled ();
+    _kernel_irqs_on ();
+
+    _swix (OS_ReadMonotonicTime, _OUT(0), &cs0);
+
+    struct timeval tv0, tv1, tv2;
+    gettime(&tv1);
+    tv0 = tv1;
+    tv1.tv_usec += (unsigned long) (timo) * 1000;
+    while (tv1.tv_usec > 999999)
+    {
+        tv1.tv_usec -= 1000000;
+        tv1.tv_sec += 1;
+    }
+
+#ifdef USB_DEBUG
+    if (usbdebug > 19)
+        dprintf (("Port", "%s sleeping on %p at priority %d for %dms\n"
+                      "from %lu.%.06lu\n"
+                      "til  %lu.%.06lu\n",
+            wmesg, ident, priority, timo,
+            tv0.tv_sec, tv0.tv_usec,
+            tv1.tv_sec, tv1.tv_usec));
+#endif
+
+    for (i = 0; i < nhandles && t_handles[i] && t_handles[i] != ident; ++i);
+
+    if (i == nhandles) {
+        nhandles = i + 1;
+        if (nhandles >= sizeof t_handles / sizeof *t_handles)
+        {
+            if (s == 0) _kernel_irqs_on ();
+            panic ("run out of thread handles...");
+            return 1;
+        }
+    }
+
+    t_handles[i] = ident;
+    t_locks[i] = 0;
+
+    /* wait until the lock is free */
+    int flags = 0;
+    if (timo) {
+        do {
+            gettime (&tv2);
+            triggercbs ();
+            _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
+        }
+        while (t_locks[i] == 0 && (tv2.tv_sec < tv1.tv_sec ||
+            tv2.tv_sec == tv1.tv_sec && tv2.tv_usec < tv1.tv_usec) &&
+            (flags & _C) == 0);
+    }
+    else
+    {
+        while (t_locks[i] == 0 && (flags & _C) == 0)
+        {
+            /* allow foreground process to function while we're waiting */
+//            if (noblock) _swix (OS_UpCall, _INR(0,1), 6, t_locks + i);
+//            _swix (OS_UpCall, _INR(0,1), 6, t_locks + i);
+            triggercbs ();
+            _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
+        }
+        gettime (&tv2);
+    }
+
+    if (flags & _C)
+    {
+        _kernel_osbyte (126, 0, 0);
+    }
+
+    t_handles[i] = 0;
+
+#ifdef USB_DEBUG
+    if (usbdebug > 19)
+      dprintf (("", "now  %lu.%06lu\n", tv2.tv_sec, tv2.tv_usec));
+#endif
+    tv2.tv_sec -= tv0.tv_sec;
+    if ((tv2.tv_usec -= tv0.tv_usec) < 0)
+    {
+        tv2.tv_sec -= 1;
+        tv2.tv_usec += 1000000;
+    }
+#ifdef USB_DEBUG
+    _swix (OS_ReadMonotonicTime, _OUT(0), &cs1);
+    total_sleep += cs1 - cs0;
+    if (usbdebug > 10)
+        dprintf (("", "slept for %lu.%.06lu seconds (timo = %dms), %d cs\n",
+            tv2.tv_sec, tv2.tv_usec, timo, cs1 - cs0));
+#endif
+
+    if (s == 0) _kernel_irqs_on ();
+
+    return 0;
+}
+
+int wakeup (void* ident) {
+    int i;
+#ifdef USB_DEBUG
+    if (usbdebug > 10) dprintf (("Port", "waking up %p\n", ident));
+#endif
+
+    /* Find the index of the handle passed */
+    for (i = 0; i < nhandles && t_handles[i] != ident; ++i);
+
+    /* unlock it */
+    if (t_handles[i] == ident) t_locks[i] = 1;
+
+    return 0;
+}
+
+void kthread_exit () {
+    dprintf (("Port", "exit thread\n"));
+}
+
+void device_probe_and_attach () {
+    dprintf (("Port", "probing device\n"));
+}
+
+/*
+ * usbd_ratecheck() can limit the number of error messages that occurs.
+ * When a device is unplugged it may take up to 0.25s for the hub driver
+ * to notice it.  If the driver continuosly tries to do I/O operations
+ * this can generate a large number of messages.
+ */
+int
+ratecheck (void* a, void* b)
+{
+    return 0;
+}
+
+void* usbd_print;
+
+void* vtophys (void** v)
+{
+#ifndef EMULATE
+    struct {
+        void*   page;
+        void*   logical;
+        void*   physical;
+    } block;
+    block.logical = v;
+    _swix (OS_Memory, _INR (0, 2), (1<<9) + (1<<13) + (2<<14), &block, 1);
+
+    return block.physical;
+#else
+    dprintf (("Port", "Converting physical address %p\n", *v));
+    return v; // return actual address for the moment
+#endif
+}
+
+void* malloc_contig(int len, int alignment)
+{
+    void* p;
+    _kernel_oserror* e;
+
+    e = _swix(PCI_RAMAlloc, _INR(0,2)|_OUT(0), len, alignment, 0, &p);
+    if (e || !p)
+    {
+        dprintf (("", "failed to allocate %d bytes at %d alignment err = '%s'\n",
+            len, alignment, e?e->errmess:""));
+
+        return NULL;
+    }
+
+    memset(p, 0, len);
+
+    return p;
+}
+
+void free_contig (void **mem)
+{
+    _swix(PCI_RAMFree, _IN(0), *mem);
+}
+
+char*
+device_get_nameunit (void)
+{
+    return "OHCI USB device";
+}
+
+int min (int a, int b)
+{
+    if (a < b) return a;
+    return b;
+}
+
+void logprintf (char* format, ...)
+{
+    va_list p;
+    va_start (p, format);
+    dvprintf (("Log", format, p));
+}

@@ -1,0 +1,182 @@
+/* Copyright 2003 Tematic Ltd
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/* mouse interface */
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#include "Global/RISCOS.h"
+#include "Global/Keyboard.h"
+#include "Global/Pointer.h"
+
+#include "usbmodhead.h"
+#include "swis.h"
+#include "debuglib/debuglib.h"
+
+#include <sys/callout.h>
+#include <sys/ioctl.h>
+
+#include "dev/usb/usb.h"
+#include "dev/usb/usbdi.h"
+#include "dev/usb/usbdi_util.h"
+#include "dev/usb/usbdivar.h"
+#include "dev/usb/usbhid.h"
+
+#include "wimplib.h"
+
+extern void ums_enable (void*);
+extern void ums_disable (void*);
+
+extern int umsdebug;
+
+extern struct cfattach ums_ca;
+
+static int relx = 0, rely = 0;
+static uint8_t buttons;
+static bool enabled = false;
+
+struct device* attach_mouse (struct device* parent, void* aux)
+{
+    struct device* softc;
+
+    dprintf (("", "Trying match on usb mouse\n"));
+
+    /* First see if we match */
+    if ((*ums_ca.ca_match) (0, 0, aux) == UMATCH_NONE)
+    {
+        dprintf (("", "Failed to match\n"));
+        return NULL;
+    }
+
+    /* If so, allocate memory for the device and attach ourselves. */
+    softc = malloc (ums_ca.ca_devsize);
+    if (softc == 0) {
+        dprintf (("", "Couldn't allocate memory for mouse device\n"));
+        return NULL;
+    }
+    memset (softc, 0, ums_ca.ca_devsize);
+    strcpy (softc->dv_xname, "USBMouse"Module_VersionString);
+    softc->dv_cfdata = (void*) 3; // mouse
+
+    (*ums_ca.ca_attach) (parent, softc, aux);
+    dprintf (("", "Matched mouse\n"));
+
+    ums_enable (softc);
+    _swix (OS_Pointer, _INR(0,1), 1, PointerDevice_USB);
+    return softc;
+}
+
+int detach_mouse (struct device* ms)
+{
+    ums_disable (ms);
+    (*ums_ca.ca_detach) (ms, 0);
+    free (ms);
+    return 0;
+}
+
+int pointerv (_kernel_swi_regs* r, void* pw)
+{
+    _kernel_oserror* e;
+    (void) pw;
+
+    switch (r->r[0]) {
+    case PointerReason_Request:
+        if (r->r[1] == PointerDevice_USB) {
+            /* Turn off interrupts while updating */
+            _kernel_irqs_off ();
+            r->r[2] = relx;
+            r->r[3] = rely;
+            relx = rely = 0;
+            _kernel_irqs_on ();
+            }
+        break;
+
+    case PointerReason_Identify:
+    {
+        struct pointer_device {
+            struct pointer_device *next;
+            uint32_t               flags;
+            char                   typenname[32];
+        } *p;
+        e = _swix (OS_Module, _IN(0) | _IN(3) | _OUT(2), 6,
+            sizeof *p, &p);
+
+        if (!e) {
+            p->next = (struct pointer_device *) r->r[1];
+            p->flags = 0;
+            p->typenname[0] = PointerDevice_USB;
+            strcpy(&p->typenname[1], "USB mouse"); /* should be internationalised */
+            r->r[1] = (int) p;
+        }
+        break;
+    }
+
+    case PointerReason_Selected:
+        if (r->r[1] == PointerDevice_USB) {
+            dprintf (("", "USB mouse enabled\n"));
+            enabled = true;
+        } else {
+            dprintf (("", "USB mouse disabled\n"));
+            enabled = false;
+        }
+        break;
+    }
+
+    return 1;
+}
+
+void wsmouse_input (struct device* dev, uint32_t b, int x, int y, int z, uint32_t flags)
+{
+    uint8_t change;
+    relx += x;
+    rely -= y;
+    if (enabled)
+    {
+        _swix(OS_CallAVector, _INR(0,3) | _IN(9),
+                          PointerReason_Report, PointerDevice_USB,
+                          x, y,
+                          PointerV);
+
+    }
+    if (umsdebug > 5) dprintf(("",
+    "data.relx = %d, data.rely = %d, relx = %d, rely = %d, buttons = %x\n",
+        x, y, relx, rely, b));
+    if ((change = buttons ^ b) != 0) {
+        buttons = b;
+        if (umsdebug > 5) dprintf (("", "change = %x, enabled = %d\n", change,
+            enabled));
+        if (enabled) {
+            if (change & 1) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
+                1 + ((buttons & 1) == 1), KeyNo_LeftMouse, KEYV);
+
+            if (change & 2) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
+                1 + ((buttons & 2) == 2), KeyNo_RightMouse, KEYV);
+
+            if (change & 4) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
+                1 + ((buttons & 4) == 4), KeyNo_CentreMouse, KEYV);
+
+            /* make the next button replicate menu */
+            if (change & 8) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
+                1 + ((buttons & 8) == 8), KeyNo_CentreMouse, KEYV);
+        }
+    }
+}
+
+int wsmousedevprint (void * v, const char * c)
+{
+    (void) v;
+    (void) c;
+    return 0;
+}

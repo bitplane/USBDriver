@@ -1,0 +1,72 @@
+; Copyright 2003 Tematic Ltd
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+;
+
+; little assembler stub to call an interrupt handler with an argument i r12
+        GET     Hdr:ListOpts
+	OPT	OptNoList
+        GET     Hdr:Macros		; system wide macro definitions
+        GET     Hdr:System		; swis and hardware declarations
+
+
+	AREA	|C$$code|, CODE, READONLY
+    	EXPORT	init_veneer
+	IMPORT	memcpy
+
+init_veneer
+        STMFD   sp!, {lr}
+
+        ; claim memory for block, exit with NULL on error
+	MOV	r0, #6
+	MOV	r3, #magic_end - magic_start
+        SWI	XOS_Module
+	MOVVS	a1, #0
+	LDMVSFD	sp!, {pc}
+
+        ; memcpy the existing block
+	MOV	a1, r2
+	ADR	a2, magic_start
+	MOV	a3, #magic_end - magic_start
+	BL	memcpy
+
+        ; poke the magic words
+        SUB	sl, sl, #540
+	LDMIA	sl, {a2,a3}
+	STMIA	a1, {a2,a3}
+	ADD	sl, sl, #540
+
+        ; return pointing to the block
+        LDMFD   sp!, {pc}
+
+magic_start
+mwords  DCD     0
+        DCD     0
+
+common  STMFD	sp!, {v1,v2,fp,lr}
+        SUB	sl, sl, #540
+	LDMIA	sl, {v1,v2}
+	ADR	fp, mwords
+	LDMIA	fp, {fp,lr}
+	STMIA	sl, {fp,lr}
+	ADD	sl, sl, #540
+	MOV	fp, #0
+	MOV	lr, pc
+	MOV	pc, ip
+	SUB	sl, sl, #540
+	STMIA	sl, {v1,v2}
+	ADD	sl, sl, #540
+	LDMFD	sp!, {v1,v2,fp,pc}
+magic_end
+
+	END

@@ -1,0 +1,216 @@
+/* Copyright 2003 Tematic Ltd
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/*	RISC OS port options
+ */
+
+#include "opt_usbverbose.h"
+#include "sys/device.h"
+#include "errno.h"
+#include <sys/ioccom.h>
+#include <string.h>
+
+#ifdef USB_DEBUG
+#define UHID_DEBUG 1
+#define OHCI_DEBUG 1
+#define UGEN_DEBUG 1
+#define UHCI_DEBUG 1
+#define UHUB_DEBUG 1
+#define ULPT_DEBUG 1
+#define UCOM_DEBUG 1
+#define UMODEM_DEBUG 1
+#define UAUDIO_DEBUG 1
+#define AUE_DEBUG 1
+#define CUE_DEBUG 1
+#define KUE_DEBUG 1
+#define UMASS_DEBUG 1
+#define UPL_DEBUG 1
+#define UZCOM_DEBUG 1
+#define URIO_DEBUG 1
+#define UFTDI_DEBUG 1
+#endif
+
+/* always define the functions as global because we access them from RISC OS
+   module */
+#define Static
+
+
+/* make these do nothing for RISC OS */
+#define	config_pending_incr()
+#define	config_pending_decr()
+#define le16toh(a) a
+#define htole16(a) a
+
+extern int hz;
+
+extern int splbio (void);
+extern int spltty (void);
+extern void splx (int);
+extern int vtophys (void*);
+extern void delay (int);
+extern struct device* get_softc (int unit);
+extern int callout_init (void*);
+extern int callout_stop (void*);
+extern void callout_reset (void*, int, void (*f)(void *), void *v);
+extern int min (int a, int b);
+extern struct device* riscos_usb_attach(struct device*, void*);
+extern void usb_needs_explore_callback (void*);
+extern int config_detach (struct device*, int);
+extern void* config_found (struct device*, void*, int (*) (void*, const char*));
+
+extern int kthread_create (void (*) (void*), void*);
+extern int kthread_create1 (void (*) (void*), void*, void*, char*, char*);
+extern int kthread_exit (int);
+
+/* copy data using private handle b into memory dma */
+extern void bufrem (void* dma, void* b, int size);
+extern void bufins (void* dma, void* xfer);
+
+extern void* malloc_contig (int size, int alignment);
+#define		usb_allocmem(t,s,a,p)	(*(p) = malloc_contig(s, a), (*(p) == NULL? USBD_NOMEM: USBD_NORMAL_COMPLETION))
+extern void free_contig(void **mem);
+#define usb_freemem(p, m) free_contig (m)
+#define DMAADDR(dma)	(vtophys(*(dma)))
+#define KERNADDR(dma)	((void *) *(dma))
+
+int ratecheck (void*, void*);
+
+int config_deactivate (struct device* dev);
+
+typedef struct device *device_ptr_t;
+#define USBBASEDEVICE struct device
+#define USBDEV(bdev) (&(bdev))
+#define USBDEVNAME(bdev) ((bdev).dv_xname)
+#define USBDEVUNIT(bdev) ((bdev).dv_unit)
+#define USBDEVPTRNAME(bdevptr) ((bdevptr)->dv_xname)
+#define USBGETSOFTC(d) ((void *)(d))
+
+#define DECLARE_USB_DMA_T typedef void * usb_dma_t
+
+
+typedef struct callout usb_callout_t;
+#define usb_callout_init(h)	callout_init(&(h))
+#define	usb_callout(h, t, f, d)	callout_reset(&(h), (t), (f), (d))
+#define	usb_uncallout(h, f, d)	callout_stop(&(h))
+
+#define clalloc(p, s, x) (clist_alloc_cblocks((p), (s), (s)), 0)
+#define clfree(p) clist_free_cblocks((p))
+
+#define usb_kthread_create1	kthread_create1
+#define usb_kthread_create	kthread_create
+
+typedef int usb_malloc_type;
+
+#define Ether_ifattach ether_ifattach
+#define IF_INPUT(ifp, m) (*(ifp)->if_input)((ifp), (m))
+
+#pragma -v1
+extern void logprintf(char* format, ...);
+
+#define USB_DECLARE_DRIVER(dname)  \
+int __CONCAT(dname,_match)(struct device *, struct cfdata *, void *); \
+void __CONCAT(dname,_attach)(struct device *, struct device *, void *); \
+int __CONCAT(dname,_detach)(struct device *, int); \
+int __CONCAT(dname,_activate)(struct device *, enum devact); \
+\
+extern struct cfdriver __CONCAT(dname,_cd); \
+\
+struct cfattach __CONCAT(dname,_ca) = { \
+	sizeof(struct __CONCAT(dname,_softc)), \
+	__CONCAT(dname,_match), \
+	__CONCAT(dname,_attach), \
+	__CONCAT(dname,_detach), \
+	__CONCAT(dname,_activate), \
+}; \
+Static int __CONCAT(dname,_devclass)
+
+#define USB_MATCH(dname) \
+int \
+__CONCAT(dname,_match)(parent, match, aux) \
+	struct device *parent; \
+	struct cfdata *match; \
+	void *aux;
+
+#define USB_MATCH_START(dname, uaa) \
+	struct usb_attach_arg *uaa = aux
+
+#define USB_ATTACH(dname) \
+void \
+__CONCAT(dname,_attach)(parent, self, aux) \
+	struct device *parent; \
+	struct device *self; \
+	void *aux;
+
+#define USB_ATTACH_START(dname, sc, uaa) \
+	struct __CONCAT(dname,_softc) *sc = \
+		(struct __CONCAT(dname,_softc) *)self; \
+	struct usb_attach_arg *uaa = aux
+
+/* Returns from attach */
+#define USB_ATTACH_ERROR_RETURN	return
+#define USB_ATTACH_SUCCESS_RETURN	return
+
+#define USB_ATTACH_SETUP logprintf("Attach setup\n")
+
+#define USB_DETACH(dname) \
+int \
+__CONCAT(dname,_detach)(self, flags) \
+	struct device *self; \
+	int flags;
+
+#define USB_DETACH_START(dname, sc) \
+	struct __CONCAT(dname,_softc) *sc = \
+		(struct __CONCAT(dname,_softc) *)self
+
+#define USB_GET_SC_OPEN(dname, unit, sc) \
+	sc = (void *) get_softc(unit); \
+	if (!sc) \
+		return (ENXIO)
+
+#define USB_GET_SC(dname, unit, sc) \
+	sc = (void *) get_softc(unit)
+
+#define USB_DO_ATTACH(dev, bdev, parent, args, print, sub) \
+        riscos_usb_attach (parent, args)
+
+#define SIMPLEQ_REMOVE_HEAD(h, e, f)	do {				\
+		if ( (e) != SIMPLEQ_FIRST((h)) )			\
+			panic("Removing other than first element");	\
+		STAILQ_REMOVE_HEAD(h, f);				\
+} while (0)
+#define SIMPLEQ_INSERT_HEAD	STAILQ_INSERT_HEAD
+#define SIMPLEQ_INSERT_TAIL	STAILQ_INSERT_TAIL
+#define SIMPLEQ_NEXT		STAILQ_NEXT
+#define SIMPLEQ_FIRST		STAILQ_FIRST
+#define SIMPLEQ_HEAD		STAILQ_HEAD
+#define SIMPLEQ_INIT		STAILQ_INIT
+#define SIMPLEQ_HEAD_INITIALIZER	STAILQ_HEAD_INITIALIZER
+#define SIMPLEQ_ENTRY		STAILQ_ENTRY
+
+/* so we don't have to worry about memory allocation types */
+#define M_USB 0
+#define M_USBDEV 0
+
+/* ioctl types */
+#ifndef FIONBIO
+#define FIONBIO 0
+#define FIOASYNC 1
+#endif
+
+
+
+
+
+
+#define UMATCH_GENERIC 1
