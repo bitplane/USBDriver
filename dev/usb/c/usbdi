@@ -408,7 +408,8 @@ usbd_free_xfer(usbd_xfer_handle xfer)
 		DPRINTF(("usbd_free_xfer: timout_handle pending"));
 	}
 #endif
-	xfer->device->bus->methods->freex(xfer->device->bus, xfer);
+	if (xfer->device->bus && xfer->device->bus->methods)
+		xfer->device->bus->methods->freex(xfer->device->bus, xfer);
 	return (USBD_NORMAL_COMPLETION);
 }
 

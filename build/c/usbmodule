@@ -61,6 +61,7 @@
 #define DeviceFSCallDevice_BufferSpace      0x80000002
 #define DeviceFSCallDevice_GetHandles       0x80000003
 #define DeviceFSCallDevice_GetLocation      0x80000004
+#define DeviceFSCallDevice_ClearStall       0x80000005
 
 
 #define DeviceFSCallDevice_GetConfig        0x80000001
@@ -931,7 +932,7 @@ struct device* riscos_usb_attach
 
 /*---------------------------------------------------------------------------*/
 
-/* dummy - we don't do attachement like this */
+/* dummy - we don't do attachment like this */
 void* config_found (struct device* dev, void* h, int (*f) (void*, const char*))
 {
     (void) f;
@@ -2293,6 +2294,32 @@ _kernel_oserror* get_location
     return NULL;
 }
 
+_kernel_oserror* clear_endpoint_stall
+(
+    struct ugen_softc*  udev,
+    int                 fs
+)
+{
+    int devfs;
+    _kernel_oserror* e =
+        _swix (OS_FSControl, _INR(0,1)|_OUT(1), 21, fs, &devfs);
+    if (e) return e;
+
+    for (int i = 0; i < sizeof (udev->str) / sizeof (udev->str[0]); ++i)
+    {
+        if (udev->str[i] && udev->str[i]->fs_stream == devfs)
+        {
+            int err = usbd_clear_endpoint_stall (udev->str[i]->pipe);
+            if (err != 0) return uerror (E_BadRequest);
+            
+            udev->str[i]->xfer->status = USBD_NORMAL_COMPLETION;
+            return NULL;
+        }
+    }
+    
+    return uerror (E_NoStream);
+}
+
 /*---------------------------------------------------------------------------*/
 
 _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
@@ -2431,6 +2458,9 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         break;
     case DeviceFSCallDevice_GetLocation:
         return get_location (udev, (char*) r->r[3]);
+        break;
+    case DeviceFSCallDevice_ClearStall:
+        return clear_endpoint_stall (udev, r->r[2]);
         break;
     }
 

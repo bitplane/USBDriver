@@ -477,7 +477,7 @@ uhub_explore(usbd_device_handle dev)
 #ifdef __riscos
                 /* experiencing trouble getting first descriptor, give a bit
                    of a delay for device to settle */
-//                usbd_delay_ms (dev, 100);
+                usbd_delay_ms (dev, 100);
 #endif
 
 		/* Get device info and set its address. */

@@ -592,21 +592,27 @@ usbd_set_config_index(usbd_device_handle dev, int index, int msg)
 		goto bad;
 	}
 
-	/* Figure out if the device is self or bus powered. */
 	selfpowered = 0;
-	if (!(dev->quirks->uq_flags & UQ_BUS_POWERED) &&
-	    (cdp->bmAttributes & UC_SELF_POWERED)) {
-		/* May be self powered. */
-		if (cdp->bmAttributes & UC_BUS_POWERED) {
-			/* Must ask device. */
-			err = usbd_get_device_status(dev, &ds);
-			if (!err && (UGETW(ds.wStatus) & UDS_SELF_POWERED))
-				selfpowered = 1;
-			DPRINTF(("usbd_set_config_index: status=0x%04x, "
-				 "error=%s\n",
-				 UGETW(ds.wStatus), usbd_errstr(err)));
-		} else
+	/* Figure out if the device is self or bus powered. */
+	if (! (((cdp->bmAttributes & (UC_SELF_POWERED | UC_BUS_POWERED)) == UC_BUS_POWERED) ||
+	    /* Reports as being exclusively bus powered */
+	    (dev->quirks->uq_flags & UQ_BUS_POWERED)) ) {
+	    /* Or a buggy device known to lie and is bus powered really */
+		if ((cdp->bmAttributes & (UC_BUS_POWERED | UC_SELF_POWERED)) == UC_SELF_POWERED) {
+		    /* Reports as being exclusively self powered */
 			selfpowered = 1;
+		} else {
+			if (cdp->bMaxPower > 0) {
+			   /* Supports both bus and self powered plus nonzero MaxPower - must ask */
+				err = usbd_get_device_status(dev, &ds);
+				if (!err && (UGETW(ds.wStatus) & UDS_SELF_POWERED)) {
+					selfpowered = 1; /* Status says self powering at present */
+					DPRINTF(("usbd_set_config_index: status=0x%04x, "
+						 "error=%s\n",
+						 UGETW(ds.wStatus), usbd_errstr(err)));
+				}
+			}
+		}
 	}
 	DPRINTF(("usbd_set_config_index: (addr %d) attr=0x%02x, "
 		 "selfpowered=%d, power=%d\n",
