@@ -135,6 +135,7 @@ usbd_status	ehci_init(ehci_softc_t *);
 int		ehci_intr(void *);
 #ifdef __riscos
 void		ehci_softintr(void *);
+void		ehci_shutdown(void *v);
 #endif
 int		ehci_detach(ehci_softc_t *, int);
 int		ehci_activate(device_ptr_t, enum devact);

@@ -297,7 +297,7 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 #ifdef RHENIUM
     if (pci_device == -1)
     {
-        strcpy (ohci_soft.sc_vendor, OHCIVendorUnknownRootName);
+        strncpy (ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
 //        return NULL;
     }
     else
@@ -305,8 +305,8 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 #endif  /* RHENIUM */
         _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
         if (v == 0) v = (char *)" ";
-        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
-            [sizeof ohci_soft.sc_vendor - 1] = '\0';
+        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
+//            [sizeof ohci_soft.sc_vendor - 1] = '\0';
 #ifdef RHENIUM
     }
 #endif  /* RHENIUM */
@@ -334,7 +334,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     char* v = "";
     _kernel_oserror* e = 0;
     *panic_string = '\0';
-    char tmp[16];
+//    char tmp[16];
     
     callx_init (pw);
 
@@ -408,7 +408,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
             size_t usbinfolen;
 
             e = _swix(OS_Hardware, _INR(0,2)|_INR(8,9)|_OUT(0),
-                                   0, &usbinfo, sizeof usbinfo,
+                                   instance, &usbinfo, sizeof usbinfo,
                                    0, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
             if (!e && (usbinfolen >= sizeof(usbinfo)) && usbinfo.type == 0)
@@ -496,13 +496,13 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
 #ifdef   RHENIUM
     if (pci_device == -1)
-        strcpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName);
+        strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
     else
     {
 #endif  /* RHENIUM */
         _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
-        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
-            [sizeof ohci_soft.sc_vendor - 1] = '\0';
+        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
+//            [sizeof ohci_soft.sc_vendor - 1] = '\0';
 #ifdef   RHENIUM
     }
 #endif  /* RHENIUM */
@@ -700,13 +700,13 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
 #ifdef   RHENIUM
             if (pci_device == -1)
-                strcpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName);
+                strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
             else
             {
 #endif  /* RHENIUM */
                 _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
-                strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
-                    [sizeof ohci_soft.sc_vendor - 1] = '\0';
+                strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
+//                    [sizeof ohci_soft.sc_vendor - 1] = '\0';
 #ifdef   RHENIUM
             }
 #endif  /* RHENIUM */

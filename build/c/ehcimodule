@@ -107,6 +107,14 @@ _kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
 {
     /* register with the usbdriver module if it's already resident */
     dprintf (("Main_0", "Registering with USB driver\n"));
+
+        memset (&ehci_soft, 0, sizeof ehci_soft);
+        sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+        /* fix n companions */
+        ehci_soft.sc_ncomp = 2;
+        ehci_init (&ehci_soft);
+
+
     _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
             &ehci_soft, &usb_soft);
 
@@ -152,8 +160,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     dprintf (("Main_0", "Starting driver\n"));
 
-    /* simulate having one OHCI device attached.  This section has to
-    communicate with HAL or podule manager to find out where it can read/write    to some OHCI registers */
+    /* simulate having one EHCI device attached.  This section has to
+    communicate with HAL or podule manager to find out where it can read/write    to some EHCI registers */
 
     /* assume podule_base is actually instantiation number - how to do this
        in a HAL world?  If we're the first instance, then search for devices
@@ -188,7 +196,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     } while (0);//pci_device == 2 || pci_device == 3);
 
 
-    /* if there were no more OHCI controllers, then return an error.  This
+    /* if there were no more EHCI controllers, then return an error.  This
        will be thrown away by the callback above */
 
     if (pci_device == 0)
@@ -318,10 +326,9 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         dprintf (("", "Deregistering with USB driver\n"));
         /* USBDriver will do the deregistering at this point, since
            it's SWIs are not active anymore */
+        ehci_detach(&ehci_soft,0);
+        ehci_shutdown(&ehci_soft);
         usb_soft = NULL;
-        memset (&ehci_soft, 0, sizeof ehci_soft);
-        sprintf (ehci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
-        ehci_init (&ehci_soft);
         break;
     }
 }

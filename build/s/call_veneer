@@ -69,5 +69,19 @@ common  STMFD	sp!, {v1,v2,fp,lr}
 	LDMFD	sp!, {v1,v2,fp,pc}
 magic_end
 
+; hal_veneer(code, ws)  up to 2 arguments supported
+        EXPORT  hal_veneer2
+
+hal_veneer2
+        STMFD   sp!,{r9,lr}
+        MOV     ip, a1
+        MOV     r9, a2
+        MOV     a1, a3
+        MOV     a2, a4
+        MOV     lr, pc
+        MOV     pc, ip
+        LDMFD   sp!,{r9,pc}
+
+
 
 	END
