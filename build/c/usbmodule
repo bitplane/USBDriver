@@ -933,9 +933,16 @@ int config_detach (struct device* dev, int n)
         TAILQ_REMOVE (&allusbdevs, dev, dv_list);
     }
 
-    /* remove any system variables attached to this device */
-    char var[sizeof "USB$Device_*USBnnn"];
+    /* remove any system variables attached to this device and since we don't reuse numbers
+       nuke the devicefs options variable too */
+    char var[sizeof "DeviceFS$USBnnn$Options"];
+    /*          and "USB$Device_*USBnnn" */
     sprintf (var, "USB$Device_*USB%d", dev->dv_unit);
+    while (_swix (OS_SetVarVal, _INR(0,4), var, 0, -1, 0, 0) == NULL)
+    {
+        /* do nothing */
+    }
+    sprintf (var, "DeviceFS$USB%d$Options", dev->dv_unit);
     while (_swix (OS_SetVarVal, _INR(0,4), var, 0, -1, 0, 0) == NULL)
     {
         /* do nothing */
