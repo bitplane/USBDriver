@@ -556,7 +556,7 @@ USB_DETACH(uhub)
 	DPRINTF(("uhub_detach: sc=%port\n", sc));
 #endif
 
-	if (hub == NULL)		/* Must be partially working */
+	if (hub == NULL || !sc->sc_ipipe)	/* Must be partially working */
 		return (0);
 
 	usbd_abort_pipe(sc->sc_ipipe);

@@ -70,5 +70,8 @@ event-handler:		vsync_entry/vsync Event_VSync
 #endif
 
 vector-handlers:    	usb_irq_entry/usb_irq_handler,
+#ifdef RHENIUM
+			usb_irq_port_error_entry/usb_irq_port_error_handler,
+#endif /*RHENIUM*/
 			softintr_entry/softintr
 generic-veneers:    	callout_entry/callout_handler

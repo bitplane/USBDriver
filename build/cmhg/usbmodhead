@@ -23,7 +23,6 @@ service-call-handler:	module_services	Service_ResourceFSStarted,
 					Service_ResourceFSStarting,
 					Service_PCI,
 					Service_USB
-
 title-string:	    	USBDriver
 
 help-string:	     	USBDriver  USBDriverModule_MajorVersion_CMHG

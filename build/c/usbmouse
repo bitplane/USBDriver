@@ -129,6 +129,7 @@ static int match_mouse (struct usb_attach_arg *uaa)
         }
 
         nrepid = uhidev_maxrepid(desc, size);
+        
 
         ret = UMATCH_NONE;
         for (repid = 0; repid <= nrepid; repid++)
@@ -200,6 +201,7 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
                 USB_ATTACH_ERROR_RETURN;
 
         nrepid = uhidev_maxrepid(desc, size);
+        
         for (repid = 0; repid <= nrepid; repid++)
         {
             if (hid_is_collection(desc, size, repid,
@@ -268,6 +270,8 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
                                 sc->sc_iid, hid_input, &sc->sc_loc_btn[i-1], 0);
 
         sc->sc_isize = hid_report_size(desc, size, hid_input, sc->sc_iid);
+
+        sc->sc_isize += (nrepid != 0);
         sc->sc_ibuf = malloc(sc->sc_isize);
         if (sc->sc_ibuf == NULL) {
                 logprintf("%s: no memory\n", USBDEVNAME(sc->sc_dev));
@@ -337,6 +341,11 @@ struct device* attach_mouse (struct device* parent, void* aux)
     /* set idle rate to 0 */
     usbd_set_idle (sc->sc_iface, 0, 0);
 
+    /* make sure we're using the report protocol */
+    usbd_set_protocol(sc->sc_iface, 1);
+
+
+
     int err = usbd_open_pipe_intr(sc->sc_iface, sc->sc_ep_addr,
           USBD_SHORT_XFER_OK, &sc->sc_intrpipe, sc,
           sc->sc_ibuf, sc->sc_isize, ums_intr, USBD_DEFAULT_INTERVAL);
@@ -357,6 +366,11 @@ struct device* attach_mouse (struct device* parent, void* aux)
 int detach_mouse (struct device* ms)
 {
     struct ums_softc* sc= (struct ums_softc*) ms;
+    if(!sc || !sc->sc_intrpipe)
+    {
+      dprintf (("", "attempt to detach a NULL mouse 'sc'\n"));
+      return 0;
+    }
     dprintf (("", "detaching mouse, buttons = %x\n", sc->sc_buttons));
     usbd_abort_pipe(sc->sc_intrpipe);
     usbd_close_pipe(sc->sc_intrpipe);

@@ -151,12 +151,13 @@ void
 usbd_dump_queue(usbd_pipe_handle pipe)
 {
 	usbd_xfer_handle xfer;
+
 	logprintf("usbd_dump_queue: pipe=%p\n", pipe);
-        if(pipe)
-        {
-	  SIMPLEQ_FOREACH(xfer, &pipe->queue, next) {
-	  	logprintf("  xfer=%p\n", xfer);
-	  }
+	if(pipe)
+	{
+	SIMPLEQ_FOREACH(xfer, &pipe->queue, next) {
+		logprintf("  xfer=%p\n", xfer);
+	}
 	}
 }
 
@@ -265,19 +266,17 @@ usbd_close_pipe(usbd_pipe_handle pipe)
 		return (USBD_NORMAL_COMPLETION);
 	}
 #endif
-        if(pipe)
-        {
-	  if (--pipe->refcnt != 0)
-	  	return (USBD_NORMAL_COMPLETION);
-	  if (! SIMPLEQ_EMPTY(&pipe->queue))
-	  	return (USBD_PENDING_REQUESTS);
-	  LIST_REMOVE(pipe, next);
-	  pipe->endpoint->refcnt--;
-	  pipe->methods->close(pipe);
-	  if (pipe->intrxfer != NULL)
-	  	usbd_free_xfer(pipe->intrxfer);
-	  free(pipe, M_USB);
-	}
+
+	if (--pipe->refcnt != 0)
+		return (USBD_NORMAL_COMPLETION);
+	if (! SIMPLEQ_EMPTY(&pipe->queue))
+		return (USBD_PENDING_REQUESTS);
+	LIST_REMOVE(pipe, next);
+	pipe->endpoint->refcnt--;
+	pipe->methods->close(pipe);
+	if (pipe->intrxfer != NULL)
+		usbd_free_xfer(pipe->intrxfer);
+	free(pipe, M_USB);
 	return (USBD_NORMAL_COMPLETION);
 }
 
@@ -291,7 +290,7 @@ usbd_transfer(usbd_xfer_handle xfer)
 	int s;
 
 	DPRINTFN(5,("usbd_transfer: xfer=%p, flags=%d, pipe=%p, running=%d\n",
-		    xfer, xfer->flags, pipe, pipe?pipe->running:0));
+		    xfer, xfer->flags, pipe, pipe->running));
 #ifdef USB_DEBUG
 	if (usbdebug > 5)
 		usbd_dump_queue(pipe);
@@ -757,33 +756,34 @@ usbd_ar_pipe(usbd_pipe_handle pipe)
 	SPLUSBCHECK;
 
 	DPRINTFN(2,("usbd_ar_pipe: pipe=%p\n", pipe));
+	if(!pipe)
+	{
+	  return (USBD_NORMAL_COMPLETION);
+	}
+
 #ifdef USB_DEBUG
 	if (usbdebug > 5)
 		usbd_dump_queue(pipe);
 #endif
-        if (pipe)
-        {
-	  pipe->repeat = 0;
-	  pipe->aborting = 1;
-	  while ((xfer = SIMPLEQ_FIRST(&pipe->queue)) != NULL) {
-	  	DPRINTFN(2,("usbd_ar_pipe: pipe=%p xfer=%p (methods=%p)\n",
-	  		    pipe, xfer, 0/*pipe->methods*/));
-	  	if (xfer == oxfer)
-	  	{
-	  	  DPRINTF(("xfer hasn't changed: %p\n", SIMPLEQ_FIRST(&pipe->queue)));
-	  	  break;
-	  	}
-	          oxfer = xfer;
-//	          usbdebug = 10;
-	  	/* Make the HC abort it (and invoke the callback). */
-	  	DPRINTF(("pipe %p\n", pipe));
-	  	pipe->methods->abort(xfer);
-	  	DPRINTF(("first now: %p\n", SIMPLEQ_FIRST(&pipe->queue)));
-//	  	usbdebug = 5;
-	  	/* XXX only for non-0 usbd_clear_endpoint_stall(pipe); */
-	  }
-	  pipe->aborting = 0;
-	}  
+	pipe->repeat = 0;
+	pipe->aborting = 1;
+	while ((xfer = SIMPLEQ_FIRST(&pipe->queue)) != NULL) {
+		DPRINTFN(2,("usbd_ar_pipe: pipe=%p xfer=%p (methods=%p)\n",
+			    pipe, xfer, pipe->methods));
+		if (xfer == oxfer)
+		{
+		  DPRINTF(("xfer hasn't changed: %p\n", SIMPLEQ_FIRST(&pipe->queue)));
+		  break;
+		}
+	        oxfer = xfer;
+//	        usbdebug = 10;
+		/* Make the HC abort it (and invoke the callback). */
+		pipe->methods->abort(xfer);
+		DPRINTF(("first now: %p\n", SIMPLEQ_FIRST(&pipe->queue)));
+//		usbdebug = 5;
+		/* XXX only for non-0 usbd_clear_endpoint_stall(pipe); */
+	}
+	pipe->aborting = 0;
 	return (USBD_NORMAL_COMPLETION);
 }
 
@@ -866,11 +866,15 @@ usb_transfer_complete(usbd_xfer_handle xfer)
 		[pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE];
 
 	xfer->done = 1;
-	if (!xfer->status && xfer->actlen < xfer->length &&
-	    !(xfer->flags & USBD_SHORT_XFER_OK)) {
+	if (!xfer->status && xfer->actlen < xfer->length)
+	{ 
+	   if (!(xfer->flags & USBD_SHORT_XFER_OK)) {
 		DPRINTFN(-1,("usbd_transfer_cb: short transfer %d<%d\n",
 			     xfer->actlen, xfer->length));
 		xfer->status = USBD_SHORT_XFER;
+	}
+	else
+	  xfer->status = USBD_SHORT_XFER_DONE;
 	}
 
 	if (xfer->callback)
@@ -966,7 +970,9 @@ usbd_start_next(usbd_pipe_handle pipe)
 usbd_status
 usbd_do_request(usbd_device_handle dev, usb_device_request_t *req, void *data)
 {
-	return (usbd_do_request_flags(dev, req, data, 0, 0,
+        /* set flags to allow a short transfer, since some devices requires
+           this */
+	return (usbd_do_request_flags(dev, req, data, USBD_SHORT_XFER_OK /*0*/, 0,
 				      USBD_DEFAULT_TIMEOUT));
 }
 

@@ -238,6 +238,12 @@ struct device* attach_keyboard (struct device* parent, void* aux)
 int detach_keyboard (struct device* kb)
 {
     struct ukbd_softc* sc = (struct ukbd_softc*) kb;
+    if(!sc || !sc->sc_intrpipe)
+    {
+      dprintf (("", "attempt to detach a NULL keyboard 'sc'\n"));
+      return 0;
+    }
+
     uint32_t * status = sc->status;
     /* release any keys held down */
     for (int w = 0; w < sizeof sc->status / sizeof (int); ++w)

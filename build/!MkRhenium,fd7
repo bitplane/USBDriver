@@ -1,4 +1,4 @@
-| Copyright 2003 Tematic Ltd
+| Copyright 2004 Castle Technology Ltd
 |
 | Licensed under the Apache License, Version 2.0 (the "License");
 | you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
 |
 dir <obey$dir>
 echo starting build
-amu_machine all rom COMPONENT=USBDriver CFLAGS="-ff -DSTANDALONE" THROWBACK=-throwback
-amu_machine all rom COMPONENT=OHCIDriver CFLAGS="-ff -DSTANDALONE" THROWBACK=-throwback
-amu_machine all rom COMPONENT=EHCIDriver CFLAGS="-ff -DSTANDALONE" THROWBACK=-throwback
+amu_machine all rom COMPONENT=USBDriver CFLAGS="-ff -DSTANDALONE -DRHENIUM -DRHENIUM_NO_ISOC -DRHENIUM_NO_BULK " THROWBACK=-throwback
+amu_machine all rom COMPONENT=OHCIDriver CFLAGS="-ff -DSTANDALONE -DRHENIUM -DRHENIUM_NO_ISOC -DRHENIUM_NO_BULK " CMHGFLAGS="-DRHENIUM " THROWBACK=-throwback
+|amu_machine all rom COMPONENT=EHCIDriver CFLAGS="-ff -DSTANDALONE -DRHENIUM -DRHENIUM_NO_ISOC -DRHENIUM_NO_BULK " THROWBACK=-throwback
+
+                

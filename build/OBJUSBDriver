@@ -13,4 +13,5 @@ usbkboard.o \
 hid.o \
 bufman.o \
 triggercbs.o \
+call_veneer.o \
 usbmsgs.o

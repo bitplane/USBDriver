@@ -49,6 +49,7 @@
 #include "usbkboard.h"
 #include "service.h"
 
+
 /*---------------------------------------------------------------------------*/
 /* structure definitions                                                     */
 /*---------------------------------------------------------------------------*/
@@ -165,11 +166,15 @@ _kernel_oserror* uerror (char* e)
 
 void riscos_failed_device (void* p)
 {
+//#ifdef STANDALONE
+#ifndef RHENIUM 
     _kernel_oserror* e;
     (void) p;
     e = uerror (E_BadDevice);
     _swix (OS_UpCall, _INR(0,6), UpCall_MediaNotPresent, fsnumber_DeviceFS,
-        -1, -1, 0, 0x7fffffff, e->errmess);
+        -1, -1, 0, 0x7f/*ffffff*/, e->errmess);
+#endif /*RHENIUM*/
+//#endif /*STANDALONE*/
 }
 
 _kernel_oserror* messages_update (messages* mess)
@@ -391,6 +396,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 }
 
 /*---------------------------------------------------------------------------*/
+extern int Image__RO_Base;
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
@@ -1080,6 +1086,7 @@ struct device* attach_hub (struct device* parent, void* aux)
     softc->dv_cfdata = (void*) 1; // hub
 
     (*uhub_uhub_ca.ca_attach) (parent, softc, aux);
+      
     dprintf (("", "Matched hub\n"));
 
     return softc;
@@ -1184,7 +1191,7 @@ char* service_call (usbd_device_handle dev, int unit, int link)
     serv->dev.ifcs = idescs;
 
     for (epn = 0, iface = 0; iface < nifs; ++iface)
-    {
+    {                      
         int ifcepn = dev->ifaces[iface].idesc->bNumEndpoints;
         dprintf(("", "iface %d, num endpoints = %d, at %p\n", iface, ifcepn, idescs[iface]));
         memcpy (idescs[iface], dev->ifaces[iface].idesc,
@@ -2110,7 +2117,8 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 {
     struct devstream* str = priv;
 
-    if (status != USBD_NORMAL_COMPLETION)
+    if (  (status != USBD_NORMAL_COMPLETION)
+        &&(status != USBD_SHORT_XFER_DONE))
     {
         dprintf (("", "Bad completion code: %d (%s) %d bytes read\n",
             status, ccodes[status], xfer->actlen));
@@ -2126,7 +2134,23 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
     /* only start another transfer if we haven't finished the transfer and
        this is not a interrupt endpoint (the BSD framework restarts
        repeating transfers) */
-    if (str->count != str->totalcount && !xfer->pipe->repeat)
+    /* if we've got a number of bytes including a part packet, then
+       transfer must have ended.. else.. try more */   
+//    if (!(xfer->actlen/UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))  &&
+//      str->count != str->totalcount)
+    if(status == USBD_SHORT_XFER_DONE)
+    {
+        char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
+        memset (zero, 0, sizeof zero);
+        // fill up the rest of the request with garbage! 
+        _kernel_swi_regs r;
+        r.r[0] = BM_InsertBlock;
+        r.r[1] = (int) str->buffer_id;
+        r.r[2] = (int) zero;
+        r.r[3] = str->totalcount - str->count;
+        CallBufMan (&r);
+    }
+    else if (str->count != str->totalcount && !xfer->pipe->repeat)
     {
         dprintf (("", "Starting read from callback\n"));
         start_read (str);
@@ -2295,7 +2319,7 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
         if (kill)
         {
             int status;
-            if (str->dying) return;
+            if (str->dying || !str->pipe) return;
             str->dying = 1;
             /* only close these when the device is removed */
             status = usbd_abort_pipe(str->pipe);
@@ -2673,7 +2697,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
                 &mod_messages, cc, 0, &cp);
             return _swix (MessageTrans_ErrorLookup, _INR(0,4),
                 errtoken, &mod_messages, &err, sizeof err, cp);
-        }
+return NULL;        }
         break;
     case DeviceFSCallDevice_USBRequest:
         {
