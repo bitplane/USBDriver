@@ -330,7 +330,7 @@ usb_event_thread(void *arg)
 	 * know how to synchronize the creation of the threads so it
 	 * will work.
 	 */
-	usb_delay_ms(sc->sc_bus, 500);
+	usb_delay_ms(sc->sc_bus, 500);    
 
 	/* Make sure first discover does something. */
 	sc->sc_bus->needs_explore = 1;
@@ -530,7 +530,8 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 #ifdef __riscos
         case USB_DISCOVER:
                 sc->sc_bus->needs_explore = 1;
-                usb_discover(sc);
+                usb_needs_explore_callback (sc->sc_bus);
+//                usb_discover(sc);
                 break;
 #endif
 	case USB_REQUEST:
@@ -698,7 +699,7 @@ usb_discover(void *v)
 {
 	struct usb_softc *sc = v;
 
-	DPRINTFN(2,("usb_discover\n"));
+	DPRINTFN(2,("usb_discover %p\n",v));
 #ifdef USB_DEBUG
 	if (usb_noexplore > 1)
 		return;
@@ -718,6 +719,7 @@ usb_discover(void *v)
 #endif
                   sc->sc_bus->root_hub->hub->explore(sc->sc_bus->root_hub);
 	}
+	DPRINTFN(2,("usb_discover-done %p\n",v));
 }
 
 void

@@ -113,7 +113,7 @@ struct usbd_bus {
 	int 			intr_context;
 	u_int			no_intrs;
 #ifdef __riscos
-        int                     callbacks;
+        unsigned int            callbacks;
 #endif
 	int			usbrev;	/* USB revision */
 #define USBREV_UNKNOWN	0

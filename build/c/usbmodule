@@ -262,6 +262,7 @@ struct sysvar_callback {
 
 static int usbbus_no = 1;
 static int usbdev_no = 1;
+static int maxdev_no = 1;
 
 
 struct devicelist allbuses = TAILQ_HEAD_INITIALIZER(allbuses);
@@ -298,6 +299,7 @@ extern void* resource_files (void);
 /*---------------------------------------------------------------------------*/
 /* functions       declarations                                              */
 /*---------------------------------------------------------------------------*/
+static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h);
 
 static _kernel_oserror *init_handler(_kernel_swi_regs *r, void *pw, void* h)
 {
@@ -305,7 +307,10 @@ static _kernel_oserror *init_handler(_kernel_swi_regs *r, void *pw, void* h)
     _swix (OS_ServiceCall, _INR (0, 1),
         Service_USBDriver_Starting,
         Service_USBDriver);
-
+    /* set up a periodic call to re-discover anything lurking */
+    callx_add_callevery(3000,re_discover,NULL);
+    /* set up a one off call to re-discover anything lurking early */
+    callx_add_callafter(1200,re_discover,NULL);
     return NULL;
 }
 
@@ -342,6 +347,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 
     usbbus_no = 1;
     usbdev_no = 1;
+    maxdev_no = 1;
     extra_quirks = NULL;
 
     /* do this in a callback so that clients can call our SWIs */
@@ -392,9 +398,9 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
         /* do nothing */
     }
 
-    callx_remove_all_callbacks ();
-    callx_remove_all_callafters ();
     callx_remove_all_calleverys ();
+    callx_remove_all_callafters ();
+    callx_remove_all_callbacks ();
 
     _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
     _swix (MessageTrans_CloseFile, _IN(0), &usbdev_messages);
@@ -462,14 +468,16 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
     case Service_DeviceFSStarting:/*attempt to register what we know about*/
         {
           usbdev_no = 1;
+          maxdev_no = 1;
           struct device* dev;
           TAILQ_FOREACH(dev, &allusbdevs, dv_list)
           {
               if (dev)
               {
-                  dev->dv_unit = usbdev_no++;
+                  dev->dv_unit = maxdev_no = usbdev_no++; 
+                  
 dprintf(("","registering %d \n",dev->dv_unit));
-                   RegisterNewDevice( ((struct ugen_softc*) dev),dev->dv_unit);
+                  RegisterNewDevice( ((struct ugen_softc*) dev),dev->dv_unit);
                }
            }
            break;
@@ -477,6 +485,7 @@ dprintf(("","registering %d \n",dev->dv_unit));
     case Service_DeviceFSDying:   /*ensure we've forgotten any linkage*/
         {
           usbdev_no = 1;
+          maxdev_no = 1;
           struct device* dev;
           TAILQ_FOREACH(dev, &allusbdevs, dv_list)
           {
@@ -532,7 +541,7 @@ _kernel_oserror* command_enumerate_devices (void)
 {
     struct usb_device_info di;
     puts("No. Bus Dev Class Description");
-    for (int i = 1; i < usbdev_no; ++i)
+    for (int i = 1; i <= maxdev_no; ++i)
     {
         struct device* dev = get_usbdev (i);
         if (dev != NULL)
@@ -586,14 +595,12 @@ _kernel_oserror* command_enumerate_buses (void)
 }
 
 /*---------------------------------------------------------------------------*/
-
 _kernel_oserror* command_discover (void)
 {
 #ifdef USB_DEBUG
     total_sleep = 0;
 #endif
-
-    for (int i = 1; i < usbbus_no; ++i)
+    for (int i = 1; i <= usbbus_no; ++i)
     {
         if (get_softc (i << 16) != NULL)
             usbioctl (i << 16, USB_DISCOVER, 0, 0, 0);
@@ -601,9 +608,9 @@ _kernel_oserror* command_discover (void)
 #ifdef USB_DEBUG
     dprintf (("", "total sleep = %d\n", total_sleep));
 #endif
-
     return NULL;
 }
+
 
 /*---------------------------------------------------------------------------*/
 
@@ -1002,7 +1009,7 @@ static device_ptr_t register_bus (device_ptr_t bus)
     softc = calloc (usb_ca.ca_devsize, 1);
     if (softc == NULL) return NULL;
     TAILQ_INSERT_TAIL (&allbuses, softc, dv_list);
-    dprintf (("", "adding bus %p\n", bus));
+    dprintf (("", "adding bus %p using %p size %x\n", bus,softc,usb_ca.ca_devsize));
 
     /* abuse the device structure a bit */
     bus->dv_unit = softc->dv_unit = (usbbus_no++);
@@ -1104,6 +1111,30 @@ struct device* get_usbdev (int unit)
 }
 
 /*---------------------------------------------------------------------------*/
+static int rd_active = 0;
+static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h)
+{
+//    struct device* dev;
+    if(rd_active) return NULL;
+    rd_active++;
+    for (int i = 1; i <= usbbus_no; ++i)
+    {
+        if (get_softc (i << 16) != NULL)
+        {
+            dprintf(("","rediscover bus %d\n",i));
+            usbioctl (i << 16, USB_DISCOVER, 0, 0, 0);
+        }
+    }
+//    TAILQ_FOREACH(dev, &allbuses, dv_list)
+//    {
+// dprintf(("","rediscover bus %p, %p \n",dev,&dev->dv_list));
+//        usb_needs_explore_callback (&dev->dv_list);
+//    }
+    rd_active=0;
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
 struct device* riscos_usb_attach
 (
     void* dev,
@@ -1129,7 +1160,20 @@ struct device* riscos_usb_attach
         }
     }
     /* get a number.. dev->dvunit will be 0 if this is the first time through */
-    if(!((usbd_device_handle)dev)->dv_unit) ((usbd_device_handle)dev)->dv_unit = usbdev_no++;
+    if(((usbd_device_handle)dev)->dv_unit == NULL)
+    {
+      int startnum = usbdev_no;
+reloop:
+      usbdev_no++;
+      if (usbdev_no > 999) usbdev_no=1;     /* cycle around mod 1000 */
+      if (usbdev_no > maxdev_no) maxdev_no = usbdev_no;
+      if (get_usbdev (usbdev_no)!=NULL)
+      {
+          if( usbdev_no != startnum) 
+            goto reloop;                    /* not looped yet .. try again */
+      }
+      ((usbd_device_handle)dev)->dv_unit = usbdev_no;
+    }
     ret = attach_device (parent, aux, ((usbd_device_handle)dev)->dv_unit);
     if (ret != NULL)
     {
@@ -1669,13 +1713,15 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
     TAILQ_FOREACH(dev, &allbuses, dv_list)
     {
         /* XXX this is dodgy, because in the case where the OHCIDriver module
-           has removed its memory, 'bus' us no longer a valid pointer, and
+           has removed its memory, 'bus' is no longer a valid pointer, and
            could either cause an abort or accidentally contain a valid usbctl */
+     dprintf(("","dev:%p uctl:%p \n",dev,bus->usbctl));
         if (dev == (struct device*) bus->usbctl)
             goto valid;
     }
 
-    dprintf (("", "bus has been removed\n"));
+    dprintf (("", "bus %p has been removed\n",bus));
+    if(bus) bus->callbacks=0;
     return NULL;
 
 valid:
@@ -1708,14 +1754,14 @@ void usb_needs_explore_callback (void* h) {
 #ifdef USB_DEBUG
     total_sleep = 0;
 #endif
+    if (bus->callbacks>9) bus->callbacks=9;
     if (bus->callbacks++ == 0)
     {
-        dprintf (("", "Adding explore callback\n"));
-        if(bus->callbacks>10) bus->callbacks=10;
+        dprintf (("", "Adding explore callback on bus %p\n",h));
         callx_add_callback (discover_callback, h);
     }
     else
-        dprintf (("", "deferring callback - %d callbacks queued\n", bus->callbacks));
+        dprintf (("", "deferring callback on bus %p - %d callbacks queued\n",bus, bus->callbacks));
 }
 
 /*---------------------------------------------------------------------------*/
