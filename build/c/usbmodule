@@ -212,11 +212,16 @@ char* ccodes []= {
 extern int cold;
 void* private_word = 0;
 
+struct sysvar_callback {
+    struct sysvar_callback* next;
+    char com[];
+}* sysvar_head = NULL;
+
 static int usbbus_no = 1;
 static int usbdev_no = 1;
 
 
-struct devicelist allbusses = TAILQ_HEAD_INITIALIZER(allbusses);
+struct devicelist allbuses = TAILQ_HEAD_INITIALIZER(allbuses);
 struct devicelist allusbdevs = TAILQ_HEAD_INITIALIZER(allusbdevs);
 
 /*---------------------------------------------------------------------------*/
@@ -426,7 +431,7 @@ _kernel_oserror* command_enumerate_devices (void)
 
 /*---------------------------------------------------------------------------*/
 
-_kernel_oserror* command_enumerate_busses ()
+_kernel_oserror* command_enumerate_buses ()
 {
     struct usb_device_stats stats;
     printf ("Transfers (%d buses):\n", usbbus_no-1);
@@ -716,7 +721,7 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
     case CMD_USBDevices:
         return command_enumerate_devices ();
     case CMD_USBBuses:
-        return command_enumerate_busses ();
+        return command_enumerate_buses ();
     case CMD_USBDevInfo:
         return command_dev_info (atoi (arg_string));
     case CMD_USBConfInfo:
@@ -759,7 +764,7 @@ static device_ptr_t register_bus (device_ptr_t bus)
     /* initialise device structure */
     softc = calloc (usb_ca.ca_devsize, 1);
     if (softc == NULL) return NULL;
-    TAILQ_INSERT_TAIL (&allbusses, softc, dv_list);
+    TAILQ_INSERT_TAIL (&allbuses, softc, dv_list);
     dprintf (("", "adding bus %p\n", bus));
 
     /* abuse the device structure a bit */
@@ -785,7 +790,7 @@ static void deregister_bus (device_ptr_t bus)
     dprintf (("", "removing bus %p\n", bus));
     (*usb_ca.ca_detach)(bus, 0);
     dprintf (("", "finished removing bus %p\n", bus));
-    TAILQ_REMOVE (&allbusses, (device_ptr_t) bus, dv_list);
+    TAILQ_REMOVE (&allbuses, (device_ptr_t) bus, dv_list);
     free (bus);
 }
 
@@ -821,7 +826,7 @@ _kernel_oserror *module_swis(int swi_offset, _kernel_swi_regs *r, void *pw)
 struct device* get_softc (int unit)
 {
     struct device* dev;
-    TAILQ_FOREACH(dev, &allbusses, dv_list)
+    TAILQ_FOREACH(dev, &allbuses, dv_list)
     {
         if (dev->dv_unit == ((unit >> 16) & 0xff))
             return dev;
@@ -878,6 +883,18 @@ struct device* riscos_usb_attach
         dprintf (("", "first = %p, last = %p\n",
             allusbdevs.tqh_first, allusbdevs.tqh_last));
         TAILQ_INSERT_TAIL (&allusbdevs, ret, dv_list);
+
+        /* now execute any * commands queued */
+        struct sysvar_callback * sc = sysvar_head;
+        while (sc)
+        {
+            dprintf (("", "executing: %s\n", sc->com));
+            if (_kernel_oscli (sc->com))
+                dprintf (("", "error: %s\n", _kernel_last_oserror ()->errmess));
+            sc = sysvar_head->next;
+            free (sysvar_head);
+            sysvar_head = sc;
+        }
     }
 
     return ret;
@@ -1240,21 +1257,18 @@ match:
     if (aux->ifaceno == UHUB_UNK_INTERFACE)
         sysvar_attach = true;
 
-    char com[
-        -r.r[2] +
-        4 + /* unit number < 999 + space */
-        4   /* iface number < 256 + NULL */
-        ];
+    struct sysvar_callback* sc =
+        malloc (sizeof *sc + -r.r[2] + 4 /*unit*/ + 4 /*ifc*/);
 
-    sprintf (com, "%.*s %d %d %d",
+    sprintf (sc->com, "%.*s %d %d %d",
         -r.r[2],
         ((char*) r.r[3]) + sizeof "Alias$" - 1,
         unit,
         aux->ifaceno,
         ifc->altindex);
 
-    dprintf (("", "executing: %s\n", com));
-    _kernel_oscli (com);
+    sc->next = sysvar_head;
+    sysvar_head = sc;
 
     return 0;
 }
@@ -1378,7 +1392,7 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
 {
     struct usbd_bus* bus = sc;
     struct device* dev;
-    TAILQ_FOREACH(dev, &allbusses, dv_list)
+    TAILQ_FOREACH(dev, &allbuses, dv_list)
     {
         /* XXX this is dodgy, because in the case where the OHCIDriver module
            has removed its memory, 'bus' us no longer a valid pointer, and
@@ -1529,10 +1543,9 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, char* p)
     }
 
     if (vendor == NULL)
-       sprintf(v, "Vendor ID %04X", UGETW(udd->idVendor));
+        sprintf(v, "Vendor ID %04X", UGETW(udd->idVendor));
     if (product == NULL)
-       sprintf(p, "Product ID %04X", UGETW(udd->idProduct));
-
+        sprintf(p, "Product ID %04X", UGETW(udd->idProduct));
 }
 
 /*--------------------------------------------------------------------------*/
@@ -1586,6 +1599,7 @@ static void find_interface_and_endpoint
         case UDESC_ENDPOINT:
             b = (usb_endpoint_descriptor_t *) ptr;
             dprintf (("", "endpoint %x\n", b->bEndpointAddress));
+            dprintf (("", "attributes %x\n", UE_GET_XFERTYPE (b->bmAttributes)));
 
             /* if we've found the requested endpoint, return the interface */
             if (UE_GET_ADDR(b->bEndpointAddress) == endpoint &&

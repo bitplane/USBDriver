@@ -14,8 +14,8 @@
 |
 echo starting build
 dir <obey$dir>
-amu_machine all rom debug COMPONENT=OHCIDriver
+amu_machine all rom debug COMPONENT=USBDriver CFLAGS="-ff -DSTANDALONE"
+amu_machine all rom debug COMPONENT=OHCIDriver CFLAGS="-ff -DSTANDALONE"
 |amu_machine -f MakeEHCID all debug
-amu_machine all rom debug COMPONENT=USBDriver
 |amu_machine -f MakeHUB all
 |amu_machine -f MakeHID all
