@@ -39,6 +39,8 @@
 
 #include "wimplib.h"
 
+#define MagicNoDebounce 0x4e6f4b64
+
 #define NUM_LOCK 0x01
 #define CAPS_LOCK 0x02
 #define SCROLL_LOCK 0x04
@@ -217,8 +219,8 @@ struct device* attach_keyboard (struct device* parent, void* aux)
 
     TAILQ_INSERT_TAIL (&allukbds, softc, link_kb);
 
-    _swix (OS_CallAVector, _INR(0, 1) | _IN(9),
-        KeyV_KeyboardPresent, KeyboardID_PC, KEYV);
+    _swix (OS_CallAVector, _INR(0, 2) | _IN(9),
+        KeyV_KeyboardPresent, KeyboardID_PC , MagicNoDebounce, KEYV);
     dprintf (("", "USB keyboard enabled\n"));
 
     /* set idle rate to 0 */

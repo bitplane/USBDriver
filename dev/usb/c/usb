@@ -517,6 +517,9 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 #endif
 		break;
 #endif /* USB_DEBUG */
+        case USB_DISCOVER:
+                usb_discover(sc);
+                break;
 	case USB_REQUEST:
 	{
 		struct usb_ctl_request *ur = (void *)data;

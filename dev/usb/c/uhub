@@ -184,7 +184,7 @@ USB_ATTACH(uhub)
 	/* Get hub descriptor. */
 	req.bmRequestType = UT_READ_CLASS_DEVICE;
 	req.bRequest = UR_GET_DESCRIPTOR;
-	USETW(req.wValue, 0);
+        USETW2(req.wValue, UDESC_HUB, 0);
 	USETW(req.wIndex, 0);
 	USETW(req.wLength, USB_HUB_DESCRIPTOR_SIZE);
 	DPRINTFN(1,("usb_init_hub: getting hub descriptor\n"));
@@ -497,6 +497,7 @@ uhub_explore(usbd_device_handle dev)
 			logprintf("%s: device problem, disabling port %d\n",
 			       USBDEVNAME(sc->sc_dev), port);
 			usbd_clear_port_feature(dev, port, UHF_PORT_ENABLE);
+			riscos_failed_device (&sc->sc_dev);
 		} else {
 			/* The port set up succeeded, reset error count. */
 			up->restartcnt = 0;

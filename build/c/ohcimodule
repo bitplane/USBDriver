@@ -164,7 +164,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     /* set up debugging */
     debug_initialise ("OHCIDriver", 0, 0);
-    debug_set_device(TML_OUTPUT);
+    debug_set_device(DEBUGIT_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
 
@@ -276,9 +276,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
         return (_kernel_oserror*) "\0\0\0\0Couldn't claim magic";
     }
     dprintf (("", "magic at %p", magic));
-
-    /* enable per-port power control on all ports */
-    ohci_base[OHCI_RH_DESCRIPTOR_B / 4] = 0xFFFF0000;
 
     /* for the L7205, clocks need to be started */
     /* in BSD this is called from sys/pci/ohci_pci.c */
@@ -435,7 +432,8 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             break;
         case Service_USBDriver_Dying:
             dprintf (("", "Deregistering with USB driver\n"));
-            _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+            /* USBDriver will do the deregistering at this point, since
+               it's SWIs are not active anymore */
             usb_soft = NULL;
             memset (&ohci_soft, 0, sizeof ohci_soft);
             sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
@@ -659,7 +657,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
             0, EntryNo_HAL_CounterRead, &u2s1);
         int t = (u2s - u2s1) * 5;
         if (t < 0) t += 10000000; /* it wrapped */
-        if (ohcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
+//        if (ohcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
         irq_tot += t;
         if (t < irq_min) irq_min = t;
         if (t > irq_max) irq_max = t;

@@ -52,13 +52,15 @@ extern struct messages mod_messages;
 
 extern struct cfattach ums_ca;
 
-static int relx = 0, rely = 0, relz = 0;
+static int relx = 0, rely = 0, relz = 0, morebuttons = 0;
 static bool enabled = false;
 
 #define MOUSE_FLAGS_MASK (HIO_CONST|HIO_RELATIVE)
 #define MOUSE_FLAGS (HIO_RELATIVE)
 
 void ums_intr (usbd_xfer_handle xfer, usbd_private_handle addr, usbd_status status);
+
+static int uhidev_maxrepid(void *buf, int len);
 
 struct ums_softc {
         USBBASEDEVICE sc_dev;           /* base device */
@@ -105,7 +107,7 @@ extern void remove_all_mice (void)
 static int match_mouse (struct usb_attach_arg *uaa)
 {
         usb_interface_descriptor_t *id;
-        int size, ret;
+        int size, ret, nrepid, repid;
         void *desc;
         usbd_status err;
 
@@ -126,11 +128,18 @@ static int match_mouse (struct usb_attach_arg *uaa)
                 return (UMATCH_NONE);
         }
 
-        if (hid_is_collection(desc, size, 0,
+        nrepid = uhidev_maxrepid(desc, size);
+
+        ret = UMATCH_NONE;
+        for (repid = 0; repid <= nrepid; repid++)
+        {
+            if (hid_is_collection(desc, size, repid,
                               HID_USAGE2(HUP_GENERIC_DESKTOP, HUG_MOUSE)))
+            {
                 ret = UMATCH_IFACECLASS;
-        else
-                ret = UMATCH_NONE;
+            }
+        }
+
 
         free(desc);
         dprintf (("", "ums attach returning: %d\n", ret));
@@ -147,7 +156,7 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
         usbd_status err;
         char devinfo[1024];
         u_int32_t flags, quirks;
-        int i, wheel;
+        int i, wheel, repid, nrepid;
         struct hid_location loc_btn;
 
         sc->sc_udev = uaa->device;
@@ -190,8 +199,18 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
         if (err)
                 USB_ATTACH_ERROR_RETURN;
 
+        nrepid = uhidev_maxrepid(desc, size);
+        for (repid = 0; repid <= nrepid; repid++)
+        {
+            if (hid_is_collection(desc, size, repid,
+                              HID_USAGE2(HUP_GENERIC_DESKTOP, HUG_MOUSE)))
+            {
+              sc->sc_iid = repid;
+            }
+        }
+
         if (!hid_locate(desc, size, HID_USAGE2(HUP_GENERIC_DESKTOP, HUG_X),
-                       0, hid_input, &sc->sc_loc_x, &flags)) {
+                       sc->sc_iid, hid_input, &sc->sc_loc_x, &flags)) {
                 logprintf("%s: mouse has no X report\n", USBDEVNAME(sc->sc_dev));
                 USB_ATTACH_ERROR_RETURN;
         }
@@ -202,7 +221,7 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
         }
 
         if (!hid_locate(desc, size, HID_USAGE2(HUP_GENERIC_DESKTOP, HUG_Y),
-                       0, hid_input, &sc->sc_loc_y, &flags)) {
+                       sc->sc_iid, hid_input, &sc->sc_loc_y, &flags)) {
                 logprintf("%s: mouse has no Y report\n", USBDEVNAME(sc->sc_dev));
                 USB_ATTACH_ERROR_RETURN;
         }
@@ -215,10 +234,10 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
         /* Try to guess the Z activator: first check Z, then WHEEL. */
         wheel = 0;
         if (hid_locate(desc, size, HID_USAGE2(HUP_GENERIC_DESKTOP, HUG_Z),
-                       0, hid_input, &sc->sc_loc_z, &flags) ||
+                       sc->sc_iid, hid_input, &sc->sc_loc_z, &flags) ||
             (wheel = hid_locate(desc, size, HID_USAGE2(HUP_GENERIC_DESKTOP,
                                                        HUG_WHEEL),
-                       0, hid_input, &sc->sc_loc_z, &flags))) {
+                       sc->sc_iid, hid_input, &sc->sc_loc_z, &flags))) {
                 if ((flags & MOUSE_FLAGS_MASK) != MOUSE_FLAGS) {
                         sc->sc_loc_z.size = 0;  /* Bad Z coord, ignore it */
                 } else {
@@ -232,7 +251,7 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
         /* figure out the number of buttons */
         for (i = 1; i <= MAX_BUTTONS; i++)
                 if (!hid_locate(desc, size, HID_USAGE2(HUP_BUTTON, i),
-                                0, hid_input, &loc_btn, 0))
+                                sc->sc_iid, hid_input, &loc_btn, 0))
                         break;
         sc->nbuttons = i - 1;
         sc->sc_loc_btn = malloc(sizeof(struct hid_location)*sc->nbuttons);
@@ -246,9 +265,9 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 
         for (i = 1; i <= sc->nbuttons; i++)
                 hid_locate(desc, size, HID_USAGE2(HUP_BUTTON, i),
-                                0, hid_input, &sc->sc_loc_btn[i-1], 0);
+                                sc->sc_iid, hid_input, &sc->sc_loc_btn[i-1], 0);
 
-        sc->sc_isize = hid_report_size(desc, size, hid_input, 0);
+        sc->sc_isize = hid_report_size(desc, size, hid_input, sc->sc_iid);
         sc->sc_ibuf = malloc(sc->sc_isize);
         if (sc->sc_ibuf == NULL) {
                 logprintf("%s: no memory\n", USBDEVNAME(sc->sc_dev));
@@ -338,11 +357,11 @@ struct device* attach_mouse (struct device* parent, void* aux)
 int detach_mouse (struct device* ms)
 {
     struct ums_softc* sc= (struct ums_softc*) ms;
-    int rv;
+    dprintf (("", "detaching mouse, buttons = %x\n", sc->sc_buttons));
     usbd_abort_pipe(sc->sc_intrpipe);
     usbd_close_pipe(sc->sc_intrpipe);
+    dprintf (("", "aborted pipe\n"));
 
-    dprintf (("", "detaching mouse, buttons = %x", sc->sc_buttons));
 
     if (sc->sc_buttons & 1) {
         dprintf (("", "releaseing 1\n"));
@@ -364,11 +383,10 @@ int detach_mouse (struct device* ms)
 
     TAILQ_REMOVE (&allums, sc, link_ms);
 
-    if (rv == 0) {
-        free(sc->sc_loc_btn);
-        free(sc->sc_ibuf);
-    }
+    free(sc->sc_loc_btn);
+    free(sc->sc_ibuf);
     free (ms);
+    dprintf (("", "mouse detached\n"));
     return 0;
 }
 
@@ -433,22 +451,40 @@ static _kernel_oserror *zscroll_handler
     void *              h
 )
 {
+    int b[64];
+
     (void) r;
     (void) pw;
     (void) h;
 
-    while (relz != 0)
+    _swix (Wimp_GetPointerInfo, _IN(1), b);
+    b[0] = b[3];
+    if(relz && !_swix (Wimp_GetWindowState, _IN(1), b)) // valid window handle
     {
-        int b[64];
-        _swix (Wimp_GetPointerInfo, _IN(1), b);
-        b[0] = b[3];
-        _swix (Wimp_GetWindowState, _IN(1), b);
-        b[8] = 0;
-        b[9] = relz > 0? -1: 1;
-        relz += relz > 0? -1: 1;
-        _swix (Wimp_SendMessage, _INR(0,2), 10, b, b[0]);
+      /* does it do scroll requests? */
+      if (b[8] & ((1<<8)|(1<<9)))
+      {
+          b[8] = 0;
+          b[9] = relz > 0? -1: 1;
+          relz*=5; // a bit more movement...
+          while (relz != 0)
+          {
+              relz += relz > 0? -1: 1;
+              _swix (Wimp_SendMessage, _INR(0,2), 10, b, b[0]);
+          }
+      }
+      else
+      {     // give it to a wimpscroll module
+#define PointerReason_WheelChange 9
+         _swix (OS_CallAVector, _INR(0,3) | _IN(9),
+                 PointerReason_WheelChange,    // wheel change reason
+                 relz,                         // main wheel value
+                 morebuttons,                  // any additional buttons
+                 0,                            // extra wheel (not supp yet)
+                 PointerV);
+         relz=0;
+      }
     }
-
     return NULL;
 }
 
@@ -473,6 +509,10 @@ void ums_intr
         return;
     }
 
+    /* only respond to our report, and skip the report number */
+    if (sc->sc_iid && *ibuf++ != sc->sc_iid)
+      return;
+
     dx = hid_get_data(ibuf, &sc->sc_loc_x);
     dy = -hid_get_data(ibuf, &sc->sc_loc_y);
     dz =  hid_get_data(ibuf, &sc->sc_loc_z);
@@ -480,7 +520,11 @@ void ums_intr
         dz = -dz;
     relx += dx;
     rely += dy;
-    relz += 5 * dz; /* 5 makes things move a bit faster */
+    relz += dz; 
+    for (i = 0; i < sc->nbuttons; i++)
+        if (hid_get_data(ibuf, &sc->sc_loc_btn[i]))
+            b |= (1 << i);
+            
     if (enabled)
     {
         _swix(OS_CallAVector, _INR(0,3) | _IN(9),
@@ -489,13 +533,11 @@ void ums_intr
                           PointerV);
         if (relz != 0)
         {
+            morebuttons = b>>3;
             callx_add_callback (zscroll_handler, 0);
         }
     }
 
-    for (i = 0; i < sc->nbuttons; i++)
-        if (hid_get_data(ibuf, &sc->sc_loc_btn[i]))
-            b |= (1 << i);
 
 #ifdef USB_DEBUG
     if (umsdebug > 5) dprintf(("",
@@ -517,6 +559,10 @@ void ums_intr
 
             if (change & 4) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
                 (b & 4)? KeyV_KeyDown: KeyV_KeyUp, KeyNo_CentreMouse, KEYV);
+
+            /* make the next button replicate menu */
+            if (change & 8) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
+                (b & 8)? KeyV_KeyDown: KeyV_KeyUp, KeyNo_CentreMouse, KEYV);
         }
     }
 }
@@ -526,4 +572,20 @@ int wsmousedevprint (void * v, const char * c)
     (void) v;
     (void) c;
     return 0;
+}
+
+int
+uhidev_maxrepid(void *buf, int len)
+{
+	struct hid_data *d;
+	struct hid_item h;
+	int maxid;
+
+	maxid = -1;
+	h.report_ID = 0;
+	for (d = hid_start_parse(buf, len, hid_none); hid_get_item(d, &h); )
+		if (h.report_ID > maxid)
+			maxid = h.report_ID;
+	hid_end_parse(d);
+	return (maxid);
 }

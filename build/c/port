@@ -245,10 +245,10 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 {
     int i;
     int s = _kernel_irqs_disabled ();
-    _kernel_irqs_on ();
-
-
     uint64_t t0, t1, t2;
+
+    _kernel_irqs_off ();                       // lets play safe
+
     t1 = t0 = gettime();
     t1 += ((uint64_t) timo) * 1000000;
 
@@ -281,13 +281,15 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 
     /* wait until the lock is free */
     int flags = 0;
+
+    _kernel_irqs_on ();
     if (timo) {
         do {
             triggercbs ();
             t2 = gettime ();
             _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
-        while (t_locks[i] == 0 && t2 < t1 && (flags & _C) == 0);
+        while ((t_locks[i] == 0) && (t2 < t1) && ((flags & _C) == 0));
     }
     else
     {
@@ -301,6 +303,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
         }
         t2 = gettime ();
     }
+    _kernel_irqs_off ();
 
     if (flags & _C)
     {
@@ -337,8 +340,11 @@ int wakeup (void* ident) {
     for (i = 0; i < nhandles && t_handles[i] != ident; ++i);
 
     /* unlock it */
-    if (t_handles[i] == ident) t_locks[i] = 1;
-
+    if (t_handles[i] == ident)
+    {
+      t_locks[i] = 1;
+      t_handles[i] =NULL;
+    }  
     return 0;
 }
 

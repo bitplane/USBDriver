@@ -61,7 +61,7 @@ typedef struct usb_hid_descriptor {
 	uByte		bCountryCode;
 	uByte		bNumDescriptors;
 
-#ifdef __riscos
+#if defined(__CC_NORCROFT) && defined(DISABLE_PACKED)
         uByte         bHIDDescriptorType;
         uWord           wDescriptorLength;
 #else

@@ -305,7 +305,8 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         break;
     case Service_USBDriver_Dying:
         dprintf (("", "Deregistering with USB driver\n"));
-        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+        /* USBDriver will do the deregistering at this point, since
+           it's SWIs are not active anymore */
         usb_soft = NULL;
         memset (&ehci_soft, 0, sizeof ehci_soft);
         sprintf (ehci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);

@@ -151,10 +151,12 @@ void
 usbd_dump_queue(usbd_pipe_handle pipe)
 {
 	usbd_xfer_handle xfer;
-
 	logprintf("usbd_dump_queue: pipe=%p\n", pipe);
-	SIMPLEQ_FOREACH(xfer, &pipe->queue, next) {
-		logprintf("  xfer=%p\n", xfer);
+        if(pipe)
+        {
+	  SIMPLEQ_FOREACH(xfer, &pipe->queue, next) {
+	  	logprintf("  xfer=%p\n", xfer);
+	  }
 	}
 }
 
@@ -263,17 +265,19 @@ usbd_close_pipe(usbd_pipe_handle pipe)
 		return (USBD_NORMAL_COMPLETION);
 	}
 #endif
-
-	if (--pipe->refcnt != 0)
-		return (USBD_NORMAL_COMPLETION);
-	if (! SIMPLEQ_EMPTY(&pipe->queue))
-		return (USBD_PENDING_REQUESTS);
-	LIST_REMOVE(pipe, next);
-	pipe->endpoint->refcnt--;
-	pipe->methods->close(pipe);
-	if (pipe->intrxfer != NULL)
-		usbd_free_xfer(pipe->intrxfer);
-	free(pipe, M_USB);
+        if(pipe)
+        {
+	  if (--pipe->refcnt != 0)
+	  	return (USBD_NORMAL_COMPLETION);
+	  if (! SIMPLEQ_EMPTY(&pipe->queue))
+	  	return (USBD_PENDING_REQUESTS);
+	  LIST_REMOVE(pipe, next);
+	  pipe->endpoint->refcnt--;
+	  pipe->methods->close(pipe);
+	  if (pipe->intrxfer != NULL)
+	  	usbd_free_xfer(pipe->intrxfer);
+	  free(pipe, M_USB);
+	}
 	return (USBD_NORMAL_COMPLETION);
 }
 
@@ -287,7 +291,7 @@ usbd_transfer(usbd_xfer_handle xfer)
 	int s;
 
 	DPRINTFN(5,("usbd_transfer: xfer=%p, flags=%d, pipe=%p, running=%d\n",
-		    xfer, xfer->flags, pipe, pipe->running));
+		    xfer, xfer->flags, pipe, pipe?pipe->running:0));
 #ifdef USB_DEBUG
 	if (usbdebug > 5)
 		usbd_dump_queue(pipe);
@@ -343,7 +347,7 @@ usbd_transfer(usbd_xfer_handle xfer)
 	if (!(xfer->flags & USBD_SYNCHRONOUS))
 		return (err);
 
-        logprintf ("synch transfer\n");
+//        logprintf ("synch transfer\n");
 	/* Sync transfer, wait for completion. */
 	if (err != USBD_IN_PROGRESS)
 		return (err);
@@ -444,6 +448,7 @@ usbd_setup_xfer(usbd_xfer_handle xfer, usbd_pipe_handle pipe,
 		u_int16_t flags, u_int32_t timeout,
 		usbd_callback callback)
 {
+        DPRINTF(("xfer %p threaded onto pipe %p\n", xfer, pipe));
 	xfer->pipe = pipe;
 	xfer->priv = priv;
 	xfer->buffer = buffer;
@@ -747,7 +752,7 @@ usbd_get_interface(usbd_interface_handle iface, u_int8_t *aiface)
 Static usbd_status
 usbd_ar_pipe(usbd_pipe_handle pipe)
 {
-	usbd_xfer_handle xfer;
+	usbd_xfer_handle xfer, oxfer = NULL;
 
 	SPLUSBCHECK;
 
@@ -756,16 +761,29 @@ usbd_ar_pipe(usbd_pipe_handle pipe)
 	if (usbdebug > 5)
 		usbd_dump_queue(pipe);
 #endif
-	pipe->repeat = 0;
-	pipe->aborting = 1;
-	while ((xfer = SIMPLEQ_FIRST(&pipe->queue)) != NULL) {
-		DPRINTFN(2,("usbd_ar_pipe: pipe=%p xfer=%p (methods=%p)\n",
-			    pipe, xfer, pipe->methods));
-		/* Make the HC abort it (and invoke the callback). */
-		pipe->methods->abort(xfer);
-		/* XXX only for non-0 usbd_clear_endpoint_stall(pipe); */
-	}
-	pipe->aborting = 0;
+        if (pipe)
+        {
+	  pipe->repeat = 0;
+	  pipe->aborting = 1;
+	  while ((xfer = SIMPLEQ_FIRST(&pipe->queue)) != NULL) {
+	  	DPRINTFN(2,("usbd_ar_pipe: pipe=%p xfer=%p (methods=%p)\n",
+	  		    pipe, xfer, 0/*pipe->methods*/));
+	  	if (xfer == oxfer)
+	  	{
+	  	  DPRINTF(("xfer hasn't changed: %p\n", SIMPLEQ_FIRST(&pipe->queue)));
+	  	  break;
+	  	}
+	          oxfer = xfer;
+//	          usbdebug = 10;
+	  	/* Make the HC abort it (and invoke the callback). */
+	  	DPRINTF(("pipe %p\n", pipe));
+	  	pipe->methods->abort(xfer);
+	  	DPRINTF(("first now: %p\n", SIMPLEQ_FIRST(&pipe->queue)));
+//	  	usbdebug = 5;
+	  	/* XXX only for non-0 usbd_clear_endpoint_stall(pipe); */
+	  }
+	  pipe->aborting = 0;
+	}  
 	return (USBD_NORMAL_COMPLETION);
 }
 

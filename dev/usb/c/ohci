@@ -999,14 +999,14 @@ ohci_freex(struct usbd_bus *bus, usbd_xfer_handle xfer)
 {
 	struct ohci_softc *sc = (struct ohci_softc *)bus;
 
-//#ifdef DIAGNOSTIC
-//	if (xfer->busy_free != XFER_BUSY) {
-//		logprintf("ohci_freex: xfer=%p not busy, 0x%08x\n", xfer,
-//		       xfer->busy_free);
-//		return;
-//	}
-//	xfer->busy_free = XFER_FREE;
-//#endif
+#ifdef DIAGNOSTIC
+	if (xfer->busy_free != XFER_BUSY) {
+		logprintf("ohci_freex: xfer=%p not busy, 0x%08x\n", xfer,
+		       xfer->busy_free);
+		return;
+	}
+	xfer->busy_free = XFER_FREE;
+#endif
 	SIMPLEQ_INSERT_HEAD(&sc->sc_free_xfers, xfer, next);
 }
 
@@ -1179,7 +1179,17 @@ ohci_intr1(ohci_softc_t *sc)
 		if (done & ~OHCI_DONE_INTRS)
 			intrs = OHCI_WDH;
 		if (done & OHCI_DONE_INTRS)
+                {
+#if defined(__riscos) && defined (OHCI_DEBUG)
+                /* turn of debugging while clearing shared interrupt */
+                temp_debug = ohcidebug;
+                ohcidebug = 0;
+#endif
 			intrs |= OREAD4(sc, OHCI_INTERRUPT_STATUS);
+#if defined(__riscos) && defined (OHCI_DEBUG)
+                ohcidebug = temp_debug;
+#endif
+                }
 		sc->sc_hcca->hcca_done_head = 0;
 	} else {
 #if defined(__riscos) && defined (OHCI_DEBUG)
@@ -1461,7 +1471,6 @@ ohci_softintr(void *v)
 			/* Handled by abort routine. */
 			continue;
 		}
-		usb_uncallout(xfer->timeout_handle, ohci_timeout, xfer);
 		cc = OHCI_TD_GET_CC(le32toh(std->td.td_flags));
 		if (cc == OHCI_CC_NO_ERROR) {
 			len = std->len;
@@ -1478,6 +1487,9 @@ ohci_softintr(void *v)
 				usb_transfer_complete(xfer);
 				splx(s);
 			}
+			if (std->flags & OHCI_CALL_DONE)
+				usb_uncallout(xfer->timeout_handle,
+				               ohci_timeout, xfer);
 			ohci_free_std(sc, std);
 		} else {
 			/*
@@ -1512,6 +1524,7 @@ ohci_softintr(void *v)
 			s = splusb();
 			usb_transfer_complete(xfer);
 			splx(s);
+			usb_uncallout(xfer->timeout_handle, ohci_timeout, xfer);
 		}
 	}
 
@@ -2487,7 +2500,10 @@ ohci_abort_xfer(usbd_xfer_handle xfer, usbd_status status)
 	/*
 	 * Step 5: Execute callback.
 	 */
+	logprintf("before complete: %p\n", SIMPLEQ_FIRST(&xfer->pipe->queue));
+
 	usb_transfer_complete(xfer);
+	logprintf("after complete: %p\n", SIMPLEQ_FIRST(&xfer->pipe->queue));
 
 	splx(s);
 }
@@ -2609,12 +2625,13 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 #endif
 	req = &xfer->request;
 
-	DPRINTFN(4,("ohci_root_ctrl_control type=0x%02x request=%02x\n",
+	DPRINTFN(4,("ohci_root_ctrl_control type=0x%02x request=0x%02x\n",
 		    req->bmRequestType, req->bRequest));
 
 	len = UGETW(req->wLength);
 	value = UGETW(req->wValue);
 	index = UGETW(req->wIndex);
+	DPRINTFN(4, ("value=0x%04x\n", value));
 
 	if (len != 0)
 		buf = KERNADDR(&xfer->dmabuf, 0);
@@ -2785,7 +2802,7 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 		}
 		break;
 	case C(UR_GET_DESCRIPTOR, UT_READ_CLASS_DEVICE):
-		if (value != 0) {
+		if (value & 0xff != 0) {
 			err = USBD_IOERROR;
 			goto ret;
 		}
@@ -3280,7 +3297,11 @@ ohci_device_intr_abort(usbd_xfer_handle xfer)
 		DPRINTF(("ohci_device_intr_abort: remove\n"));
 		xfer->pipe->intrxfer = NULL;
 	}
+	/* DRE Sun 15th February 2004 */
+	/* turn off repeat, so that xfer is dequeued */
+	xfer->pipe->repeat = 0;
 	ohci_abort_xfer(xfer, USBD_CANCELLED);
+	logprintf("first now: %p\n", SIMPLEQ_FIRST(&xfer->pipe->queue));
 }
 
 /* Close a device interrupt pipe. */

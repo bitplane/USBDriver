@@ -23,6 +23,8 @@
 
 #include "Global/RISCOS.h"
 #include "Global/Services.h"
+#include "Global/UpCall.h"
+#include "Global/FSNumbers.h"
 
 #include <sys/callout.h>
 #include <sys/ioctl.h>
@@ -108,7 +110,8 @@ struct devstream {
     int timeout;
     int size;
     int bandwidth; /* isochronous bandwidth */
-    int resiude;
+    int residue;
+    int dying;
     struct isoc_buffer * isoc;
 };
 
@@ -141,6 +144,7 @@ struct iface_softc {
 #define E_NoStream      "\x07\x90\x81\x00" "NoStream"
 #define E_BadRequest    "\x08\x90\x81\x00" "BadRequest"
 #define E_NotRootP      "\x09\x90\x81\x00" "NotRootP"
+#define E_BadDevice     "\x0A\x90\x81\x00" "BadDevice"
 #define E_XferFailed    "\x20\x90\x81\x00" "XferFailed"
 
 #define USBDEV_MESSAGES "Resources:$.Resources.USBDriver.USBDevs"
@@ -157,6 +161,15 @@ messages usbdev_messages = { .filename = USBDEV_MESSAGES };
 _kernel_oserror* uerror (char* e)
 {
     return _swix (MessageTrans_ErrorLookup, _INR(0,2), e, &mod_messages.fd, 0);
+}
+
+void riscos_failed_device (void* p)
+{
+    _kernel_oserror* e;
+    (void) p;
+    e = uerror (E_BadDevice);
+    _swix (OS_UpCall, _INR(0,6), UpCall_MediaNotPresent, fsnumber_DeviceFS,
+        -1, -1, 0, 0x7fffffff, e->errmess);
 }
 
 _kernel_oserror* messages_update (messages* mess)
@@ -200,7 +213,7 @@ extern struct cfattach uhub_uhub_ca;
 
 /* for debugging */
 #ifdef USB_DEBUG
-extern int usbdebug, uhubdebug;
+extern int usbdebug, uhubdebug, uhidevdebug;
 extern int total_sleep;
 #endif
 #ifdef DEBUGLIB
@@ -228,7 +241,6 @@ char* ccodes []= {
 
 extern int cold;
 void* private_word = 0;
-//int mouseactive = 0;
 
 struct sysvar_callback {
     struct sysvar_callback* next;
@@ -309,6 +321,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 #ifdef USB_DEBUG
     usbdebug = atoi(getenv("usbdebug"));
     uhubdebug = atoi(getenv("uhubdebug"));
+    uhidevdebug = atoi(getenv("uhidevdebug"));
 #endif
 
     usbbus_no = 1;
@@ -318,9 +331,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
     callx_add_callback (init_handler, 0);
 
     _swix (OS_Claim, _INR(0,2), PointerV, pointerv_entry, pw);
-
-//    /* turn on the hourglass until the mouse is active */
-//    _swix (Hourglass_On, 0);
 
     return 0;
 #ifndef STANDALONE
@@ -340,20 +350,25 @@ struct cfattach ugen_ca = {
 
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
+    clock_t t;
+
+    struct device* dev;
+    TAILQ_FOREACH(dev, &allbuses, dv_list)
+    {
+        (*usb_ca.ca_detach)(dev, 0);
+        free (dev);
+    }
+
     /* issue a service call to request any running HCDs can object */
     _swix (OS_ServiceCall, _INR (0, 1),
         Service_USBDriver_Dying, Service_USBDriver);
 
+
     _swix (OS_Release, _INR(0,2), PointerV, pointerv_entry, pw);
     _swix (OS_Release, _INR(0,2), KEYV, keyv_entry, pw);
 
-    /* tell the devices to remove themselves */
-    struct device* dev;
-    char var[sizeof "DeviceFS$USBnnn$Options"];
-    TAILQ_FOREACH(dev, &allusbdevs, dv_list)
-    {
-        config_detach (dev, 0 /* number doesn't matter */);
-    }
+    /* devices will all get removed as buses remove themselves from the
+       above service call */
 
     /* get rid of the system variables */
     while (_swix (OS_SetVarVal, _INR(0,4), "USB$Device_*", 0, -1, 0, 0) == NULL)
@@ -455,6 +470,11 @@ _kernel_oserror* command_enumerate_devices (void)
                 di.udi_product);
         }
     }
+#ifdef USB_DEBUG
+    printf ("usbdebug %d\n", usbdebug);
+    printf ("uhidevdebug %d\n", uhidevdebug);
+    printf ("uhubdebug %d\n", uhubdebug);
+#endif
     return 0;
 }
 
@@ -671,17 +691,18 @@ _kernel_oserror* command_conf_info (int n)
         case UDESC_HID:
         {
             usb_hid_descriptor_t * d = (usb_hid_descriptor_t *) ptr;
-            ddumpbuf("", d, d->bLength, 0);
-            ddumpbuf("", d, sizeof *d, 0);
-            printf ("HID%X descriptors,  Country %X\n",
-                UGETW(d->bcdHID), d->bCountryCode);
-#ifdef __riscos
-            /* RISC OS can't handle packed structures, so we only cope
-               with one report */
+            ddumpbuf("", (void*) d, d->bLength, 0);
+            ddumpbuf("", (void*) d, sizeof *d, 0);
+            printf ("%d HID%X descriptors,  Country %X\n",
+                d->bNumDescriptors, UGETW(d->bcdHID), d->bCountryCode);
+#if defined(__CC_NORCROFT) && defined(DISABLE_PACKED)
+            /* handle in a rather horrible way */
+            for (int i = 0; i < d->bNumDescriptors; ++i)
             {
                 printf ("    Type %X, length %d\n",
                     d->bHIDDescriptorType,
                     UGETW (d->wDescriptorLength));
+                d = (usb_hid_descriptor_t *) (((char*) d) + 3);
             }
 #else
             for (int i = 0; i < d->bNumDescriptors; ++i)
@@ -751,6 +772,7 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
         {
         char* ptr;
         usbdebug = (int) strtoul (arg_string, &ptr, 0);
+        uhidevdebug = usbdebug;
         if (ptr) uhubdebug = (int) strtoul (ptr, &ptr, 0);
         }
         break;
@@ -927,11 +949,6 @@ struct device* riscos_usb_attach
     {
         if ((ret = (*f) (parent, aux)) != NULL)
         {
-//          if (!mouseactive)
-//          {
-//             mouseactive = 1;
-//             _swix (Hourglass_Off, 0);
-//          }
           return ret;
         }
     }
@@ -942,6 +959,7 @@ struct device* riscos_usb_attach
         ret->dv_unit = usbdev_no++;
         dprintf (("", "first = %p, last = %p\n",
             allusbdevs.tqh_first, allusbdevs.tqh_last));
+        /* insert at head, so that iteration starts with last added */
         TAILQ_INSERT_TAIL (&allusbdevs, ret, dv_list);
 
         /* now execute any * commands queued */
@@ -1333,7 +1351,7 @@ static int launch_system_variable (struct usb_attach_arg* aux, int unit)
             }
         }
         _kernel_swi_regs r = {{ (int) str, 0, -1, 0, 0 }};
-        _kernel_oserror* e = _kernel_swi (OS_ReadVarVal, &r, &r);
+        _kernel_swi (OS_ReadVarVal, &r, &r);
         len = r.r[2];
         name = (char*) r.r[3];
         if (len) goto match;
@@ -1502,18 +1520,24 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
     return NULL;
 
 valid:
-//    _swix (Hourglass_On, 0);
+#ifdef STANDALONE
+    _swix (Hourglass_On, 0);
+    _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
+#endif
     do {
-//        _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
         usb_discover (bus->usbctl);
-//        _swix (Hourglass_LEDs, _INR(0,1), 2, 0);
+#ifdef STANDALONE
+        _swix (Hourglass_LEDs, _INR(0,1), 3, 3);
+#endif
     } while (--bus->callbacks);
     #ifdef USB_DEBUG
     dprintf (("", "finished callbacks, total sleep = %d\n", total_sleep));
     #else
     dprintf (("", "finished callbacks\n"));
     #endif
-//    _swix (Hourglass_Off, 0);
+#ifdef STANDALONE
+    _swix (Hourglass_Off, 0);
+#endif
     return NULL;
 }
 
@@ -1701,25 +1725,25 @@ typedef struct device_valid {
 static void find_interface_and_endpoint
 (
     usbd_device_handle  dev,
-    uint32_t            endpoint,
-    uint32_t            iface,
-    uint32_t            type,
+    device_valid *      valid,
     uint32_t            dir,
     int*                iface_return,
+    int*                alternate_return,
     int*                endpoint_return
 )
 {
-    int                             i;
+    int                             i, j;
     usb_interface_descriptor_t *    d;
     usb_endpoint_descriptor_t *     b;
 
-    if (type == 0xdeaddead)
+    if (valid->ep_type == 0xdeaddead)
     {
-        type = UE_BULK;
+        valid->ep_type = UE_BULK;
     }
 
-    dprintf (("", "looking for %x, iface %x, type %x, dir %x\n",
-        endpoint, iface, type, dir));
+    dprintf (("", "looking for %x, iface %d, alt %d, type %x, dir %x\n",
+        valid->endpoint, valid->interface, valid->alternate,
+        valid->ep_type, dir));
 
     usb_config_descriptor_t * cdesc = dev->cdesc;
     char* ptr = (char*) cdesc, *ptr_end = ptr + UGETW(cdesc->wTotalLength);
@@ -1731,6 +1755,7 @@ static void find_interface_and_endpoint
         case UDESC_INTERFACE:
             d = (usb_interface_descriptor_t*) ptr;
             i = d->bInterfaceNumber;
+            j = d->bAlternateSetting;
             dprintf (("", "interface %d\n", i));
             break;
         case UDESC_ENDPOINT:
@@ -1739,7 +1764,7 @@ static void find_interface_and_endpoint
             dprintf (("", "attributes %x\n", UE_GET_XFERTYPE (b->bmAttributes)));
 
             /* if we've found the requested endpoint, return the interface */
-            if (UE_GET_ADDR(b->bEndpointAddress) == endpoint &&
+            if (UE_GET_ADDR(b->bEndpointAddress) == valid->endpoint &&
                 ((dir & 1) << 7) != UE_GET_DIR(b->bEndpointAddress))
             {
                 *iface_return = i;
@@ -1750,14 +1775,16 @@ static void find_interface_and_endpoint
             /* if no endpoint was requested, see if the type matches (if given)
                and the direction and the interface (if given) */
             else if (
-                (iface == i || iface == 0xdeaddead) &&
-                (endpoint == 0xdeaddead) &&
-                (type == UE_GET_XFERTYPE (b->bmAttributes)) &&
+                (valid->interface == i || valid->interface == 0xdeaddead) &&
+                (valid->endpoint == 0xdeaddead) &&
+                (valid->ep_type == UE_GET_XFERTYPE (b->bmAttributes)) &&
                 /* bit is set for TX, whereas USB is set for IN */
-                (((dir & 1) << 7) != UE_GET_DIR(b->bEndpointAddress))
+                (((dir & 1) << 7) != UE_GET_DIR(b->bEndpointAddress)) &&
+                (valid->alternate == j || valid->alternate == 0xdeaddead)
             )
             {
                 *iface_return = i;
+                *alternate_return = j;
                 *endpoint_return = b->bEndpointAddress;
                 return;
             }
@@ -1767,6 +1794,7 @@ static void find_interface_and_endpoint
     }
     dprintf (("", "couldn't find an endpoint\n"));
     *iface_return = (int) 0xdeaddead;
+    *alternate_return = (int) 0xdeaddead;
     *endpoint_return = (int) 0xdeaddead;
     return;
 }
@@ -1785,6 +1813,7 @@ static _kernel_oserror* device_initialise
     int ep;
     int err;
     int iface;
+    int alt = 0;
     int index = -1;
     _kernel_oserror* e = NULL;
     dprintf (("", "device_initialise: flags = %x, fs_stream = %x\n",
@@ -1813,20 +1842,15 @@ static _kernel_oserror* device_initialise
     /* usb timeout, used for transfers */
     str->timeout = valid->timeout;
 
-    /* force an interface alternate */
-    if (valid->alternate != 0xdeaddead)
-        usbd_set_interface(str->iface, valid->alternate);
-
     /* see if an interface was specified, if not then look for the interface
        with the endpoint specified */
     find_interface_and_endpoint
     (
         ugen->sc_udev,
-        valid->endpoint,
-        valid->interface,
-        valid->ep_type,
+        valid,
         flags,
         &iface,
+        &alt,
         &ep
     );
     dprintf (("", "found interface %x, endpoint %x\n", iface, ep));
@@ -1843,6 +1867,10 @@ static _kernel_oserror* device_initialise
         e = uerror (E_NoInterface);
         goto error;
     }
+
+    /* force an interface alternate */
+    if (alt != 0)
+        usbd_set_interface(str->iface, alt);
 
 
     str->ep = ep;
@@ -1896,6 +1924,7 @@ detach_done:
         str->next_hid = ugen->str[index];
         ugen->str[index] = str;
         str->fs_stream = devicefs_handle;
+        str->pipe = str->next_hid->pipe; // record pipe so that we find endpoint description
         *stream_handle = str;
         return NULL;
     }
@@ -2108,7 +2137,6 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 
 void fill_isoc_xfer (struct devstream* str, int maxpacket)
 {
-    int size;
     str->size = maxpacket;
     str->xfer->actlen = 0;
     usbd_setup_isoc_xfer(
@@ -2245,16 +2273,11 @@ end:
 
 void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill)
 {
-    static int reentry = 0;
-    dprintf (("", "terminate stream %p, ep %x, kill = %d, reentry = %d\n",
-        str, str->ep, kill, reentry));
-    if (reentry)
-      return;
-    reentry = 1;
+    dprintf (("", "terminate stream %p, ep %x, kill = %d\n",
+        str, str?str->ep:0, kill));
 
     if (str == NULL)
     {
-        reentry = 0;
         return;
     }
 
@@ -2263,7 +2286,6 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
     /* don't remove stream twice! */
     if (ugen->str[index] == NULL)
     {
-      reentry = 0;
       return;
     }
 
@@ -2273,6 +2295,8 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
         if (kill)
         {
             int status;
+            if (str->dying) return;
+            str->dying = 1;
             /* only close these when the device is removed */
             status = usbd_abort_pipe(str->pipe);
             dprintf (("", "status: %s\n", ccodes[status]));
@@ -2294,7 +2318,6 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
             dprintf (("", "fs_stream now 0\n"));
 
             /* return early so we don't free the stream */
-            reentry = 0;
             return;
         }
     }
@@ -2312,7 +2335,6 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
                 if (s == NULL)
                 {
                     dprintf (("", "*** couldn't find HID stream"));
-                    reentry = 0;
                     return;
                 }
             }
@@ -2331,7 +2353,6 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
         }
     }
     free (str);
-    reentry = 0;
 }
 
 /*---------------------------------------------------------------------------*/

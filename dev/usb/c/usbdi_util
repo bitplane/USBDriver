@@ -398,7 +398,7 @@ usbd_read_report_desc(usbd_interface_handle ifc, void **descp, int *sizep,
 	hid = usbd_get_hid_descriptor(ifc);
 	if (hid == NULL)
 		return (USBD_IOERROR);
-#ifdef __riscos
+#if defined(__CC_NORCROFT) && defined(DISABLE_PACKED)
         /* RISC OS can't handle packed structures, in any case this code
            always assumes that the report is in report 0, so there's no real
            problem */
