@@ -1414,7 +1414,10 @@ ohci_softintr(struct usbd_bus *bus)
 			if (cc == OHCI_CC_STALL)
 				xfer->status = USBD_STALLED;
 			else
+			{
 				xfer->status = USBD_IOERROR;
+				logprintf("endpoint halted but not stalled: error cc=%d\n", cc);
+			}
 			s = splusb();
 			usb_transfer_complete(xfer);
 			splx(s);
