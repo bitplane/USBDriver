@@ -254,11 +254,11 @@ usbd_devinfo_vp(usbd_device_handle dev, char *v, char *p)
 		}
 	}
 #endif
-	if (vendor != NULL)
+	if (vendor != NULL && *vendor)
 		strcpy(v, vendor);
 	else
 	    sprintf(v, "vendor 0x%04x", UGETW(udd->idVendor));
-	if (product != NULL)
+	if (product != NULL && *product)
 		strcpy(p, product);
 	else
 	    sprintf(p, "product 0x%04x", UGETW(udd->idProduct));
@@ -346,6 +346,9 @@ usbd_reset_port(usbd_device_handle dev, int port, usb_port_status_t *ps)
 				 err));
 			return (err);
 		}
+		/* If the device disappeared, just give up */
+		if (!(UGETW(ps->wPortStatus) & UPS_CURRENT_CONNECT_STATUS))
+			return (USBD_NORMAL_COMPLETION);
 	} while ((UGETW(ps->wPortChange) & UPS_C_PORT_RESET) == 0 && --n > 0);
 	if (n == 0)
 		return (USBD_TIMEOUT);
@@ -723,6 +726,7 @@ usbd_setup_pipe(usbd_device_handle dev, usbd_interface_handle iface,
 void
 usbd_kill_pipe(usbd_pipe_handle pipe)
 {
+	usbd_abort_pipe(pipe);
 	pipe->methods->close(pipe);
 	pipe->endpoint->refcnt--;
 	free(pipe, M_USB);

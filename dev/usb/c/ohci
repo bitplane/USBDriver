@@ -1382,7 +1382,9 @@ ohci_softintr(struct usbd_bus *bus)
 				xfer->actlen += len;
 			if (std->flags & OHCI_CALL_DONE) {
 				xfer->status = USBD_NORMAL_COMPLETION;
+				s = splusb();
 				usb_transfer_complete(xfer);
+				splx(s);
 			}
 			ohci_free_std(sc, std);
 		} else {
@@ -1413,7 +1415,9 @@ ohci_softintr(struct usbd_bus *bus)
 				xfer->status = USBD_STALLED;
 			else
 				xfer->status = USBD_IOERROR;
+			s = splusb();
 			usb_transfer_complete(xfer);
+			splx(s);
 		}
 	}
 
@@ -2043,10 +2047,8 @@ ohci_open(usbd_pipe_handle pipe)
 		opipe->sed = sed;
 		if (xfertype == UE_ISOCHRONOUS) {
 			sitd = ohci_alloc_sitd(sc);
-			if (sitd == NULL) {
-				ohci_free_sitd(sc, sitd);
+			if (sitd == NULL) 
 				goto bad1;
-			}
 			opipe->tail.itd = sitd;
 			tdphys = sitd->physaddr;
 			fmt = OHCI_ED_FORMAT_ISO;
@@ -2056,10 +2058,8 @@ ohci_open(usbd_pipe_handle pipe)
 				fmt |= OHCI_ED_DIR_OUT;
 		} else {
 			std = ohci_alloc_std(sc);
-			if (std == NULL) {
-				ohci_free_std(sc, std);
+			if (std == NULL) 
 				goto bad1;
-			}
 			opipe->tail.td = std;
 			tdphys = std->physaddr;
 			fmt = OHCI_ED_FORMAT_GEN | OHCI_ED_DIR_TD;
@@ -2155,6 +2155,7 @@ ohci_close_pipe(usbd_pipe_handle pipe, ohci_soft_ed_t *head)
 	}
 #endif
 	ohci_rem_ed(sed, head);
+	usb_delay_ms(&sc->sc_bus, 1);
 #ifndef __riscos
 	splx(s);
 #endif
@@ -2656,8 +2657,8 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 			DPRINTFN(5,("ohci_root_ctrl_transfer: reset port %d\n",
 				    index));
 			OWRITE4(sc, port, UPS_RESET);
-			for (i = 0; i < 10; i++) {
-				usb_delay_ms(&sc->sc_bus, 10);
+			for (i = 0; i < 5; i++) {
+				usb_delay_ms(&sc->sc_bus, USB_PORT_ROOT_RESET_DELAY);
 				if ((OREAD4(sc, port) & UPS_RESET) == 0)
 					break;
 			}

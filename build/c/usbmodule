@@ -336,12 +336,20 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     /* get rid of anything in devicefs */
     struct device* dev;
+    char var[sizeof "DeviceFS$USBnnn$Options"];
     TAILQ_FOREACH(dev, &allusbdevs, dv_list)
     {
         if (2 == (int) dev->dv_cfdata)
         {
             struct ugen_softc * udev = (struct ugen_softc*) dev;
             _swix (DeviceFS_Deregister, _IN(0), udev->sc_devfs);
+        }
+
+        /* since we don't reuse numbers nuke the devicefs options variable too */
+        sprintf (var, "DeviceFS$USB%d$Options", dev->dv_unit);
+        while (_swix (OS_SetVarVal, _INR(0,4), var, 0, -1, 0, 0) == NULL)
+        {
+            /* do nothing */
         }
     }
 

@@ -412,6 +412,7 @@ usbd_alloc_report_desc(usbd_interface_handle ifc, void **descp, int *sizep,
 				       *sizep, *descp);
 	if (err) {
 		free(*descp, mem);
+		*descp = NULL;
 		return (err);
 	}
 	return (USBD_NORMAL_COMPLETION);
