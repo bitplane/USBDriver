@@ -135,11 +135,12 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     /* fill in the device name in the callback so that our service call handler
        is threaded and there to respond to PCI calls */
     _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
+    if (v == 0) v = (char *)"";
     strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
         [sizeof ohci_soft.sc_vendor - 1] = '\0';
 
-    // allow enough space for name, % and number, then space, and
-    // another number
+    /* allow enough space for name, % and number, then space, and
+       another number */
     char name[sizeof Module_Title + 1 + 12 + 1 + 12];
     sprintf (name, Module_Title"%%%d %d", instance + 1, pci_device);
     dprintf (("Main_0", "Trying to start %s\n", name));
@@ -162,7 +163,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     /* set up debugging */
     debug_initialise ("OHCIDriver", 0, 0);
-    debug_set_device(DEBUGIT_OUTPUT);
+    debug_set_device(TML_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
 
@@ -253,7 +254,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
     strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
-        [sizeof ohci_soft.sc_vendor - 1] = '\0';
+            [sizeof ohci_soft.sc_vendor - 1] = '\0';
 
     private_word = pw;
 

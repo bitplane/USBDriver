@@ -2155,7 +2155,6 @@ ohci_close_pipe(usbd_pipe_handle pipe, ohci_soft_ed_t *head)
 	}
 #endif
 	ohci_rem_ed(sed, head);
-	usb_delay_ms(&sc->sc_bus, 1);
 #ifndef __riscos
 	splx(s);
 #endif

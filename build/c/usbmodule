@@ -273,7 +273,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
     private_word = pw;
     /* set up debugging */
     debug_initialise ("USBDriver", "", 0);
-    debug_set_device(DEBUGIT_OUTPUT);
+    debug_set_device(TML_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
 
@@ -373,6 +373,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
+    dprintf(("", "Service call reason %d\n", service_number));
     switch (service_number)
     {
     case Service_ResourceFSStarted:
@@ -427,13 +428,14 @@ _kernel_oserror* command_enumerate_devices (void)
             usbd_device_handle udev = ((struct ugen_softc*) dev)->sc_udev;
             usbd_fill_deviceinfo (udev, &di);
             /* in case the vendor string is null, don't print a leading space */
-            printf ("%3d %3d %3d %2X/%2X %s %s\n",
+            printf ("%3d %3d %3d %2X/%2X %s%s%s\n",
                 i,
                 di.bus,
                 di.addr,
                 di.class,
                 di.subclass,
                 di.vendor,
+                *di.vendor ? " " : "",
                 di.product);
         }
     }
@@ -1324,11 +1326,11 @@ _kernel_oserror* announce_device (_kernel_swi_regs* r, void* pw, void* sc)
     struct ugen_softc* softc = sc;
     char* serv = service_call (softc->sc_udev, softc->sc_dev.dv_unit, 0);
     if (serv == NULL) return NULL;
+    dprintf (("", "Send USBDriver_Attach service call\n"));
     _swix (OS_ServiceCall, _INR(0,2),
         Service_USBDriver_Attach,
         Service_USBDriver,
         serv);
-    dprintf (("", "Sent USBDriver_Attach service call\n"));
     free (serv);
 
     return NULL;

@@ -54,7 +54,7 @@ clean:
         ${WIPE} linked ${WFLAGS}
         ${RM}   h.ohcimodhead
         ${RM}   h.usbmodhead
-        ${RM}   Resources.UK.USBDevs
+        ${RM}   Resources.<Locale>.USBDevs
 
 all: o._dirs
 
@@ -86,7 +86,7 @@ ohcimodule.o:   ohcimodhead.h USBDriver.h
 usbmodule.o usbkboard.o:        usbmodhead.h
 
 Resources.<Locale>.USBDevs: bin.makedevs
-        bin.makedevs > Resources.UK.USBDevs
+        bin.makedevs > Resources.<Locale>.USBDevs
 
 # Remove the usbmodhead after creating the SWI table because if OHCIDriver
 # makes it then it has the wrong messages file in it
@@ -98,11 +98,11 @@ USBDriver.h: usbmodhead.h
 bin.makedevs: o.makedevs ${CLIB} ${DIRS}
         ${LD} -o $@ o.makedevs ${CLIB}
 
-usbmsgs.o: Resources.UK.USBMessages Resources.UK.USBDevs
-        resgen resource_files o.usbmsgs Resources.UK.USBMessages ${MSGLOC} Resources.UK.USBDevs Resources.USBDriver.USBDevs
+usbmsgs.o: Resources.<Locale>.USBMessages Resources.<Locale>.USBDevs
+        resgen resource_files o.usbmsgs Resources.<Locale>.USBMessages ${MSGLOC} Resources.<Locale>.USBDevs Resources.USBDriver.USBDevs
 
-ohcimsgs.o: Resources.UK.OHCIMessages
-        resgen resource_files o.ohcimsgs Resources.UK.OHCIMessages ${MSGLOC}
+ohcimsgs.o: Resources.<Locale>.OHCIMessages
+        resgen resource_files o.ohcimsgs Resources.<Locale>.OHCIMessages ${MSGLOC}
 
 # RISC OS debug:
 aif.${COMPONENT}: ${RAM_OBJS} ${RAM_LIBS} ${CLIB} ${DIRS}
