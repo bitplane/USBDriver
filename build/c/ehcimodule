@@ -31,6 +31,7 @@
 #include <dev/usb/ehcivar.h>
 
 #include "Global/RISCOS.h"
+#include "Global/Services.h"
 #include "Global/HALEntries.h"
 #include "Interface/PCI.h"
 #include "callx/callx.h"
@@ -66,6 +67,7 @@ volatile int* ehci_base;
 ehci_softc_t ehci_soft;
 struct device * usb_soft;
 extern int * init_veneer (void);
+//extern void* resource_files (void);
 #ifdef EHCI_DEBUG
 extern void ehci_dump_regs (ehci_softc_t *);
 //extern void ehci_dump_ed (ehci_soft_ed_t*);
@@ -133,23 +135,22 @@ int instance = 0;
 int device_number;
 int unhandled_irqs;
 
-_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
-{
-    /* register with the usbdriver module if it's already resident */
-    dprintf (("Main_0", "Registering with USB driver\n"));
-
-        memset (&ehci_soft, 0, sizeof ehci_soft);
-        sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
-        /* fix n companions */
-        ehci_soft.sc_ncomp = 2;
-        ehci_init (&ehci_soft);
-
-
-    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-            &ehci_soft, &usb_soft);
-
-    return NULL;
-}
+//_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
+//{
+//    /* register with the usbdriver module if it's already resident */
+//    dprintf (("", "Registering with USB driver\n"));
+//
+//    memset (&ehci_soft, 0, sizeof ehci_soft);
+//    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+//    /* fix n companions */
+//    ehci_soft.sc_ncomp = 2;
+//    ehci_init (&ehci_soft);
+//
+//    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+//            &ehci_soft, &usb_soft);
+//
+//    return NULL;
+//}
 
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
 {
@@ -161,13 +162,24 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
 
 
     /* register with the usbdriver module if it's already resident */
-    bus_register(NULL,NULL,NULL);
+    dprintf (("", "Registering with USB driver\n"));
+
+    memset (&ehci_soft, 0, sizeof ehci_soft);
+    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+    /* fix n companions */
+    ehci_soft.sc_ncomp = 2;
+    ehci_init (&ehci_soft);
+
+    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+            &ehci_soft, &usb_soft);
+    dprintf (("", "Registering with USB driver-done\n"));
+
 
     // allow enough space for name, % and number, then space, and
     // another number
     char name[sizeof Module_Title + 1 + 12 + 1 + 12];
     sprintf (name, Module_Title"%%%d %d", instance + 1, pci_device);
-    dprintf (("Main_0", "Trying to start %s\n", name));
+    dprintf (("", "Trying to start %s\n", name));
     e = _swix (OS_Module, _INR(0,1), 14, name);
 
     if (e)
@@ -226,14 +238,21 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     {
         pci_device = atoi (cmd_tail);
     }
+//#ifdef STANDALONE
+//    else
+//    {
+//        e = _swix (ResourceFS_RegisterFiles, _IN (0), resource_files ());
+//        if (e != NULL) return e;
+//    }
+//#endif
 
 
-    /* quick bodge */
-    if (pci_device == 10)
-    {
-        pci_device = 13;
-    }
-    else
+//    /* quick bodge */
+//    if (pci_device == 10)
+//    {
+//        pci_device = 13;
+//    }
+//    else
     do {
         e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
             0x0C0320,
@@ -323,7 +342,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
 
 
-    dprintf (("Main_0", "Finished module initialisation\n"));
+    dprintf (("", "Finished module initialisation\n"));
 
     /* try and start a new instance to catch any more controllers on the bus */
 
@@ -332,57 +351,88 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     return 0;
 
 error:
-    dprintf (("Failed initialisation: %s\n", e->errmess));
+    dprintf (("","Failed initialisation: %s\n", e->errmess));
     return e;
 }
 
 
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
-    volatile int* eb = ehci_base;
-    int v;
-    _swix (OS_Hardware, _IN(0) | _INR(8,9),
-        device_number, 0, EntryNo_HAL_IRQDisable);
-    _swix (OS_ReleaseDeviceVector, _INR(0,4),
-        device_number | (1u<<31), usb_irq_entry, pw, 0, 0);
+
+    if (usb_soft != NULL)
+        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+
 
     if (usb_soft != NULL)
         _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
 
 // need to stop the controller
-     eb[EHCI_USBCMD/4]= 0;	/* Halt controller */
-     eb[EHCI_USBCMD/4]= EHCI_CMD_HCRESET;
-     v=eb[EHCI_USBCMD/4];       /* flush the command */
+     EOWRITE4(&ehci_soft, EHCI_USBCMD, EHCI_CMD_HCRESET);
+     EOREAD4(&ehci_soft, EHCI_USBCMD);/* flush the command */
 
+    /* don't disable the interrupt since it is shared, the OS will disable it
+       when noone is left responding */
+//    _swix (OS_Hardware, _IN(0) | _INR(8,9),
+//        device_number, 0, EntryNo_HAL_IRQDisable);
     callx_remove_all_callbacks ();
     callx_remove_all_callafters ();
     callx_remove_all_calleverys ();
+    _swix (OS_ReleaseDeviceVector, _INR(0,4),
+        device_number | (1u<<31), usb_irq_entry, pw, 0, 0);
+
     if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
 
+//#ifdef STANDALONE
+//    /* only remove files for last instantiation */
+//    if (podule == 0)
+//    {
+//        _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
+//    }
+//#endif
     return NULL;
 }
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
-    switch (r->r[0]) {
-    case Service_USBDriver_Starting:
-        if (usb_soft == NULL)
+    dprintf (("", "svce %x reason %x\n",service_number,r->r[0]));
+    switch (service_number)
+    {
+      case Service_USB:
+        switch (r->r[0])
         {
-            dprintf (("Main_0", "Registering with USB driver from svcecall\n"));
+           case Service_USBDriver_Starting:
+             if (usb_soft == NULL)
+             {
 
 
 
-              callx_add_callback (bus_register, 0);
-        }
-        break;
-    case Service_USBDriver_Dying:
-        dprintf (("", "Deregistering with USB driver\n"));
-        /* USBDriver will do the deregistering at this point, since
-           it's SWIs are not active anymore */
-        ehci_detach(&ehci_soft,0);
-        ehci_shutdown(&ehci_soft);
-        usb_soft = NULL;
-        break;
+
+             dprintf (("", "Registering with USB driver from svcecall\n"));
+                    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+                             &ehci_soft, &usb_soft);
+             dprintf (("", "Registering with USB driver from svcecall-done\n"));
+
+
+
+             }
+             return;
+           case Service_USBDriver_Dying:
+             dprintf (("", "Deregistering with USB driver\n"));
+             /* USBDriver will do the deregistering at this point, since
+                it's SWIs are not active anymore */
+             ehci_detach(&ehci_soft,0);
+             ehci_shutdown(&ehci_soft);
+             usb_soft = NULL;
+             return;
+           default:return;
+         }  
+      case Service_PreReset:
+        dprintf (("", "Svce prereset %x %x\n",Service_PreReset,service_number));
+        /* reset the controller */
+        EOWRITE4(&ehci_soft, EHCI_USBCMD, EHCI_CMD_HCRESET);
+        EOREAD4(&ehci_soft, EHCI_USBCMD);/* flush the command */
+        return;
+      default:return;
     }
 }
 
@@ -504,7 +554,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
     _swix (OS_Hardware, _INR(8,9)|_OUT(0),
         0, EntryNo_HAL_CounterRead, &u2s);
 //    irqs++;
-    ehci_softc_t* sc = &ehci_soft;
+//    ehci_softc_t* sc = &ehci_soft;
 //    if (ehcidebug > 1) dprintf (("", "Frame index: %x\n",
 //            EOREAD4(sc, EHCI_FRINDEX)));
 #endif

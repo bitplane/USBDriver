@@ -404,8 +404,10 @@ ehci_init(ehci_softc_t *sc)
 		    USBDEVNAME(sc->sc_bus.bdev), sc->sc_ncomp!=1 ? "s" : "",
 		    EHCI_HCS_N_PCC(sparams),
 		    EHCI_HCS_N_PCC(sparams)!=1 ? "s" : "");
+#ifndef __riscos
 		for (i = 0; i < sc->sc_ncomp; i++)
 			logprintf(" %s", USBDEVNAME(sc->sc_comps[i]->bdev));
+#endif
 		logprintf("\n");
 	}
 	sc->sc_noport = EHCI_HCS_N_PORTS(sparams);
@@ -1156,8 +1158,12 @@ ehci_shutdown(void *v)
 	ehci_softc_t *sc = v;
 
 	DPRINTF(("ehci_shutdown: stopping the HC\n"));
+
 	EOWRITE4(sc, EHCI_USBCMD, 0);	/* Halt controller */
 	EOWRITE4(sc, EHCI_USBCMD, EHCI_CMD_HCRESET);
+#ifdef __riscos
+	EOREAD4(sc, EHCI_USBCMD );     /* flush command */
+#endif
 }
 
 usbd_status

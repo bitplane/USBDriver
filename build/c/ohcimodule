@@ -272,17 +272,17 @@ int do_ohci_perror(int port)
 
 #endif        /* RHENIUM */
 
-
-_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
-{
-    /* register with the usbdriver module if it's already resident */
-    dprintf (("Main_0", "Registering with USB driver\n"));
-    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-            &ohci_soft, &usb_soft);
-
-    return NULL;
-}
-
+//_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
+//{
+//    /* register with the usbdriver module if it's already resident */
+//    dprintf (("", "Registering with USB driver\n"));
+//    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+//            &ohci_soft, &usb_soft);
+//    dprintf (("", "Registering with USB driver-done\n"));
+//
+//    return NULL;
+//}
+//
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
     _kernel_oserror * e;
@@ -311,13 +311,16 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     }
 #endif  /* RHENIUM */
     /* now we know the root hub info, register it with USBDriver */
-    bus_register(NULL,NULL,NULL);
+    dprintf (("", "Init-Registering with USB driver\n"));
+    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+            &ohci_soft, &usb_soft);
+    dprintf (("", "Init-Registering with USB driver-done\n"));
 
     /* allow enough space for name, % and number, then space, and
        another number */
     char name[sizeof Module_Title + 1 + 12 + 1 + 12];
     sprintf (name, Module_Title"%%%d %d", instance + 1, pci_device);
-    dprintf (("Main_0", "Trying to start %s\n", name));
+    dprintf (("", "Trying to start %s\n", name));
     e = _swix (OS_Module, _INR(0,1), 14, name);
 
     if (e)
@@ -461,7 +464,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
         goto error;
     }
 
-    dprintf (("Main_0", "Found OHCI controller on device %d\n", pci_device));
+    dprintf (("", "Found OHCI controller on device %d\n", pci_device));
 
 
 #ifdef   RHENIUM
@@ -679,15 +682,26 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
     case Service_PCI:
         service_pci (r);
         break;
+    case Service_PreReset:
+        /* reset the controller */
+        ohci_base[OHCI_COMMAND_STATUS / 4] = OHCI_HCR;
+        magic = (int*) ohci_base[OHCI_COMMAND_STATUS]; // flush the write
+        while (ohci_base[OHCI_COMMAND_STATUS / 4] & OHCI_HCR);
+        ohci_base[OHCI_CONTROL / 4] = OHCI_HCFS_RESET;
+
+        magic = (int*) ohci_base[OHCI_CONTROL]; // flush the write
+        break;
     case Service_USB:
         switch (r->r[0]) {
         case Service_USBDriver_Starting:
             if (usb_soft == NULL)
             {
                 if(ohci_soft.sc_vendor[0]!='\0') // (means svce_PCI has happened)
-                {
-                dprintf (("Main_0", "Registering with USB driver from svcecall \n"));
-                    callx_add_callback (bus_register, 0);
+                {   /* we're here in callback.. so foo we go */
+             dprintf (("", "Registering with USB driver from svcecall \n"));
+                   _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+                           &ohci_soft, &usb_soft);
+             dprintf (("", "Registering with USB driver from svcecall-done\n"));
                 }
             }
             break;
@@ -713,15 +727,6 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             ohci_init (&ohci_soft);
             break;
         }
-        break;
-    case Service_PreReset:
-        /* reset the controller */
-        ohci_base[OHCI_COMMAND_STATUS / 4] = OHCI_HCR;
-        magic = (int*) ohci_base[OHCI_COMMAND_STATUS]; // flush the write
-        while (ohci_base[OHCI_COMMAND_STATUS / 4] & OHCI_HCR);
-        ohci_base[OHCI_CONTROL / 4] = OHCI_HCFS_RESET;
-
-        magic = (int*) ohci_base[OHCI_CONTROL]; // flush the write
         break;
     }
 }
