@@ -1339,9 +1339,14 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
         driver_entry,
         softc,
         private_word,
-        "endpoint/Ninterface/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/N",
-        INT_MAX, // XXX should be -1, but that doesn't seem to work
+        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/N",
+#ifdef DEVICEFSISBROKEN
+        INT_MAX, // should be -1, but that doesn't seem to work
         INT_MAX,
+#else
+        -1,
+        -1,
+#endif
         &softc->sc_devfs);
 
     if (e != NULL)
@@ -1560,6 +1565,7 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, char* p)
 typedef struct device_valid {
     uint32_t    endpoint;
     uint32_t    interface;
+    uint32_t    alternate;
     uint32_t    report;
     uint32_t    ep_type;
     uint32_t    timeout;
@@ -1708,6 +1714,9 @@ static _kernel_oserror* device_initialise
         goto error;
     }
 
+    /* force an interface alternate */
+    if (valid->alternate != 0xdeaddead) usbd_set_interface(str->iface, valid->alternate);
+    
     str->ep = ep;
 
 
