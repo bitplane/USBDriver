@@ -19,14 +19,14 @@
 
 TARGET          = ${COMPONENT}
 DIRS            = o._dirs
-MESSAGELOCATION = Resources.${COMPONENT}.Messages
+MSGLOC          = Resources.${COMPONENT}.Messages
 LIBS            = ${DEBUGLIB} ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
 RDIR            = ${RESDIR}.${COMPONENT}
 
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:
 CDEFINES        += ${CDEBUG} -DKERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE
 CMHGINCLUDES    = ${CINCLUDES}
-CMHGDEFINES     = -DMESSAGELOCATION=${MESSAGELOCATION} ${CDEBUG}
+CMHGDEFINES     = -DMSGLOC=${MSGLOC} ${CDEBUG}
 CFLAGS          += -ff -wp -wc -zm -zps1
 LDFLAGS         = -LIST maps.${TARGET} -MAP -Xref
 
@@ -98,10 +98,10 @@ bin.makedevs: o.makedevs ${CLIB}
         ${LD} -o $@ o.makedevs ${CLIB}
 
 usbmsgs.o: Resources.UK.USBMessages Resources.UK.USBDevs
-        resgen resource_files o.usbmsgs Resources.UK.USBMessages ${MESSAGELOCATION} Resources.UK.USBDevs Resources.USBDriver.USBDevs
+        resgen resource_files o.usbmsgs Resources.UK.USBMessages ${MSGLOC} Resources.UK.USBDevs Resources.USBDriver.USBDevs
 
 ohcimsgs.o: Resources.UK.OHCIMessages
-        resgen resource_files o.ohcimsgs Resources.UK.OHCIMessages ${MESSAGELOCATION}
+        resgen resource_files o.ohcimsgs Resources.UK.OHCIMessages ${MSGLOC}
 
 # RISC OS debug:
 aif.${COMPONENT}: ${RAM_OBJS} ${RAM_LIBS} ${CLIB} ${DIRS}

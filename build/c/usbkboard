@@ -161,14 +161,19 @@ struct device* attach_keyboard (struct device* parent, void* aux)
     /* First see if we match */
     /* Check that this is a keyboard that speaks the boot protocol. */
     if (uaa->iface == NULL)
-        return (UMATCH_NONE);
+    {
+       dprintf (("", "Failed to match\n"));
+       return (UMATCH_NONE);
+    }
     id = usbd_get_interface_descriptor(uaa->iface);
     if (id == NULL ||
         id->bInterfaceClass != UICLASS_HID ||
         id->bInterfaceSubClass != UISUBCLASS_BOOT ||
         id->bInterfaceProtocol != UIPROTO_BOOT_KEYBOARD)
-    	return (UMATCH_NONE);
-
+    {
+       dprintf (("", "Failed to match\n"));
+       return (UMATCH_NONE);
+    }
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = calloc (sizeof *softc, 1);
@@ -184,12 +189,12 @@ struct device* attach_keyboard (struct device* parent, void* aux)
 
     ed = usbd_interface2endpoint_descriptor(uaa->iface, 0);
     if (ed == NULL) {
-        dprintf(("", "could not read endpoint descriptor\n"));
+        dprintf(("", "Could not read endpoint descriptor\n"));
         return NULL;
     }
 
     if (usbd_set_protocol(uaa->iface, 0)) {
-        dprintf(("", "set protocol failed\n"));
+        dprintf(("", "Set protocol failed\n"));
         return NULL;
     }
 

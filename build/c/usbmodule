@@ -187,6 +187,8 @@ extern struct cfattach uhub_uhub_ca;
 #ifdef USB_DEBUG
 extern int usbdebug, uhubdebug, umsdebug;
 extern int total_sleep;
+#endif
+#ifdef DEBUGLIB
 char* ccodes []= {
 	"NORMAL_COMPLETION",
 	"IN_PROGRESS",
@@ -469,7 +471,9 @@ _kernel_oserror* command_discover ()
         if (get_softc (i << 16) != NULL)
             usbioctl (i << 16, USB_DISCOVER, 0, 0, 0);
     }
+#ifdef USB_DEBUG
     dprintf (("", "total sleep = %d\n", total_sleep));
+#endif
 
     return NULL;
 }
@@ -783,7 +787,9 @@ static device_ptr_t register_bus (device_ptr_t bus)
 #endif
 
     (*usb_ca.ca_attach)(0, softc, bus);
+#ifdef USB_DEBUG
     dprintf (("", "total sleep = %d\n", total_sleep));
+#endif
 
     return softc;
 }
@@ -924,13 +930,21 @@ int config_detach (struct device* dev, int n)
         return 0;
     }
 
-    /* only remove if a generic device of hub, others match as generic as well
+    /* only remove if a generic device or hub, others match as generic as well
         */
     switch ((int) (dev->dv_cfdata))
     {
     case 1:
     case 2:
-        TAILQ_REMOVE (&allusbdevs, dev, dv_list);
+        if (dev->dv_list.tqe_prev == NULL)
+            dprintf (("", "not removing %p\n", dev));
+        else
+        {
+            dprintf (("", "removing %p (prev=%p, next=%p)\n",
+                          dev, dev->dv_list.tqe_prev, dev->dv_list.tqe_next));
+            TAILQ_REMOVE (&allusbdevs, dev, dv_list);
+            /* memory is free'd at the detach point later */
+        }
     }
 
     /* remove any system variables attached to this device and since we don't reuse numbers
@@ -956,6 +970,7 @@ int config_detach (struct device* dev, int n)
     case 4: return detach_keyboard (dev);
     }
 
+    free (dev);
     return 0;
 }
 
@@ -969,9 +984,14 @@ struct device* attach_hub (struct device* parent, void* aux)
     /* don't match generic */
     if (uaa->usegeneric) return NULL;
 
+    dprintf (("", "Trying match on usb hub\n"));
+
     /* First see if we match */
     if ((*uhub_uhub_ca.ca_match) (0, 0, aux) == UMATCH_NONE)
-        return NULL;
+    {
+       dprintf (("", "Failed to match\n"));
+       return NULL;
+    }
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = malloc (uhub_uhub_ca.ca_devsize);
@@ -1300,6 +1320,7 @@ _kernel_oserror* announce_device (_kernel_swi_regs* r, void* pw, void* sc)
         Service_USBDriver_Attach,
         Service_USBDriver,
         serv);
+    dprintf (("", "Sent USBDriver_Attach service call\n"));
     free (serv);
 
     return NULL;
@@ -1425,7 +1446,11 @@ valid:
     do {
         usb_discover (bus->usbctl);
     } while (--bus->callbacks);
+    #ifdef USB_DEBUG
     dprintf (("", "finished callbacks, total sleep = %d\n", total_sleep));
+    #else
+    dprintf (("", "finished callbacks\n"));
+    #endif
     return NULL;
 }
 
@@ -1723,7 +1748,7 @@ static _kernel_oserror* device_initialise
 
     /* force an interface alternate */
     if (valid->alternate != 0xdeaddead) usbd_set_interface(str->iface, valid->alternate);
-    
+
     str->ep = ep;
 
 

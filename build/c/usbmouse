@@ -154,13 +154,17 @@ void wsmouse_input (struct device* dev, uint32_t b, int x, int y, int z, uint32_
                           PointerV);
 
     }
+#ifdef USB_DEBUG
     if (umsdebug > 5) dprintf(("",
     "data.relx = %d, data.rely = %d, relx = %d, rely = %d, buttons = %x\n",
         x, y, relx, rely, b));
+#endif
     if ((change = buttons ^ b) != 0) {
         buttons = b;
+#ifdef USB_DEBUG
         if (umsdebug > 5) dprintf (("", "change = %x, enabled = %d\n", change,
             enabled));
+#endif
         if (enabled) {
             if (change & 1) _swix (OS_CallAVector, _INR(0,1) | _IN(9),
                 1 + ((buttons & 1) == 1), KeyNo_LeftMouse, KEYV);

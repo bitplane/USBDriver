@@ -32,7 +32,7 @@ date-string:	    	USBDriverModule_Module_Date_CMHG
 
 #define HELPFILE(M) "Resources:$." #M
 #define XHELPFILE(M) HELPFILE(M)
-international-help-file: XHELPFILE(MESSAGELOCATION)
+international-help-file: XHELPFILE(MSGLOC)
 
 command-keyword-table:	module_commands
 
