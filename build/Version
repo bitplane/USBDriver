@@ -1,0 +1,9 @@
+/* Both drivers are brewed from the same sources,so can't share the same
+   VersionNum file really,as a work around define them here so the CMHG
+   file remains unaltered */
+
+#define OHCIDriverModule_Module_Date_CMHG  27 Jan 2003
+#define OHCIDriverModule_MajorVersion_CMHG 0.10
+
+#define USBDriverModule_Module_Date_CMHG   28 Jan 2003
+#define USBDriverModule_MajorVersion_CMHG  0.15

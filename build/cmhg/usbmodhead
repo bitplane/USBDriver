@@ -13,6 +13,8 @@
 ; limitations under the License.
 ;
 #include "Global/Services.h"
+#include "../Version"
+
 initialisation-code:	module_init
 
 finalisation-code:  	module_final
@@ -24,9 +26,9 @@ service-call-handler:	module_services	Service_ResourceFSStarted,
 
 title-string:	    	USBDriver
 
-help-string:	     	USBDriver  0.14
+help-string:	     	USBDriver  USBDriverModule_MajorVersion_CMHG
 
-date-string:	    	24 Jan 2003
+date-string:	    	USBDriverModule_Module_Date_CMHG
 
 #define HELPFILE(M) "Resources:$." #M
 #define XHELPFILE(M) HELPFILE(M)

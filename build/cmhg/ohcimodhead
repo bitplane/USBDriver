@@ -14,6 +14,7 @@
 ;
 #include "Global/RISCOS.h"
 #include "Global/Services.h"
+#include "../Version"
 
 initialisation-code:	module_init
 
@@ -27,9 +28,9 @@ service-call-handler:	module_services Service_ResourceFSStarted,
 
 title-string:	    	OHCIDriver
 
-help-string:	     	OHCIDriver  0.09
+help-string:	     	OHCIDriver  OHCIDriverModule_MajorVersion_CMHG
 
-date-string:	    	24 Jan 2003
+date-string:	    	OHCIDriverModule_Module_Date_CMHG
 
 #define HELPFILE(M) "Resources:$." #M
 #define XHELPFILE(M) HELPFILE(M)

@@ -13,4 +13,9 @@
 | limitations under the License.
 |
 dir <obey$dir>
-amu_machine resources ohcidriver 
+mkdir -p o
+mkdir -p bin
+amu_machine bin.MakeDevs COMPONENT=USBDriver
+amu_machine resources RESDIR=rm COMPONENT=OHCIdriver
+amu_machine resources RESDIR=rm COMPONENT=USBDriver
+

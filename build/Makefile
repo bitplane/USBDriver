@@ -94,7 +94,7 @@ USBDriver.h: usbmodhead.h
 	${RM}   o.usbmodhead
 
 bin.makedevs: o.makedevs ${CLIB}
-	${LD} ${LDFLAGS} -o $@ o.makedevs ${CLIB}
+	${LD} -o $@ o.makedevs ${CLIB}
 
 usbmsgs.o: Resources.UK.USBMessages Resources.UK.USBDevs
         resgen resource_files o.usbmsgs Resources.UK.USBMessages ${MESSAGELOCATION} Resources.UK.USBDevs Resources.USBDriver.USBDevs

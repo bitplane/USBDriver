@@ -17,9 +17,11 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdarg.h>
+
 #include "DebugLib/DebugLib.h"
 #include "callx/callx.h"
-#include "stdarg.h"
 #include "swis.h"
 #include "sys/callout.h"
 #include "sys/time.h"
@@ -40,14 +42,13 @@ int total_sleep;
 extern void detach_hub (struct device*);
 extern void detach_device (struct device*);
 
-static void gettime (struct timeval * tv)
+static uint64_t gettime (void)
 {
-    int cs, u2s;
+    uint32_t cs, u2s;
     _swix (OS_ReadMonotonicTime, _OUT(0), &cs);
-    tv->tv_sec = cs / 100;
     _swix (OS_Hardware, _INR(8,9)|_OUT(0),
         0, EntryNo_HAL_CounterRead, &u2s);
-    tv->tv_usec = (cs % 100) * 10000 + (2000000 - u2s) / 200;
+    return (uint64_t) (u2s) * 5 + ((uint64_t) cs) * 10000000 /* 1e7 */;
 }
 
 /* cold starting */
@@ -58,7 +59,7 @@ int hz = 1000;
 /* disable interrupt for input */
 int spltty (void)
 {
-    return 0;
+    return _kernel_irqs_disabled ();
 }
 
 void splx (int s)
@@ -86,8 +87,6 @@ void panic (const char* str, ...)
     vsnprintf(panic_string, sizeof panic_string, str, p);
 }
 
-extern int gettimeofday(struct timeval *, struct timezone *);
-
 void
 delay (int d)
 {
@@ -105,7 +104,9 @@ delay (int d)
 void
 microtime(struct timeval *thetime)
 {
-    gettime (thetime);
+    uint64_t t = gettime ();
+    thetime->tv_sec = (unsigned long) (t / 1000000000);
+    thetime->tv_usec = (unsigned long) ((t / 1000) % 1000000);
 }
 
 void
@@ -223,32 +224,24 @@ extern void triggercbs (void);
 int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 {
     int i;
-
-    int cs0, cs1;
-
     int s = _kernel_irqs_disabled ();
     _kernel_irqs_on ();
 
-    _swix (OS_ReadMonotonicTime, _OUT(0), &cs0);
 
-    struct timeval tv0, tv1, tv2;
-    gettime(&tv1);
-    tv0 = tv1;
-    tv1.tv_usec += (unsigned long) (timo) * 1000;
-    while (tv1.tv_usec > 999999)
-    {
-        tv1.tv_usec -= 1000000;
-        tv1.tv_sec += 1;
-    }
+    uint64_t t0, t1, t2;
+    t1 = t0 = gettime();
+    t1 += ((uint64_t) timo) * 1000000;
 
 #ifdef USB_DEBUG
+    int cs0, cs1;
+    _swix (OS_ReadMonotonicTime, _OUT(0), &cs0);
     if (usbdebug > 19)
         dprintf (("Port", "%s sleeping on %p at priority %d for %dms\n"
-                      "from %lu.%.06lu\n"
-                      "til  %lu.%.06lu\n",
+                      "from %lu.%.09lu\n"
+                      "til  %lu.%.09lu\n",
             wmesg, ident, priority, timo,
-            tv0.tv_sec, tv0.tv_usec,
-            tv1.tv_sec, tv1.tv_usec));
+            (uint32_t) t0 / 1000000000, (uint32_t) t0 % 1000000000,
+            (uint32_t) t1 / 1000000000, (uint32_t) t1 % 1000000000));
 #endif
 
     for (i = 0; i < nhandles && t_handles[i] && t_handles[i] != ident; ++i);
@@ -270,13 +263,11 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
     int flags = 0;
     if (timo) {
         do {
-            gettime (&tv2);
             triggercbs ();
+            t2 = gettime ();
             _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
-        while (t_locks[i] == 0 && (tv2.tv_sec < tv1.tv_sec ||
-            tv2.tv_sec == tv1.tv_sec && tv2.tv_usec < tv1.tv_usec) &&
-            (flags & _C) == 0);
+        while (t_locks[i] == 0 && t2 < t1 && (flags & _C) == 0);
     }
     else
     {
@@ -288,7 +279,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
             triggercbs ();
             _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
-        gettime (&tv2);
+        t2 = gettime ();
     }
 
     if (flags & _C)
@@ -300,20 +291,15 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 
 #ifdef USB_DEBUG
     if (usbdebug > 19)
-      dprintf (("", "now  %lu.%06lu\n", tv2.tv_sec, tv2.tv_usec));
-#endif
-    tv2.tv_sec -= tv0.tv_sec;
-    if ((tv2.tv_usec -= tv0.tv_usec) < 0)
-    {
-        tv2.tv_sec -= 1;
-        tv2.tv_usec += 1000000;
-    }
-#ifdef USB_DEBUG
+      dprintf (("", "now  %lu.%09lu\n",
+        (uint32_t) t2 / 100000000, (uint32_t) t2 % 1000000000));
+    t2 -= t0;
     _swix (OS_ReadMonotonicTime, _OUT(0), &cs1);
     total_sleep += cs1 - cs0;
     if (usbdebug > 10)
         dprintf (("", "slept for %lu.%.06lu seconds (timo = %dms), %d cs\n",
-            tv2.tv_sec, tv2.tv_usec, timo, cs1 - cs0));
+            (uint32_t) t2 / 100000000, (uint32_t) t2 % 1000000000,
+            timo, cs1 - cs0));
 #endif
 
     if (s == 0) _kernel_irqs_on ();
