@@ -140,6 +140,7 @@ struct iface_softc {
 #define E_BadXfer       "\x06\x90\x81\x00" "BadXfer"
 #define E_NoStream      "\x07\x90\x81\x00" "NoStream"
 #define E_BadRequest    "\x08\x90\x81\x00" "BadRequest"
+#define E_NotRootP      "\x09\x90\x81\x00" "NotRootP"
 #define E_XferFailed    "\x20\x90\x81\x00" "XferFailed"
 
 #define USBDEV_MESSAGES "Resources:$.Resources.USBDriver.USBDevs"
@@ -199,7 +200,7 @@ extern struct cfattach uhub_uhub_ca;
 
 /* for debugging */
 #ifdef USB_DEBUG
-extern int usbdebug, uhubdebug, umsdebug;
+extern int usbdebug, uhubdebug;
 extern int total_sleep;
 #endif
 #ifdef DEBUGLIB
@@ -227,7 +228,7 @@ char* ccodes []= {
 
 extern int cold;
 void* private_word = 0;
-int mouseactive = 0;
+//int mouseactive = 0;
 
 struct sysvar_callback {
     struct sysvar_callback* next;
@@ -288,7 +289,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
     private_word = pw;
     /* set up debugging */
     debug_initialise ("USBDriver", "", 0);
-    debug_set_device(TML_OUTPUT);
+    debug_set_device(DEBUGIT_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
 
@@ -318,8 +319,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 
     _swix (OS_Claim, _INR(0,2), PointerV, pointerv_entry, pw);
 
-    /* turn on the hourglass until the mouse is active */
-    _swix (Hourglass_On, 0);
+//    /* turn on the hourglass until the mouse is active */
+//    _swix (Hourglass_On, 0);
 
     return 0;
 #ifndef STANDALONE
@@ -518,9 +519,16 @@ _kernel_oserror* command_reset (int n)
     struct usbd_port * port = udev->powersrc;
     usbd_device_handle parent = port->parent;
 
+    if (parent == NULL)
+    {
+        return uerror (E_NotRootP);
+    }
+
     usb_disconnect_port (port, (device_ptr_t) parent->hub);
-    usbd_set_port_feature(parent, port->portno, UHF_PORT_RESET);
-    command_discover ();
+    usbd_clear_port_feature(parent, port->portno, UHF_PORT_POWER);
+    usbd_delay_ms(parent, USB_PORT_RESET_DELAY);
+    usbd_set_port_feature(parent, port->portno, UHF_PORT_POWER);
+
     return NULL;
 }
 
@@ -919,11 +927,11 @@ struct device* riscos_usb_attach
     {
         if ((ret = (*f) (parent, aux)) != NULL)
         {
-          if (!mouseactive)
-          {
-             mouseactive = 1;
-             _swix (Hourglass_Off, 0);
-          }
+//          if (!mouseactive)
+//          {
+//             mouseactive = 1;
+//             _swix (Hourglass_Off, 0);
+//          }
           return ret;
         }
     }
@@ -1494,18 +1502,18 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
     return NULL;
 
 valid:
-    _swix (Hourglass_On, 0);
+//    _swix (Hourglass_On, 0);
     do {
-        _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
+//        _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
         usb_discover (bus->usbctl);
-        _swix (Hourglass_LEDs, _INR(0,1), 2, 0);
+//        _swix (Hourglass_LEDs, _INR(0,1), 2, 0);
     } while (--bus->callbacks);
     #ifdef USB_DEBUG
     dprintf (("", "finished callbacks, total sleep = %d\n", total_sleep));
     #else
     dprintf (("", "finished callbacks\n"));
     #endif
-    _swix (Hourglass_Off, 0);
+//    _swix (Hourglass_Off, 0);
     return NULL;
 }
 
@@ -1578,8 +1586,8 @@ void bufins (void* dma, void* x)
     }
 
     str->count += actlen;
-    dprintf (("", "inserting %d bytes, total %d\n",
-        actlen, str->count));
+//    dprintf (("", "inserting %d bytes, total %d\n",
+//        actlen, str->count));
 
     _kernel_swi_regs r;
     r.r[0] = BM_InsertBlock;
@@ -1621,7 +1629,7 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, char* p, int usedev)
             255,
             &vendor, &len);
         dprintf (("", "lookup '%s' returned '%s' e = %s\n",
-            str, vendor, e? e->errmess: "NULL"));
+            str, vendor? vendor: "(null)", e? e->errmess: "NULL"));
         if (!e) v[len] = '\0';
     }
 
@@ -1638,7 +1646,7 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, char* p, int usedev)
             255,
             &product, &len);
         dprintf (("", "lookup '%s' returned '%s' e = %s\n",
-            str, vendor, e? e->errmess: "NULL"));
+            str, product? product: "(null)", e? e->errmess: "NULL"));
         if (!e) p[len] = '\0';
     }
 
@@ -1805,6 +1813,10 @@ static _kernel_oserror* device_initialise
     /* usb timeout, used for transfers */
     str->timeout = valid->timeout;
 
+    /* force an interface alternate */
+    if (valid->alternate != 0xdeaddead)
+        usbd_set_interface(str->iface, valid->alternate);
+
     /* see if an interface was specified, if not then look for the interface
        with the endpoint specified */
     find_interface_and_endpoint
@@ -1832,9 +1844,6 @@ static _kernel_oserror* device_initialise
         goto error;
     }
 
-    /* force an interface alternate */
-    if (valid->alternate != 0xdeaddead)
-        usbd_set_interface(str->iface, valid->alternate);
 
     str->ep = ep;
 
@@ -1909,7 +1918,7 @@ detach_done:
 
     if (str->xfer == NULL)
     {
-        if (valid->ep_type == UE_ISOCHRONOUS)
+        if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
         {
             str->isoc = calloc (sizeof *str->isoc, 2);
             str->isoc[0].xfer = usbd_alloc_xfer (ugen->sc_udev);
@@ -1928,7 +1937,7 @@ detach_done:
         goto error;
     }
 
-    if (valid->ep_type == UE_INTERRUPT)
+    if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_INTERRUPT)
     {
         str->pipe->repeat = 1;
     }
@@ -2236,23 +2245,42 @@ end:
 
 void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill)
 {
-    //dprintf (("", "terminate stream %p, ep %x, kill = %d\n",
-    //    str, str->ep, kill));
+    static int reentry = 0;
+    dprintf (("", "terminate stream %p, ep %x, kill = %d, reentry = %d\n",
+        str, str->ep, kill, reentry));
+    if (reentry)
+      return;
+    reentry = 1;
+
     if (str == NULL)
+    {
+        reentry = 0;
         return;
+    }
 
     int index = UE_GET_ADDR(str->ep) + (UE_GET_DIR(str->ep)? 16: 0);
+
+    /* don't remove stream twice! */
+    if (ugen->str[index] == NULL)
+    {
+      reentry = 0;
+      return;
+    }
 
     /* in case we were a multiply linked HID reporter, don't close the pipe */
     if (ugen->str[index]->next_hid == NULL)
     {
         if (kill)
         {
+            int status;
             /* only close these when the device is removed */
-            usbd_abort_pipe(str->pipe);
-            usbd_close_pipe(str->pipe);
+            status = usbd_abort_pipe(str->pipe);
+            dprintf (("", "status: %s\n", ccodes[status]));
+            status = usbd_close_pipe(str->pipe);
+            dprintf (("", "status: %s\n", ccodes[status]));
             usbd_free_buffer (str->xfer);
-            usbd_free_xfer(str->xfer);
+            status = usbd_free_xfer(str->xfer);
+            dprintf (("", "status: %s\n", ccodes[status]));
             ugen->str[index] = NULL;
         }
         else
@@ -2266,6 +2294,7 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
             dprintf (("", "fs_stream now 0\n"));
 
             /* return early so we don't free the stream */
+            reentry = 0;
             return;
         }
     }
@@ -2283,6 +2312,7 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
                 if (s == NULL)
                 {
                     dprintf (("", "*** couldn't find HID stream"));
+                    reentry = 0;
                     return;
                 }
             }
@@ -2301,6 +2331,7 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
         }
     }
     free (str);
+    reentry = 0;
 }
 
 /*---------------------------------------------------------------------------*/

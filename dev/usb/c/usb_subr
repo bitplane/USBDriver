@@ -467,10 +467,11 @@ usbd_fill_iface_data(usbd_device_handle dev, int ifaceidx, int altidx)
 	nendpt = ifc->idesc->bNumEndpoints;
 	DPRINTFN(4,("usbd_fill_iface_data: found idesc nendpt=%d\n", nendpt));
 	if (nendpt != 0) {
-		ifc->endpoints = malloc(nendpt * sizeof(struct usbd_endpoint),
-					M_USB, M_NOWAIT);
+	        int epsz = nendpt * sizeof(struct usbd_endpoint);
+		ifc->endpoints = malloc(epsz, M_USB, M_NOWAIT);
 		if (ifc->endpoints == NULL)
 			return (USBD_NOMEM);
+		memset (ifc->endpoints, 0, epsz);
 	} else
 		ifc->endpoints = NULL;
 	ifc->priv = NULL;

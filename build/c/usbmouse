@@ -46,7 +46,7 @@
 extern void ums_enable (void*);
 extern void ums_disable (void*);
 
-extern int umsdebug;
+extern int umsdebug = 0;
 
 extern struct messages mod_messages;
 
@@ -84,7 +84,6 @@ struct ums_softc {
 #define MAX_BUTTONS     31      /* chosen because sc_buttons is u_int32_t */
 
         u_int32_t sc_buttons;   /* mouse button status */
-        struct device *sc_wsmousedev;
 
         char                    sc_dying;
 
@@ -365,9 +364,6 @@ int detach_mouse (struct device* ms)
 
     TAILQ_REMOVE (&allums, sc, link_ms);
 
-    /* No need to do reference counting of ums, wsmouse has all the goo. */
-    if (sc->sc_wsmousedev != NULL)
-        rv = config_detach(sc->sc_wsmousedev, 1);
     if (rv == 0) {
         free(sc->sc_loc_btn);
         free(sc->sc_ibuf);
@@ -504,7 +500,7 @@ void ums_intr
 #ifdef USB_DEBUG
     if (umsdebug > 5) dprintf(("",
     "data.relx = %d, data.rely = %d, relx = %d, rely = %d, buttons = %x\n",
-        x, y, relx, rely, b));
+        dx, dy, relx, rely, b));
 #endif
     if ((change = sc->sc_buttons ^ b) != 0) {
         sc->sc_buttons = b;
