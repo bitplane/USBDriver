@@ -67,6 +67,8 @@ static int target_fm = 11840;
 static int vsync_count = 0;
 static int print_fm = 0;
 static int fm_interval = 11999;
+
+char debugname[16];
 #endif
 
 void* private_word;
@@ -270,6 +272,17 @@ int do_ohci_perror(int port)
 
 #endif        /* RHENIUM */
 
+
+_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
+{
+    /* register with the usbdriver module if it's already resident */
+    dprintf (("Main_0", "Registering with USB driver\n"));
+    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+            &ohci_soft, &usb_soft);
+
+    return NULL;
+}
+
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
     _kernel_oserror * e;
@@ -285,18 +298,20 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     if (pci_device == -1)
     {
         strcpy (ohci_soft.sc_vendor, OHCIVendorUnknownRootName);
-        return NULL;
+//        return NULL;
     }
     else
     {
 #endif  /* RHENIUM */
         _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
-        if (v == 0) v = (char *)"";
+        if (v == 0) v = (char *)" ";
         strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
             [sizeof ohci_soft.sc_vendor - 1] = '\0';
 #ifdef RHENIUM
     }
 #endif  /* RHENIUM */
+    /* now we know the root hub info, register it with USBDriver */
+    bus_register(NULL,NULL,NULL);
 
     /* allow enough space for name, % and number, then space, and
        another number */
@@ -309,19 +324,25 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     {
         dprintf (("", "Failed to start %s: %s\n", name, e->errmess));
     }
-
     return NULL;
 }
+
+
+
 
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     char* v = "";
     _kernel_oserror* e = 0;
     *panic_string = '\0';
-
+    char tmp[16];
+    
     callx_init (pw);
 
     /* set up debugging */
-    debug_initialise ("OHCIDriver", 0, 0);
+#ifdef OHCI_DEBUG
+    sprintf(debugname,"OHCIDrv-%d",podule_base);
+#endif
+    debug_initialise (debugname, 0, 0);
     debug_set_device(DEBUGIT_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
@@ -510,13 +531,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     /* for the L7205, clocks need to be started */
     /* in BSD this is called from sys/pci/ohci_pci.c */
     ohci_init (&ohci_soft);
-
-
-    /* register with the usbdriver module if it's already resident */
-    dprintf (("Main_0", "Registering with USB driver\n"));
-    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-            &ohci_soft, &usb_soft);
-
+    ohci_soft.sc_vendor[0]='\0'; // flag no svce_PCI yet
+    
     dprintf (("", "Finished module initialisation\n"));
 
 #ifdef OHCI_DEBUG
@@ -532,6 +548,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     /* try and start a new instance to catch any more controllers on the bus,
        done in a callback so that this instance is threaded and the instance
        count goes up */
+    /* also register with the usbdriver module if it's already resident */
 
     callx_add_callback (new_instance, 0);
 
@@ -667,9 +684,11 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         case Service_USBDriver_Starting:
             if (usb_soft == NULL)
             {
-                dprintf (("Main_0", "Registering with USB driver\n"));
-                _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-                    &ohci_soft, &usb_soft);
+                if(ohci_soft.sc_vendor[0]!='\0') // (means svce_PCI has happened)
+                {
+                dprintf (("Main_0", "Registering with USB driver from svcecall \n"));
+                    callx_add_callback (bus_register, 0);
+                }
             }
             break;
         case Service_USBDriver_Dying:

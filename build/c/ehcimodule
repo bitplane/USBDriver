@@ -51,6 +51,7 @@ int usbdebug;
 uint32_t irq0;
 int irq_device;
 int irq_buf;
+char debugname[16];
 #endif
 
 void* private_word;
@@ -102,12 +103,24 @@ int instance = 0;
 int device_number;
 int unhandled_irqs;
 
+_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
+{
+    /* register with the usbdriver module if it's already resident */
+    dprintf (("Main_0", "Registering with USB driver\n"));
+    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+            &ehci_soft, &usb_soft);
+
+    return NULL;
+}
+
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
 {
     _kernel_oserror * e;
 
     (void) r;
     (void) pw;
+    /* register with the usbdriver module if it's already resident */
+    bus_register(NULL,NULL,NULL);
 
     // allow enough space for name, % and number, then space, and
     // another number
@@ -130,7 +143,10 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     callx_init (pw);
 
     /* set up debugging */
-    debug_initialise ("EHCIDriver", 0, 0);
+#ifdef EHCI_DEBUG
+    sprintf(debugname,"EHCIDrv-%d",podule_base);
+#endif    
+    debug_initialise (debugname, 0, 0);
     debug_set_device(DEBUGIT_OUTPUT);
     debug_set_unbuffered_files (TRUE);
 
@@ -254,10 +270,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     ehci_init (&ehci_soft);
 
 
-    /* register with the usbdriver module if it's already resident */
-    dprintf (("Main_0", "Registering with USB driver\n"));
-    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-            &ehci_soft, &usb_soft);
 
     dprintf (("Main_0", "Finished module initialisation\n"));
 
@@ -298,9 +310,8 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
     case Service_USBDriver_Starting:
         if (usb_soft == NULL)
         {
-            dprintf (("Main_0", "Registering with USB driver\n"));
-            _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-                &ehci_soft, &usb_soft);
+            dprintf (("Main_0", "Registering with USB driver from svcecall\n"));
+              callx_add_callback (bus_register, 0);
         }
         break;
     case Service_USBDriver_Dying:

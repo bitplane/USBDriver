@@ -21,7 +21,8 @@ finalisation-code:  	module_final
 
 service-call-handler:	module_services	Service_ResourceFSStarted,
 					Service_ResourceFSStarting,
-					Service_PCI,
+					Service_DeviceFSStarting,
+					Service_DeviceFSDying,
 					Service_USB
 title-string:	    	USBDriver
 
@@ -64,8 +65,10 @@ USBDiscover(    min-args:0, max-args:0,
 #endif
 
 USBReset(       min-args:1, max-args:1,
-                international:,help-text:"HUSBRES",invalid-syntax:"SUSBRES")
+                international:,help-text:"HUSBRES",invalid-syntax:"SUSBRES"),
 
+USBQuirk(       min-args:1, max-args:5,
+                international:,help-text:"HUSBQRK",invalid-syntax:"SUSBQRK")
 
 swi-chunk-base-number:	0x54a40
 

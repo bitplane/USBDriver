@@ -518,6 +518,7 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 		break;
 #endif /* USB_DEBUG */
         case USB_DISCOVER:
+                sc->sc_bus->needs_explore = 1;
                 usb_discover(sc);
                 break;
 	case USB_REQUEST:
@@ -695,9 +696,13 @@ usb_discover(void *v)
 	 * but this is guaranteed since this function is only called
 	 * from the event thread for the controller.
 	 */
+        /* this can, in riscos, be called during root hub initialisation
+         *  so we must ensure it has a valid root hub pointer before using it
+        */ 
 	while (sc->sc_bus->needs_explore && !sc->sc_dying) {
 		sc->sc_bus->needs_explore = 0;
-		sc->sc_bus->root_hub->hub->explore(sc->sc_bus->root_hub);
+                if(sc->sc_bus->root_hub)  // ensure root hub is initialised
+                  sc->sc_bus->root_hub->hub->explore(sc->sc_bus->root_hub);
 	}
 }
 

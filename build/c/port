@@ -36,8 +36,6 @@ int total_sleep;
 extern void detach_hub (struct device*);
 extern void detach_device (struct device*);
 
-extern uint32_t hal_veneer2(uint32_t (*)(void), void*, ...);
-
 extern uint64_t gettime (void);
 
 uint64_t gettime (void)
@@ -67,7 +65,7 @@ uint64_t gettime (void)
     }
 
     _swix (OS_ReadMonotonicTime, _OUT(0), &cs);
-    return (uint64_t) (max_count - hal_veneer2(readcode,ws)) * ns_factor +
+    return (uint64_t) (max_count - (readcode) ()) * ns_factor +
         ((uint64_t) cs) * 10000000 /* 1e7 */;
 }
 
@@ -298,8 +296,8 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
         while (t_locks[i] == 0 && (flags & _C) == 0)
         {
             /* allow foreground process to function while we're waiting */
-//            if (noblock) _swix (OS_UpCall, _INR(0,1), 6, t_locks + i);
-//            _swix (OS_UpCall, _INR(0,1), 6, t_locks + i);
+/*//            if (noblock) _swix (OS_UpCall, _INR(0,1), 6, t_locks + i);*/
+/*//            _swix (OS_UpCall, _INR(0,1), 6, t_locks + i);*/
             triggercbs ();
             _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
@@ -312,7 +310,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
         _kernel_osbyte (126, 0, 0);
     }
 
-    t_handles[i] = 0;
+    t_handles[i] = NULL;
 
 #ifdef USB_DEBUG
     if (usbdebug > 19)

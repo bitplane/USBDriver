@@ -116,9 +116,16 @@ struct devstream {
     struct isoc_buffer * isoc;
 };
 
+struct dev_struct {
+    devicefs_device dev;
+    int null;
+    char name[32];
+};
+
 struct ugen_softc {
     USBBASEDEVICE sc_dev;		/* base device */
     usbd_device_handle sc_udev;
+    struct dev_struct mydev;
     devicefs_device* sc_devfs;
     struct devstream* str[32];
 };
@@ -170,9 +177,9 @@ void riscos_failed_device (void* p)
 #ifndef RHENIUM
     _kernel_oserror* e;
     (void) p;
-    e = uerror (E_BadDevice);
-    _swix (OS_UpCall, _INR(0,6), UpCall_MediaNotPresent, fsnumber_DeviceFS,
-        -1, -1, 0, 0x7f/*ffffff*/, e->errmess);
+//    e = uerror (E_BadDevice);
+//    _swix (OS_UpCall, _INR(0,6), UpCall_MediaNotPresent, fsnumber_DeviceFS,
+//        -1, -1, 0, 0x7f/*ffffff*/, e->errmess);
 #endif /*RHENIUM*/
 //#endif /*STANDALONE*/
 }
@@ -255,6 +262,8 @@ struct sysvar_callback {
 static int usbbus_no = 1;
 static int usbdev_no = 1;
 
+#define MAX_EXTRA_QUIRKS 30
+void * extra_quirks = NULL;
 
 struct devicelist allbuses = TAILQ_HEAD_INITIALIZER(allbuses);
 struct devicelist allusbdevs = TAILQ_HEAD_INITIALIZER(allusbdevs);
@@ -331,6 +340,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 
     usbbus_no = 1;
     usbdev_no = 1;
+    extra_quirks = NULL;
 
     /* do this in a callback so that clients can call our SWIs */
     callx_add_callback (init_handler, 0);
@@ -387,7 +397,8 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
     _swix (MessageTrans_CloseFile, _IN(0), &usbdev_messages);
-
+    if(extra_quirks) free(extra_quirks);
+    
 #ifdef STANDALONE
     _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
 #endif
@@ -396,7 +407,41 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 }
 
 /*---------------------------------------------------------------------------*/
-extern int Image__RO_Base;
+
+
+_kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
+{
+    struct dev_struct * dev = &softc->mydev;
+    sprintf (dev->name, "USB%d", no);
+    strncpy (softc->sc_dev.dv_xname, dev->name,
+        sizeof softc->sc_dev.dv_xname - 1)
+            [sizeof softc->sc_dev.dv_xname - 1] = '\0';
+
+    dev->dev.name_offset = dev->name - (char*) dev;
+    dev->dev.flags = 3;
+    dev->dev.tx_flags = 0x8;
+    dev->dev.tx_buffer_size = 8192;
+    dev->dev.rx_flags = 0x8;
+    dev->dev.rx_buffer_size = 1024;
+
+    _kernel_oserror* e = _swix (DeviceFS_Register, _INR (0, 7) | _OUT(0),
+        6,
+        dev,
+        driver_entry,
+        softc,
+        private_word,
+        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/N",
+#ifdef DEVICEFSISBROKEN
+        INT_MAX, // should be -1, but that doesn't seem to work
+        INT_MAX,
+#else
+        -1,
+        -1,
+#endif
+        &softc->sc_devfs);
+    return e;
+}    
+
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
@@ -413,6 +458,35 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             (resource_files (), 0, 0, (void*) r->r[3]);
 #endif
         break;
+    case Service_DeviceFSStarting:/*attempt to register what we know about*/
+        {
+          usbdev_no = 1;
+          struct device* dev;
+          TAILQ_FOREACH(dev, &allusbdevs, dv_list)
+          {
+              if (dev)
+              {
+                  dev->dv_unit = usbdev_no++;
+dprintf(("","registering %d \n",dev->dv_unit));
+                   RegisterNewDevice( ((struct ugen_softc*) dev),dev->dv_unit);
+               }
+           }
+           break;
+        }
+    case Service_DeviceFSDying:   /*ensure we've forgotten any linkage*/
+        {
+          usbdev_no = 1;
+          struct device* dev;
+          TAILQ_FOREACH(dev, &allusbdevs, dv_list)
+          {
+              if (dev)
+              {
+dprintf(("","forgetting %d \n",dev->dv_unit));
+                  dev->dv_unit = 0;
+              }
+          }
+          break;
+        }
     case Service_USB:
         switch (r->r[0]) {
         case Service_USBDriver_Connected:
@@ -543,9 +617,9 @@ _kernel_oserror* command_reset (int n)
     /* pretend it's a ugen to get the udev */
     usbd_device_handle udev = ((struct ugen_softc*) dev)->sc_udev;
     struct usbd_port * port = udev->powersrc;
-    usbd_device_handle parent = port->parent;
+    usbd_device_handle parent = port?port->parent:NULL;
 
-    if (parent == NULL)
+    if (parent == NULL)   // its a root hub..
     {
         return uerror (E_NotRootP);
     }
@@ -767,6 +841,95 @@ static _kernel_oserror* command_set_interface (int device, int ifcn, int alt)
 }
 
 /*---------------------------------------------------------------------------*/
+/* format of a quirk .. keep synchronised with entry in dev.usb.usb_quirks */
+typedef struct usbd_quirk_entry {
+	u_int16_t idVendor;
+	u_int16_t idProduct;
+	u_int16_t bcdDevice;
+	u_int32_t quirks;
+} usbd_quirk_entry;
+
+extern const struct usbd_quirks * usbd_find_builtin_quirk(usb_device_descriptor_t *d, void *t);
+
+
+const struct usbd_quirks * usbd_find_quirk(usb_device_descriptor_t *d)
+{
+  const struct usbd_quirks * q;
+  if(extra_quirks) if(q=usbd_find_builtin_quirk(d,extra_quirks),q) return q;
+  return usbd_find_builtin_quirk(d,NULL);  // try as a builtin one
+}
+
+static _kernel_oserror* command_ListQuirks(void)
+{
+  int i;
+  usbd_quirk_entry *t;
+  printf("\n USB Extra Quirk listing:\nVendor Product Device Quirk\n");
+  
+  if(extra_quirks)
+  {
+    for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)
+    {
+      if(t->idVendor)
+        printf("%04x   %04x    %04x   %08x\n",t->idVendor,t->idProduct,t->bcdDevice,t->quirks);
+      
+    }
+  }
+  return NULL;
+}
+
+static _kernel_oserror* command_RemoveQuirk(unsigned vendor, unsigned product, unsigned device)
+{
+  int i;
+  usbd_quirk_entry *t;
+  if(extra_quirks)
+  {
+    for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)
+    {
+      if (t->idVendor  == vendor &&
+          t->idProduct == product&&
+          t->bcdDevice == device)
+      {
+        t->idVendor  = NULL;
+        t->idProduct = NULL;
+        t->bcdDevice = NULL;
+        t->quirks    = NULL;
+        return NULL;
+      }
+    }
+  }
+  return NULL;
+}
+static _kernel_oserror* command_AddQuirk(unsigned vendor, unsigned product, unsigned device, unsigned quirk)
+{
+  int i;
+  usbd_quirk_entry *t;
+  if(!(extra_quirks)) extra_quirks = calloc(MAX_EXTRA_QUIRKS+1,sizeof(usbd_quirk_entry));
+  for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)  /* existing? */
+  {
+    if (t->idVendor  == vendor &&
+        t->idProduct == product&&
+        t->bcdDevice == device)
+    {    
+      t->quirks = quirk;
+      return NULL;
+    }
+  }      
+  for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)  /* new */
+  {
+    if(!t->idVendor)
+    {
+      t->idVendor  = vendor ;
+      t->idProduct = product;
+      t->bcdDevice = device;
+      t->quirks    = quirk;
+      return NULL;
+    }
+  }
+  return NULL;
+}
+
+
+/*---------------------------------------------------------------------------*/
 
 int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock);
 
@@ -818,6 +981,22 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
 
     case CMD_USBReset:
         return command_reset ((int) strtoul (arg_string, 0, 10));
+
+    case CMD_USBQuirk:
+        {
+          char* p,cmd;
+          unsigned vendor,product,device,quirk=NULL;
+          cmd= *arg_string;
+          if(cmd=='L' || cmd=='l') return command_ListQuirks();
+          vendor =   (unsigned) strtoul (arg_string+1, &p, 16);
+          if(p) product = (unsigned) strtoul (p, &p, 16);
+          if(p) device  = (unsigned) strtoul (p, &p, 16);
+          if(p) quirk   = (unsigned) strtoul (p, &p, 16);
+          if(cmd=='R' || cmd=='r')
+               return command_RemoveQuirk(vendor,product,device);
+          if(cmd=='A' || cmd=='a')
+               return command_AddQuirk(vendor,product,device,quirk);
+        }
     }
 
     return 0;
@@ -1103,11 +1282,6 @@ int detach_hub (struct device* hub)
 
 /*---------------------------------------------------------------------------*/
 
-struct dev_struct {
-    devicefs_device dev;
-    int null;
-    char name[32];
-};
 
 #ifdef OBSOLETE_SERVICE_CALLS
 /* returns non-zero if not handed */
@@ -1431,45 +1605,13 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
 
     softc->sc_udev = ((struct usb_attach_arg*)aux)->device;
 
-    struct dev_struct * dev = calloc (sizeof *dev, 1);
-    sprintf (dev->name, "USB%d", no);
-    strncpy (softc->sc_dev.dv_xname, dev->name,
-        sizeof softc->sc_dev.dv_xname - 1)
-            [sizeof softc->sc_dev.dv_xname - 1] = '\0';
-
-    dev->dev.name_offset = dev->name - (char*) dev;
-    dev->dev.flags = 3;
-    dev->dev.tx_flags = 0x8;
-    dev->dev.tx_buffer_size = 8192;
-    dev->dev.rx_flags = 0x8;
-    dev->dev.rx_buffer_size = 1024;
-
-    e = _swix (DeviceFS_Register, _INR (0, 7) | _OUT(0),
-        6,
-        dev,
-        driver_entry,
-        softc,
-        private_word,
-        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/N",
-#ifdef DEVICEFSISBROKEN
-        INT_MAX, // should be -1, but that doesn't seem to work
-        INT_MAX,
-#else
-        -1,
-        -1,
-#endif
-        &softc->sc_devfs);
+    e= RegisterNewDevice( softc,no);
 
     if (e != NULL)
     {
         dprintf (("", "failed to register: %s\n", e->errmess));
-#if 0
-        free (dev);
         free (softc);
         return NULL;
-#else
-        softc->sc_devfs = 0;
-#endif
     }
 
     dprintf (("", "registered driver %p\n", softc->sc_devfs));
@@ -1500,8 +1642,10 @@ int detach_device (struct device* dev, int d)
 
 
     if (udev->sc_devfs)
+    {
         _swix (DeviceFS_Deregister, _IN(0), udev->sc_devfs);
     dprintf (("", "deregistered driver %p\n", udev->sc_devfs));
+    }
    free (udev);
    return 0;
 }
@@ -1519,6 +1663,7 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
 {
     struct usbd_bus* bus = sc;
     struct device* dev;
+    dprintf (("", "bus discover %p\n",bus));
     TAILQ_FOREACH(dev, &allbuses, dv_list)
     {
         /* XXX this is dodgy, because in the case where the OHCIDriver module
@@ -1536,6 +1681,7 @@ valid:
     _swix (Hourglass_On, 0);
     _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
 #endif
+    dprintf (("", "discovering %p\n",dev));
     do {
         usb_discover (bus->usbctl);
 #ifdef STANDALONE
@@ -1563,6 +1709,7 @@ void usb_needs_explore_callback (void* h) {
     if (bus->callbacks++ == 0)
     {
         dprintf (("", "Adding explore callback\n"));
+        if(bus->callbacks>10) bus->callbacks=10;
         callx_add_callback (discover_callback, h);
     }
     else
@@ -1633,7 +1780,7 @@ void bufins (void* dma, void* x)
     CallBufMan (&r);
 }
 
-void usbd_devinfo_vp(usbd_device_handle dev, char* v, char* p, int usedev)
+void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t pl, int usedev)
 {
     _kernel_oserror* e = NULL;
     usb_device_descriptor_t *udd = &dev->ddesc;
@@ -1687,9 +1834,9 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, char* p, int usedev)
     }
 
     if (vendor == NULL)
-        sprintf(v, "Vendor ID %04X", UGETW(udd->idVendor));
+        snprintf(v, vl, "Vendor ID %04X", UGETW(udd->idVendor));
     if (product == NULL)
-        sprintf(p, "Product ID %04X", UGETW(udd->idProduct));
+        snprintf(p, pl, "Product ID %04X", UGETW(udd->idProduct));
 }
 
 void softintr_schedule (void* p)
@@ -1865,7 +2012,7 @@ static _kernel_oserror* device_initialise
         &alt,
         &ep
     );
-    dprintf (("", "found interface %x, endpoint %x\n", iface, ep));
+    dprintf (("", "init_dev: found interface %x, endpoint %x\n", iface, ep));
 
     if (iface == 0xdeaddead)
     {
@@ -2122,7 +2269,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 {
     struct devstream* str = priv;
 
-    if (  (status != USBD_NORMAL_COMPLETION))
+    if (status != USBD_NORMAL_COMPLETION)
     {
         dprintf (("", "Bad completion code: %d (%s) %d bytes read\n",
             status, ccodes[status], xfer->actlen));
@@ -2140,24 +2287,26 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
        repeating transfers) */
     /* if we've got a number of bytes including a part packet, then
        transfer must have ended.. else.. try more */
-//    if (!(xfer->actlen/UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))  &&
-//      str->count != str->totalcount)
-    if(xfer->actlen < xfer->length)
+    if(!xfer->pipe->repeat)
     {
-        char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
-        memset (zero, 0, sizeof zero);
-        // fill up the rest of the request with garbage!
-        _kernel_swi_regs r;
-        r.r[0] = BM_InsertBlock;
-        r.r[1] = (int) str->buffer_id;
-        r.r[2] = (int) zero;
-        r.r[3] = str->totalcount - str->count;
-        CallBufMan (&r);
-    }
-    else if (str->count != str->totalcount && !xfer->pipe->repeat)
-    {
-        dprintf (("", "Starting read from callback\n"));
-        start_read (str);
+      if(xfer->actlen < xfer->length)
+      {
+          char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
+          memset (zero, 0, sizeof zero);
+          /* fill up the rest of the request with garbage! */
+          _kernel_swi_regs r;
+          r.r[0] = BM_InsertBlock;
+          r.r[1] = (int) str->buffer_id;
+          r.r[2] = (int) zero;
+          r.r[3] = str->totalcount - str->count;
+          dprintf (("", "Fill insert %x bytes\n",r.r[3]));
+          CallBufMan (&r);
+      }
+      else if (str->count != str->totalcount) 
+      {
+          dprintf (("", "Starting read from callback\n"));
+          start_read (str);
+      }
     }
 }
 
@@ -2701,7 +2850,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
                 &mod_messages, cc, 0, &cp);
             return _swix (MessageTrans_ErrorLookup, _INR(0,4),
                 errtoken, &mod_messages, &err, sizeof err, cp);
-return NULL;        }
+        }
         break;
     case DeviceFSCallDevice_USBRequest:
         {

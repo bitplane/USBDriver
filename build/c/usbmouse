@@ -163,7 +163,7 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
         sc->sc_udev = uaa->device;
         sc->sc_iface = iface;
         id = usbd_get_interface_descriptor(iface);
-        usbd_devinfo(uaa->device, 0, devinfo);
+        usbd_devinfo(uaa->device, 0, devinfo, sizeof devinfo);
         USB_ATTACH_SETUP;
         dprintf(("%s: %s, iclass %d/%d\n", USBDEVNAME(sc->sc_dev),
                devinfo, id->bInterfaceClass, id->bInterfaceSubClass));
@@ -239,7 +239,7 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
                        sc->sc_iid, hid_input, &sc->sc_loc_z, &flags) ||
             (wheel = hid_locate(desc, size, HID_USAGE2(HUP_GENERIC_DESKTOP,
                                                        HUG_WHEEL),
-                       sc->sc_iid, hid_input, &sc->sc_loc_z, &flags))) {
+                       sc->sc_iid, hid_input, &sc->sc_loc_z, &flags)) != 0) {
                 if ((flags & MOUSE_FLAGS_MASK) != MOUSE_FLAGS) {
                         sc->sc_loc_z.size = 0;  /* Bad Z coord, ignore it */
                 } else {
@@ -446,6 +446,9 @@ int pointerv (_kernel_swi_regs* r, void* pw)
 
     case PointerReason_Selected:
         if (r->r[1] == PointerDevice_USB) {
+            relx = 0;    /* ensure the pointer doesnt jump */
+            rely = 0;
+            relz = 0;
             dprintf (("", "USB mouse enabled\n"));
             enabled = true;
         } else {
@@ -527,9 +530,9 @@ void ums_intr
     if (sc->sc_iid && *ibuf++ != sc->sc_iid)
       return;
 
-    dx = hid_get_data(ibuf, &sc->sc_loc_x);
-    dy = -hid_get_data(ibuf, &sc->sc_loc_y);
-    dz =  hid_get_data(ibuf, &sc->sc_loc_z);
+    dx = (u_long) hid_get_data(ibuf, &sc->sc_loc_x);
+    dy = -(u_long) hid_get_data(ibuf, &sc->sc_loc_y);
+    dz = (u_long) hid_get_data(ibuf, &sc->sc_loc_z);
     if (sc->flags & UMS_REVZ)
         dz = -dz;
     relx += dx;

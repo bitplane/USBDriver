@@ -164,7 +164,7 @@ USB_ATTACH(uhub)
 
 	DPRINTFN(1,("uhub_attach\n"));
 	sc->sc_hub = dev;
-	usbd_devinfo(dev, 1, devinfo);
+        usbd_devinfo(dev, 1, devinfo, sizeof(devinfo));
 	USB_ATTACH_SETUP;
 	logprintf("%s: %s\n", USBDEVNAME(sc->sc_dev), devinfo);
 
@@ -252,12 +252,16 @@ USB_ATTACH(uhub)
 	if (err) {
 		logprintf("%s: cannot open interrupt pipe\n",
 		       USBDEVNAME(sc->sc_dev));
-		goto bad;
+                sc->sc_ipipe = NULL;
+                goto bad;
 	}
 
 	/* Wait with power off for a while. */
+	#ifndef __riscos
 	usbd_delay_ms(dev, USB_POWER_DOWN_TIME);
-
+	#else
+        QueryDelay(dev, "USB$PowerDownTime", USB_POWER_DOWN_TIME);
+        #endif
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, dev, USBDEV(sc->sc_dev));
 
 	/*
@@ -271,6 +275,7 @@ USB_ATTACH(uhub)
 	 *  For all ports
 	 *     turn on power
 	 *     wait for power to become stable
+	 *     then trigger a port explore explicitly
 	 * (all below happens in explore code)
 	 *  For all ports
 	 *     clear C_PORT_CONNECTION
@@ -296,6 +301,7 @@ USB_ATTACH(uhub)
 			up->power = USB_MAX_POWER;
 		else
 			up->power = USB_MIN_POWER;
+                up->restartcnt = 0;
 	}
 
 	/* XXX should check for none, individual, or ganged power? */
@@ -310,18 +316,21 @@ USB_ATTACH(uhub)
 			       USBDEVNAME(sc->sc_dev), port,
 			       usbd_errstr(err));
 		DPRINTF(("usb_init_port: turn on port %d power\n", port));
-		/* Wait for stable power. */
-#ifndef __riscos
-                /* do we really need this?  nothing's going to happen
-                   until the power is ready anyway, so what's the point in
-                   waiting? */
-		usbd_delay_ms(dev, pwrdly);
-#endif
-	}
+        }
+	
+	/* Wait for stable power. */
+         /* do we really need this?  nothing's going to happen
+            until the power is ready anyway, so what's the point in
+            waiting? .. think we do ..JB*/
+	DPRINTF(("usbhub_init_hub: waiting %dms for port power stable\n", pwrdly));
+        usbd_delay_ms(dev, pwrdly);
+        /* The usual exploration will finish the setup. */
 
-	/* The usual exploration will finish the setup. */
+        sc->sc_running = 1;
 
-	sc->sc_running = 1;
+        /* hub now ready for use .. make sure it gets explored */
+	DPRINTF(("usbhub_init_hub: power good: triggering hub explore..\n"));
+	usb_needs_explore(sc->sc_hub);
 
 	USB_ATTACH_SUCCESS_RETURN;
 
@@ -361,10 +370,10 @@ uhub_explore(usbd_device_handle dev)
 		}
 		status = UGETW(up->status.wPortStatus);
 		change = UGETW(up->status.wPortChange);
-		DPRINTFN(3,("uhub_explore: %s port %d status 0x%04x 0x%04x\n",
+                DPRINTFN(3,("uhub_explore: %s port %d status 0x%04x 0x%04x\n",
 			    USBDEVNAME(sc->sc_dev), port, status, change));
 		if (change & UPS_C_PORT_ENABLED) {
-			DPRINTF(("uhub_explore: C_PORT_ENABLED\n"));
+                        DPRINTF(("uhub_explore: C_PORT_ENABLED\n"));
 			usbd_clear_port_feature(dev, port, UHF_C_PORT_ENABLE);
 			if (status & UPS_PORT_ENABLED) {
 				logprintf("%s: illegal enable change, port %d\n",
@@ -378,10 +387,28 @@ uhub_explore(usbd_device_handle dev)
 
 				if (up->restartcnt++ < USBD_RESTART_MAX)
 					goto disco;
-				else
+				else{
 					logprintf("%s: port error, giving up "
 					       "port %d\n",
 					       USBDEVNAME(sc->sc_dev), port);
+					usbd_clear_port_feature(dev, port, UHF_PORT_POWER);
+					logprintf("%s: port error: power down "
+					       "port %d\n",
+					       USBDEVNAME(sc->sc_dev), port);
+					usbd_delay_ms(dev, USB_PORT_POWER_DOWN_TIME);
+					usbd_set_port_feature(dev, port, UHF_PORT_POWER);
+					logprintf("%s: port error: power up "
+					       "port %d\n",
+					       USBDEVNAME(sc->sc_dev), port);
+					int pwrdly = dev->hub->hubdesc.bPwrOn2PwrGood
+					             * UHD_PWRON_FACTOR
+					    + USB_EXTRA_POWER_UP_TIME;
+					logprintf("%s: port error: delay %d ms on  "
+					       "port %d\n", pwrdly,
+					       USBDEVNAME(sc->sc_dev), port);
+					usbd_delay_ms(dev, pwrdly);
+						return (USBD_NORMAL_COMPLETION);
+				}
 			}
 		}
 #ifdef __riscos0
@@ -406,8 +433,8 @@ uhub_explore(usbd_device_handle dev)
 
 		/* We have a connect status change, handle it. */
 
-		DPRINTF(("uhub_explore: status change hub=%d port=%d\n",
-			 dev->address, port));
+                DPRINTFN(-1,("uhub_explore: status change hub=%d port=%d status=%x:%x\n",
+                         dev->address, port,up->status, usbd_get_port_status(dev, port, &up->status)));
 		usbd_clear_port_feature(dev, port, UHF_C_PORT_CONNECTION);
 		/*usbd_clear_port_feature(dev, port, UHF_C_PORT_ENABLE);*/
 		/*
@@ -420,7 +447,7 @@ uhub_explore(usbd_device_handle dev)
 	disco:
 		if (up->device != NULL) {
 			/* Disconnected */
-			DPRINTF(("uhub_explore: device addr=%d disappeared "
+                        DPRINTF(("uhub_explore: device addr=%d disappeared "
 				 "on port %d\n", up->device->address, port));
 			usb_disconnect_port(up, USBDEV(sc->sc_dev));
 			usbd_clear_port_feature(dev, port,
@@ -440,8 +467,12 @@ uhub_explore(usbd_device_handle dev)
 			       USBDEVNAME(sc->sc_dev), port);
 
 		/* Wait for maximum device power up time. */
-		usbd_delay_ms(dev, USB_PORT_POWERUP_DELAY);
-
+		#ifndef __riscos
+		usbd_delay_ms(dev,USB_PORT_POWERUP_DELAY); 
+		#else
+                QueryDelay(dev, "USB$PortPowerUpDelay", USB_PORT_POWERUP_DELAY);
+                #endif
+                
 		/* Reset port, which implies enabling it. */
 		if (usbd_reset_port(dev, port, &up->status)) {
 			logprintf("%s: port %d reset failed\n",
@@ -556,11 +587,14 @@ USB_DETACH(uhub)
 	DPRINTF(("uhub_detach: sc=%port\n", sc));
 #endif
 
-	if (hub == NULL || !sc->sc_ipipe)	/* Must be partially working */
+        if (hub == NULL)                /* Must be partially working */
 		return (0);
 
+        if (sc->sc_ipipe)
+        {
 	usbd_abort_pipe(sc->sc_ipipe);
 	usbd_close_pipe(sc->sc_ipipe);
+        }
 
 	nports = hub->hubdesc.bNbrPorts;
 	for(port = 0; port < nports; port++) {
