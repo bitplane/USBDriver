@@ -152,12 +152,13 @@ int unhandled_irqs;
 //    return NULL;
 //}
 
-_kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
+_kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
     _kernel_oserror * e;
 
     (void) r;
     (void) pw;
+    
 
 
 
@@ -216,7 +217,10 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 #endif    
     debug_initialise (debugname, 0, 0);
     debug_set_device(DEBUGIT_OUTPUT);
+//    debug_set_device(PRINTF_OUTPUT);
     debug_set_unbuffered_files (TRUE);
+    /* cannot debug_set_stamp_debug (TRUE).. get stack overflow!!!  */
+/*    debug_set_stamp_debug (TRUE);*/
 
     dprintf (("Main_0", "Starting driver\n"));
 
@@ -236,7 +240,13 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     if (podule_base != 0)
     {
-        pci_device = atoi (cmd_tail);
+        char* endptr;
+        pci_device = (int) strtol (cmd_tail, &endptr, 0);
+        if (endptr == cmd_tail)
+        {
+            return (_kernel_oserror*)
+                "\1\0\0\0"Module_Title" can't be reinitialised";
+        }
     }
 //#ifdef STANDALONE
 //    else
@@ -247,21 +257,15 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 //#endif
 
 
-//    /* quick bodge */
-//    if (pci_device == 10)
-//    {
-//        pci_device = 13;
-//    }
-//    else
+    // find the next possible controller
     do {
-        e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
-            0x0C0320,
-            0xFFFFFF,
-            pci_device,
-            &pci_device);
-        if (e) return e;
-    } while (0);//pci_device == 2 || pci_device == 3);
-
+    e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
+        0x0C0320,
+        0xFFFFFF,
+        pci_device,
+        &pci_device);
+    if (e) return e;
+    } while (0);
 
     /* if there were no more EHCI controllers, then return an error.  This
        will be thrown away by the callback above */
@@ -271,7 +275,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
         return (_kernel_oserror*) "\0\0\0\0No EHCI devices found";
     }
 
-    dprintf (("Main_0", "Found EHCI controller on device %d\n", pci_device));
+    dprintf (("", "Found EHCI controller on device %d\n", pci_device));
 
 
     /* now establish our interrupt and address */
@@ -301,26 +305,26 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     usbdebug = ehcidebug = atoi (getenv ("ehcidebug"));
     irq0 = gettime () / 1000;
 
-    dev = calloc (sizeof *dev, 1);
-    strcpy (dev->name, ehci_soft.sc_bus.bdev.dv_xname);
-
-    dev->dev.name_offset = dev->name - (char*) dev;
-    dev->dev.flags = 3;
-    dev->dev.tx_flags = 0x8;
-    dev->dev.tx_buffer_size = 0;
-    dev->dev.rx_flags = 0x8;
-    dev->dev.rx_buffer_size = 1024;
-
-    e = _swix (DeviceFS_Register, _INR (0, 7) | _OUT(0),
-        4,
-        dev,
-        driver_entry,
-        NULL,
-        pw,
-        NULL,
-        INT_MAX, // XXX should be -1, but that doesn't seem to work
-        INT_MAX,
-        &irq_device);
+//    dev = calloc (sizeof *dev, 1);
+//    strcpy (dev->name, ehci_soft.sc_bus.bdev.dv_xname);
+//
+//    dev->dev.name_offset = dev->name - (char*) dev;
+//    dev->dev.flags = 3;
+//    dev->dev.tx_flags = 0x8;
+//    dev->dev.tx_buffer_size = 0;
+//    dev->dev.rx_flags = 0x8;
+//    dev->dev.rx_buffer_size = 1024;
+//
+//    e = _swix (DeviceFS_Register, _INR (0, 7) | _OUT(0),
+//        4,
+//        dev,
+//        driver_entry,
+//        NULL,
+//        pw,
+//        NULL,
+//        INT_MAX, // XXX should be -1, but that doesn't seem to work
+//        INT_MAX,
+//        &irq_device);
 #endif
 
     _swix (OS_ClaimDeviceVector, _INR(0,4),
@@ -346,7 +350,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     /* try and start a new instance to catch any more controllers on the bus */
 
-    _swix (OS_AddCallBack, _INR(0,1), new_entry, pw);
+     callx_add_callback (new_instance, 0);
+//   _swix (OS_AddCallBack, _INR(0,1), new_entry, pw);
 
     return 0;
 
@@ -360,15 +365,14 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
 
     if (usb_soft != NULL)
+    {
         _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
-
-
-    if (usb_soft != NULL)
-        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
-
+        usb_soft=NULL;
+    }
 // need to stop the controller
-     EOWRITE4(&ehci_soft, EHCI_USBCMD, EHCI_CMD_HCRESET);
-     EOREAD4(&ehci_soft, EHCI_USBCMD);/* flush the command */
+    EOWRITE4(&ehci_soft, EHCI_USBCMD, 0);
+    EOWRITE4(&ehci_soft, EHCI_USBCMD, EHCI_CMD_HCRESET);
+    EOREAD4(&ehci_soft, EHCI_USBCMD);/* flush the command */
 
     /* don't disable the interrupt since it is shared, the OS will disable it
        when noone is left responding */
@@ -415,7 +419,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 
 
              }
-             return;
+             break;
            case Service_USBDriver_Dying:
              dprintf (("", "Deregistering with USB driver\n"));
              /* USBDriver will do the deregistering at this point, since
@@ -423,16 +427,18 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
              ehci_detach(&ehci_soft,0);
              ehci_shutdown(&ehci_soft);
              usb_soft = NULL;
-             return;
-           default:return;
-         }  
+             break;
+           default:break;
+         }
+        break;
       case Service_PreReset:
         dprintf (("", "Svce prereset %x %x\n",Service_PreReset,service_number));
         /* reset the controller */
+        EOWRITE4(&ehci_soft, EHCI_USBCMD, 0);
         EOWRITE4(&ehci_soft, EHCI_USBCMD, EHCI_CMD_HCRESET);
         EOREAD4(&ehci_soft, EHCI_USBCMD);/* flush the command */
-        return;
-      default:return;
+        break;
+      default:break;
     }
 }
 
@@ -719,6 +725,7 @@ riscos_abort_pipe (void* v)
 
 
 
+
 void
 usb_schedsoftintr (struct usbd_bus* sc)
 {
@@ -736,21 +743,21 @@ softintr (_kernel_swi_regs* r, void* pw)
 
 
 /*---------------------------------------------------------------------------*/
-#ifdef EHCI_DEBUG
-
-_kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
-{
-    switch (r->r[0])
-    {
-    case DeviceFSCallDevice_Terminate:
-        irq_buf = 0;
-        break;
-    case DeviceFSCallDevice_StreamCreated:
-        irq_buf = r->r[3];
-        break;
-    }
-
-    return NULL;
-}
-
-#endif
+//#ifdef EHCI_DEBUG
+//
+//_kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
+//{
+//    switch (r->r[0])
+//    {
+//    case DeviceFSCallDevice_Terminate:
+//        irq_buf = 0;
+//        break;
+//    case DeviceFSCallDevice_StreamCreated:
+//        irq_buf = r->r[3];
+//        break;
+//    }
+//
+//    return NULL;
+//}
+//
+//#endif

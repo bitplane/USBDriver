@@ -316,6 +316,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
     debug_initialise ("USBDriver", "$.dbUSBD", 0);
 //    debug_set_device(FILE_OUTPUT);
     debug_set_device(DEBUGIT_OUTPUT);
+//    debug_set_device(PRINTF_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
 
@@ -2029,12 +2030,13 @@ static _kernel_oserror* device_initialise
     {
         struct iface_softc* ifc;
         /* throw off mice or keyboards */
+        
         switch ((int) (ugen->sc_udev->subdevs[n]->dv_cfdata))
         {
         case 3:
         case 4:
             ifc = (struct iface_softc*) ugen->sc_udev->subdevs[n];
-            if (ifc->sc_iface->index == iface)
+            if (ifc->sc_iface->index == iface)     
             {
                 dprintf (("", "throwing off subdevice %d\n", n));
                 config_detach (ugen->sc_udev->subdevs[n], 0);
@@ -2276,26 +2278,45 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
        repeating transfers) */
     /* if we've got a number of bytes including a part packet, then
        transfer must have ended.. else.. try more */
-    if(!xfer->pipe->repeat)
+//    if(!xfer->pipe->repeat)
+//    {
+//      if(xfer->actlen < xfer->length)
+//      {
+//          char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
+//          memset (zero, 0, sizeof zero);
+//          /* fill up the rest of the request with garbage! */
+//          _kernel_swi_regs r;
+//          r.r[0] = BM_InsertBlock;
+//          r.r[1] = (int) str->buffer_id;
+//          r.r[2] = (int) zero;
+//          r.r[3] = str->totalcount - str->count;
+//          dprintf (("", "Fill insert %x bytes\n",r.r[3]));
+//          CallBufMan (&r);
+//      }
+//      else if (str->count != str->totalcount) 
+//      {
+//          dprintf (("", "Starting read from callback\n"));
+//          start_read (str);
+//      }
+//    }
+
+    if ((xfer->actlen % UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))
+        && str->count != str->totalcount)
     {
-      if(xfer->actlen < xfer->length)
-      {
-          char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
-          memset (zero, 0, sizeof zero);
-          /* fill up the rest of the request with garbage! */
-          _kernel_swi_regs r;
-          r.r[0] = BM_InsertBlock;
-          r.r[1] = (int) str->buffer_id;
-          r.r[2] = (int) zero;
-          r.r[3] = str->totalcount - str->count;
-          dprintf (("", "Fill insert %x bytes\n",r.r[3]));
-          CallBufMan (&r);
-      }
-      else if (str->count != str->totalcount) 
-      {
-          dprintf (("", "Starting read from callback\n"));
-          start_read (str);
-      }
+        char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
+        memset (zero, 0, sizeof zero);
+        /* fill up the rest of the request with garbage! */
+        _kernel_swi_regs r;
+        r.r[0] = BM_InsertBlock;
+        r.r[1] = (int) str->buffer_id;
+        r.r[2] = (int) zero;
+        r.r[3] = str->totalcount - str->count;
+        CallBufMan (&r);
+    }
+    else if (str->count != str->totalcount && !xfer->pipe->repeat)
+    {
+        dprintf (("", "Starting read from callback\n"));
+        start_read (str);
     }
 }
 
@@ -2465,12 +2486,12 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
             str->dying = 1;
             /* only close these when the device is removed */
             status = usbd_abort_pipe(str->pipe);
-            dprintf (("", "status: %s\n", ccodes[status]));
+            dprintf (("", "status1: %s\n", ccodes[status]));
             status = usbd_close_pipe(str->pipe);
-            dprintf (("", "status: %s\n", ccodes[status]));
-            usbd_free_buffer (str->xfer);
+            dprintf (("", "status2: %s\n", ccodes[status]));
+//            usbd_free_buffer (str->xfer);    /* done in usbd_free_xfer
             status = usbd_free_xfer(str->xfer);
-            dprintf (("", "status: %s\n", ccodes[status]));
+            dprintf (("", "status3: %s\n", ccodes[status]));
             ugen->str[index] = NULL;
         }
         else

@@ -61,7 +61,9 @@ extern int uhidevdebug = 0;
 #define DPRINTF(x)
 #define DPRINTFN(n,x)
 #endif
-
+#ifdef __riscos
+#define printf logprintf
+#endif
 Static void hid_clear_local(struct hid_item *);
 
 #define MAXUSAGE 256
@@ -198,7 +200,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 			dval |= *data++ << 24;
 			break;
 		default:
-			logprintf("BAD LENGTH %d\n", bSize);
+                        printf("BAD LENGTH %d\n", bSize);
 			continue;
 		}
 
@@ -265,7 +267,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 				s->nu = 0;
 				return (1);
 			default:
-				logprintf("Main bTag=%d\n", bTag);
+                                printf("Main bTag=%d\n", bTag);
 				break;
 			}
 			break;
@@ -315,7 +317,7 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 				free(hi, M_TEMP);
 				break;
 			default:
-				logprintf("Global bTag=%d\n", bTag);
+                                printf("Global bTag=%d\n", bTag);
 				break;
 			}
 			break;
@@ -368,12 +370,12 @@ hid_get_item(struct hid_data *s, struct hid_item *h)
 				c->set_delimiter = dval;
 				break;
 			default:
-				logprintf("Local bTag=%d\n", bTag);
+                                printf("Local bTag=%d\n", bTag);
 				break;
 			}
 			break;
 		default:
-			logprintf("default bType=%d\n", bType);
+                        printf("default bType=%d\n", bType);
 			break;
 		}
 	}
@@ -399,7 +401,7 @@ hid_report_size(void *buf, int len, enum hid_kind k, u_int8_t id)
 				lo = h.loc.pos;
 #ifdef DIAGNOSTIC
 				if (lo != 0) {
-					logprintf("hid_report_size: lo != 0\n");
+                                        printf("hid_report_size: lo != 0\n");
 				}
 #endif
 			}

@@ -50,8 +50,4 @@ EHCIDebug(  min-args:1, max-args:2,
 
 vector-handlers:    	usb_irq_entry/usb_irq_handler,
 			softintr_entry/softintr
-generic-veneers:    	callout_entry/callout_handler,
-#ifdef EHCI_DEBUG
-			driver_entry/driver,
-#endif
-			new_entry/new_instance
+generic-veneers:    	callout_entry/callout_handler

@@ -72,7 +72,8 @@ usbd_status	usbd_read_report_desc(usbd_interface_handle ifc, void **descp,
 				       int *sizep, usb_malloc_type mem);
 usbd_status	usbd_get_config(usbd_device_handle dev, u_int8_t *conf);
 usbd_status	usbd_get_string_desc(usbd_device_handle dev, int sindex,
-				     int langid,usb_string_descriptor_t *sdesc, int *sizep);
+                                     int langid,usb_string_descriptor_t *sdesc,
+                                     int *sizep);
 void		usbd_delay_ms(usbd_device_handle, u_int);
 
 
@@ -88,5 +89,10 @@ usbd_status usbd_intr_transfer(usbd_xfer_handle xfer, usbd_pipe_handle pipe,
 
 void usb_detach_wait(device_ptr_t);
 void usb_detach_wakeup(device_ptr_t);
-
+#ifdef __riscos
 usb_descriptor_t *usb_find_desc(usbd_device_handle dev, int type);
+#else
+const usb_descriptor_t *usb_find_desc(usbd_device_handle dev, int type,
+                                      int subtype);
+#endif
+#define USBD_SUBTYPE_ANY (~0)

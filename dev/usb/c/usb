@@ -45,6 +45,8 @@
 
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.80 2003/11/07 17:03:25 wiz Exp $");
+//#include "ohci.h"
+//#include "uhci.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -83,6 +85,8 @@ int	uhcidebug;
 #ifdef OHCI_DEBUG
 int	ohcidebug;
 #endif
+
+
 /*
  * 0  - do usual exploration
  * 1  - do not use timeout exploration
@@ -92,6 +96,10 @@ int	usb_noexplore = 0;
 #else
 #define DPRINTF(x)
 #define DPRINTFN(n,x)
+#endif
+
+#ifdef __riscos
+#define printf logprintf 
 #endif
 
 struct usb_softc {
@@ -168,7 +176,7 @@ USB_ATTACH(usb)
 	sc->sc_port.power = USB_MAX_POWER;
 
 	usbrev = sc->sc_bus->usbrev;
-	logprintf(": USB revision %s", usbrev_str[usbrev]);
+        printf(": USB revision %s", usbrev_str[usbrev]);
 	switch (usbrev) {
 	case USBREV_1_0:
 	case USBREV_1_1:
@@ -178,11 +186,11 @@ USB_ATTACH(usb)
 		speed = USB_SPEED_HIGH;
 		break;
 	default:
-		logprintf(", not supported\n");
+                printf(", not supported\n");
 		sc->sc_dying = 1;
 		USB_ATTACH_ERROR_RETURN;
 	}
-	logprintf("\n");
+        printf("\n");
 
 	/* Make sure not to use tsleep() if we are cold booting. */
 	if (cold)
@@ -197,7 +205,7 @@ USB_ATTACH(usb)
 	sc->sc_bus->soft = softintr_establish(IPL_SOFTNET,
 	    sc->sc_bus->methods->soft_intr, sc->sc_bus);
 	if (sc->sc_bus->soft == NULL) {
-		logprintf("%s: can't register softintr\n", USBDEVNAME(sc->sc_dev));
+                printf("%s: can't register softintr\n", USBDEVNAME(sc->sc_dev));
 		sc->sc_dying = 1;
 		USB_ATTACH_ERROR_RETURN;
 	}
@@ -212,7 +220,7 @@ USB_ATTACH(usb)
 		dev = sc->sc_port.device;
 		if (dev->hub == NULL) {
 			sc->sc_dying = 1;
-			logprintf("%s: root device is not a hub\n",
+                        printf("%s: root device is not a hub\n",
 			       USBDEVNAME(sc->sc_dev));
 			USB_ATTACH_ERROR_RETURN;
 		}
@@ -227,7 +235,7 @@ USB_ATTACH(usb)
 			dev->hub->explore(sc->sc_bus->root_hub);
 #endif
 	} else {
-		logprintf("%s: root hub problem, error=%d\n",
+                printf("%s: root hub problem, error=%d\n",
 		       USBDEVNAME(sc->sc_dev), err);
 		sc->sc_dying = 1;
 	}
@@ -255,7 +263,7 @@ usb_create_event_thread(void *arg)
 
 	if (usb_kthread_create1(usb_event_thread, sc, &sc->sc_event_thread,
 			   "%s", sc->sc_dev.dv_xname)) {
-		logprintf("%s: unable to create event thread for\n",
+                printf("%s: unable to create event thread for\n",
 		       sc->sc_dev.dv_xname);
 		panic("usb_create_event_thread");
 	}
@@ -265,7 +273,7 @@ usb_create_event_thread(void *arg)
 		TAILQ_INIT(&usb_all_tasks);
 		if (usb_kthread_create1(usb_task_thread, NULL,
 					&usb_task_thread_proc, "usbtask")) {
-			logprintf("unable to create task thread\n");
+                        printf("unable to create task thread\n");
 			panic("usb_create_event_thread task");
 		}
 	}
@@ -735,7 +743,7 @@ usb_get_next_event(struct usb_event *ue)
 	ueq = SIMPLEQ_FIRST(&usb_events);
 #ifdef DIAGNOSTIC
 	if (ueq == NULL) {
-		logprintf("usb: usb_nevents got out of sync! %d\n", usb_nevents);
+                printf("usb: usb_nevents got out of sync! %d\n", usb_nevents);
 		usb_nevents = 0;
 		return (0);
 	}
@@ -863,7 +871,7 @@ usb_detach(device_ptr_t self, int flags)
 #else
 		if (tsleep(sc, PWAIT, "usbdet", hz * 60))
 #endif
-			logprintf("%s: event thread didn't die\n",
+			printf("%s: event thread didn't die\n",
 			       USBDEVNAME(sc->sc_dev));
 		DPRINTF(("usb_detach: event thread dead\n"));
 	}

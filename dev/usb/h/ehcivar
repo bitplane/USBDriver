@@ -1,4 +1,4 @@
-/*      $NetBSD: ehcivar.h,v 1.15 2004/10/22 10:38:17 augustss Exp $ */
+/*      $NetBSD: ehcivar.h,v 1.17 2005/01/11 07:45:34 imp Exp $ */
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -85,8 +85,6 @@ struct ehci_soft_islot {
 #define EHCI_HASH_SIZE 128
 #define EHCI_COMPANION_MAX 8
 
-#define EHCI_SCFLG_DONEINIT	0x0001	/* ehci_init() has been called. */
-
 typedef struct ehci_softc {
 	struct usbd_bus sc_bus;		/* base device */
 	bus_space_tag_t iot;
@@ -138,6 +136,9 @@ typedef struct ehci_softc {
 	device_ptr_t sc_child;		/* /dev/usb# device */
 
 	char sc_dying;
+#ifdef __NetBSD__
+        struct usb_dma_reserve sc_dma_reserve;
+#endif
 } ehci_softc_t;
 
 #define EREAD1(sc, a) bus_space_read_1((sc)->iot, (sc)->ioh, (a))
