@@ -991,7 +991,7 @@ int config_detach (struct device* dev, int n)
     case 4: return detach_keyboard (dev);
     }
 
-    free (dev);
+//    free (dev);
     return 0;
 }
 
