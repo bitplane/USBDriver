@@ -12,8 +12,8 @@
 | See the License for the specific language governing permissions and
 | limitations under the License.
 |
-echo starting build
 dir <obey$dir>
+echo starting build
 amu_machine all rom debug COMPONENT=OHCIDriver CDEBUG="-DDIAGNOSTIC -DDEBUGLIB -DUSB_DEBUG -DOHCI_DEBUG" CFLAGS="-DSTANDALONE -g"
 |amu_machine -f MakeEHCID all debug
 amu_machine all rom debug COMPONENT=USBDriver CDEBUG="-DDIAGNOSTIC -DDEBUGLIB -DUSB_DEBUG -DOHCI_DEBUG" CFLAGS="-DSTANDALONE -g"

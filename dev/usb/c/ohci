@@ -967,7 +967,7 @@ ohci_allocx(struct usbd_bus *bus)
 
 	xfer = SIMPLEQ_FIRST(&sc->sc_free_xfers);
 	if (xfer != NULL)
-		SIMPLEQ_REMOVE_HEAD(&sc->sc_free_xfers, xfer, next);
+		SIMPLEQ_REMOVE_HEAD(&sc->sc_free_xfers, next);
 	else
 		xfer = malloc(sizeof(*xfer), M_USB, M_NOWAIT);
 	if (xfer != NULL)
@@ -2050,7 +2050,7 @@ ohci_open(usbd_pipe_handle pipe)
 		opipe->sed = sed;
 		if (xfertype == UE_ISOCHRONOUS) {
 			sitd = ohci_alloc_sitd(sc);
-			if (sitd == NULL) 
+			if (sitd == NULL)
 				goto bad1;
 			opipe->tail.itd = sitd;
 			tdphys = sitd->physaddr;
@@ -2061,7 +2061,7 @@ ohci_open(usbd_pipe_handle pipe)
 				fmt |= OHCI_ED_DIR_OUT;
 		} else {
 			std = ohci_alloc_std(sc);
-			if (std == NULL) 
+			if (std == NULL)
 				goto bad1;
 			opipe->tail.td = std;
 			tdphys = std->physaddr;

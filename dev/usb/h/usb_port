@@ -184,20 +184,6 @@ __CONCAT(dname,_detach)( \
 #define USB_DO_ATTACH(dev, bdev, parent, args, print, sub) \
         riscos_usb_attach (parent, args)
 
-#define SIMPLEQ_REMOVE_HEAD(h, e, f)	do {				\
-		if ( (e) != SIMPLEQ_FIRST((h)) )			\
-			panic("Removing other than first element");	\
-		STAILQ_REMOVE_HEAD(h, f);				\
-} while (0)
-#define SIMPLEQ_INSERT_HEAD	STAILQ_INSERT_HEAD
-#define SIMPLEQ_INSERT_TAIL	STAILQ_INSERT_TAIL
-#define SIMPLEQ_NEXT		STAILQ_NEXT
-#define SIMPLEQ_FIRST		STAILQ_FIRST
-#define SIMPLEQ_HEAD		STAILQ_HEAD
-#define SIMPLEQ_INIT		STAILQ_INIT
-#define SIMPLEQ_HEAD_INITIALIZER	STAILQ_HEAD_INITIALIZER
-#define SIMPLEQ_ENTRY		STAILQ_ENTRY
-
 /* so we don't have to worry about memory allocation types */
 #define M_USB 0
 #define M_USBDEV 0
