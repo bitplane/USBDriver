@@ -120,8 +120,8 @@ NEQV,               NEQV,            NEQV,             NEQV,
 NEQV,               NEQV,            NEQV,             NEQV,
 NEQV,               NEQV,            NEQV,             NEQV,
 NEQV,               NEQV,            NEQV,             NEQV,             /*8*/
-NEQV,               NEQV,            NEQV,             NEQV,
-NEQV,               NEQV,            NEQV,             NEQV,
+NEQV,               NEQV,            NEQV,             KeyNo_NotFittedRight,
+KeyNo_Kana,         KeyNo_Pound,     KeyNo_Convert,    KeyNo_NoConvert,
 NEQV,               NEQV,            NEQV,             NEQV,
 NEQV,               NEQV,            NEQV,             NEQV,             /*9*/
 NEQV,               NEQV,            NEQV,             NEQV,
