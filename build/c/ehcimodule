@@ -165,11 +165,11 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     /* register with the usbdriver module if it's already resident */
     dprintf (("", "Registering with USB driver\n"));
 
-    memset (&ehci_soft, 0, sizeof ehci_soft);
-    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
-    /* fix n companions */
-    ehci_soft.sc_ncomp = 2;
-    ehci_init (&ehci_soft);
+//    memset (&ehci_soft, 0, sizeof ehci_soft);
+//    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+//    /* fix n companions */
+//    ehci_soft.sc_ncomp = 2;
+//    ehci_init (&ehci_soft);
 
     _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
             &ehci_soft, &usb_soft);
@@ -295,9 +295,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     dprintf (("Main_0", "hardware address %p\n", ehci_base));
 
-    memset (&ehci_soft, 0, sizeof ehci_soft);
-
-    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
 
     private_word = pw;
 
@@ -337,6 +334,10 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
         return (_kernel_oserror*) "\0\0\0\0Couldn't claim magic";
     }
     dprintf (("", "magic at %p", magic));
+
+    memset (&ehci_soft, 0, sizeof ehci_soft);
+
+    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
 
     /* fix n companions */
     ehci_soft.sc_ncomp = 2;
@@ -599,7 +600,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
 
 void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
 {
-#ifdef EHCI_DEBUG
+#ifdef EHCI_DEBUG0
     if (ehcidebug > 10)
         dprintf  (("", "write %x to %p\n", x, ehci_base + o/4));
 #endif
@@ -608,7 +609,7 @@ void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
 
 int bus_space_read_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 {
-#ifdef EHCI_DEBUG
+#ifdef EHCI_DEBUG0
     if (ehcidebug > 15)
          dprintf  (("", "read %x from %p\n", ehci_base[o/4], ehci_base + o/4));
 #endif
@@ -617,7 +618,7 @@ int bus_space_read_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 
 void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
 {
-#ifdef EHCI_DEBUG
+#ifdef EHCI_DEBUG0
     if (ehcidebug > 10)
         dprintf  (("", "write %x to %p\n", x, ((uint16_t*) ehci_base) + o/2));
 #endif
@@ -626,7 +627,7 @@ void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
 
 int bus_space_read_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 {
-#ifdef EHCI_DEBUG
+#ifdef EHCI_DEBUG0
     if (ehcidebug > 15)
          dprintf  (("", "read %x from %p\n",
             ((uint16_t*)ehci_base)[o/2], ((uint16_t*)ehci_base) + o/2));
@@ -636,7 +637,7 @@ int bus_space_read_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 
 void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
 {
-#ifdef EHCI_DEBUG
+#ifdef EHCI_DEBUG0
     if (ehcidebug > 10)
         dprintf  (("", "write %x to %p\n", x, ((uint8_t*) ehci_base) + o));
 #endif
@@ -645,7 +646,7 @@ void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
 
 int bus_space_read_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 {
-#ifdef EHCI_DEBUG
+#ifdef EHCI_DEBUG0
     if (ehcidebug > 15)
          dprintf  (("", "read %x from %p\n",
             ((uint8_t*) ehci_base)[o], ehci_base + o));

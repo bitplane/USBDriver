@@ -983,7 +983,7 @@ usbd_probe_and_attach(device_ptr_t parent, usbd_device_handle dev,
 #else
 		dev->subdevs = malloc((nifaces+1) * sizeof dv, M_USB,M_NOWAIT);
 #endif
-		if (dev->subdevs == NULL) {
+                if (dev->subdevs == NULL) {
 #if defined(__FreeBSD__)
 			device_delete_child(parent, bdev);
 #endif
@@ -1051,7 +1051,7 @@ generic:
                 if (!dev->subdevs)
 #endif
 		dev->subdevs = malloc(2 * sizeof dv, M_USB, M_NOWAIT);
-		if (dev->subdevs == 0)
+                if (dev->subdevs == 0)
 			return (USBD_NOMEM);
 #ifdef __riscos
                 dev->subdevs[found++] = dv;
@@ -1248,7 +1248,11 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 
 	err = usbd_probe_and_attach(parent, dev, port, addr);
 	if (err) {
+#ifdef __riscos
+		usb_disconnect_port(up, parent);
+#else
 		usbd_remove_device(dev, up);
+#endif
 		return (err);
   	}
 
@@ -1275,7 +1279,6 @@ void
 usbd_remove_device(usbd_device_handle dev, struct usbd_port *up)
 {
 	DPRINTF(("usbd_remove_device: %p\n", dev));
-
 	if (dev->default_pipe != NULL)
 		usbd_kill_pipe(dev->default_pipe);
         up->device = NULL;
@@ -1446,7 +1449,9 @@ void
 usb_free_device(usbd_device_handle dev)
 {
 	int ifcidx, nifc;
-
+#ifdef __riscos
+	if(dev->dv_unit)kill_system_variable(dev->dv_unit);
+#endif
 	if (dev->default_pipe != NULL)
 		usbd_kill_pipe(dev->default_pipe);
 	if (dev->ifaces != NULL) {

@@ -357,27 +357,25 @@ USB_ATTACH(uhub)
 			       usbd_errstr(err));
 		DPRINTF(("usb_init_port: turn on port %d power\n", port));
 #ifdef __riscos
-        }
-#endif
-
+	}
+#else
 	/* Wait for stable power. */
          /* do we really need this?  nothing's going to happen
             until the power is ready anyway, so what's the point in
             waiting? .. think we do ..JB*/
-	DPRINTF(("usbhub_init_hub: waiting %dms for port power stable\n", pwrdly));
-        usbd_delay_ms(dev, pwrdly);
-#ifndef __riscos
+		DPRINTF(("usbhub_init_hub: waiting %dms for port power stable\n", pwrdly));
+		usbd_delay_ms(dev, pwrdly);
         }
 #endif
         /* The usual exploration will finish the setup. */
 
         sc->sc_running = 1;
 
-#ifdef __riscos
-        /* hub now ready for use .. make sure it gets explored */
-	DPRINTF(("usbhub_init_hub: power good: triggering hub explore..\n"));
-	usb_needs_explore(sc->sc_hub);
-#endif
+//#ifdef __riscos
+//        /* hub now ready for use .. make sure it gets explored */
+//	DPRINTF(("usbhub_init_hub: power good: triggering hub explore..\n"));
+//	usb_needs_explore(sc->sc_hub);
+//#endif
 	USB_ATTACH_SUCCESS_RETURN;
 
  bad:
@@ -564,7 +562,7 @@ uhub_explore(usbd_device_handle dev)
 #ifdef __riscos
                 /* experiencing trouble getting first descriptor, give a bit
                    of a delay for device to settle */
-                usbd_delay_ms (dev, 100);
+                QueryDelay(dev, "USB$PortStartupDelay", USB_PORT_STARTUP_DELAY);
 #endif
 
 		/* Figure out device speed */

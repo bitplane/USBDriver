@@ -187,7 +187,7 @@ void riscos_failed_device (void* p)
 
 _kernel_oserror* messages_update (messages* mess)
 {
-    dprintf (("", "loading message file: %s\n", mess->filename));
+    dprintf (("main", "loading message file: %s\n", mess->filename));
     int fh, h;
     _kernel_oserror* e = NULL;
 
@@ -277,6 +277,7 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
 int detach_device (struct device* dev, int);
 bool sysvar_attach;
 static int launch_system_variable (struct usb_attach_arg* aux, int unit);
+void kill_system_variable (int unit);
 
 extern int ugenioctl(int devt, int cmd, void* addr, int flag, void* p);
 extern int usbioctl(int devt, u_long cmd, void* data, int flag, void *p);
@@ -922,7 +923,7 @@ static _kernel_oserror* command_AddQuirk(unsigned vendor, unsigned product, unsi
 /*---------------------------------------------------------------------------*/
 
 int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock);
-
+void wakeup (void* ident);
 _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
 {
     switch (cmd_no) {
@@ -1103,9 +1104,9 @@ struct device* get_usbdev (int unit)
 }
 
 /*---------------------------------------------------------------------------*/
-
 struct device* riscos_usb_attach
 (
+    void* dev,
     struct device*  parent,
     void* aux
 ) {
@@ -1127,11 +1128,12 @@ struct device* riscos_usb_attach
           return ret;
         }
     }
-
-    ret = attach_device (parent, aux, usbdev_no);
+    /* get a number.. dev->dvunit will be 0 if this is the first time through */
+    if(!((usbd_device_handle)dev)->dv_unit) ((usbd_device_handle)dev)->dv_unit = usbdev_no++;
+    ret = attach_device (parent, aux, ((usbd_device_handle)dev)->dv_unit);
     if (ret != NULL)
     {
-        ret->dv_unit = usbdev_no++;
+        ret->dv_unit = ((usbd_device_handle)dev)->dv_unit;
         dprintf (("", "first = %p, last = %p\n",
             allusbdevs.tqh_first, allusbdevs.tqh_last));
         /* insert at head, so that iteration starts with last added */
@@ -1197,18 +1199,8 @@ int config_detach (struct device* dev, int n)
 
         /* remove any system variables attached to this device and since we
            don't reuse numbers nuke the devicefs options variable too */
-        char var[sizeof "DeviceFS$USBnnn$Options"];
-        /*          and "USB$Device_*USBnnn" */
-        sprintf (var, "USB$Device_*USB%d", dev->dv_unit);
-        while (_swix (OS_SetVarVal, _INR(0,4), var, 0, -1, 0, 0) == NULL)
-        {
-            /* do nothing */
-        }
-        sprintf (var, "DeviceFS$USB%d$Options", dev->dv_unit);
-        while (_swix (OS_SetVarVal, _INR(0,4), var, 0, -1, 0, 0) == NULL)
-        {
-            /* do nothing */
-        }
+       kill_system_variable(dev->dv_unit);
+
     }
 
     switch ((int) (dev->dv_cfdata))
@@ -1433,7 +1425,7 @@ static int launch_system_variable (struct usb_attach_arg* aux, int unit)
     int len         = 0;
     char* name      = NULL;
 
-    char str[sizeof "Alias$@USBDevice_LL_SS_TT_VVVV_PPPP_CC_II_RRRR_USBnnn"];
+    char str[sizeof "Alias$@USBDevice_LL_SS_TT_VVVV_PPPP_CC_II_RRRR_USBnnnnnn"];
 
 
     /* always set a usb$device variable */
@@ -1523,9 +1515,9 @@ static int launch_system_variable (struct usb_attach_arg* aux, int unit)
         }
         _kernel_swi_regs r = {{ (int) str, 0, -1, 0, 0 }};
         _kernel_swi (OS_ReadVarVal, &r, &r);
-        len = r.r[2];
         name = (char*) r.r[3];
-        if (len) goto match;
+        if (r.r[2]) goto match;
+        dprintf (("", "Failed to match %s\n", str));
     }
 
     /* no match */
@@ -1535,21 +1527,40 @@ match:
     if (aux->ifaceno == UHUB_UNK_INTERFACE)
         sysvar_attach = true;
 
+    len = strlen (name);
+    
     dprintf (("", "Found match for %s\n", name));
 
     struct sysvar_callback* sc =
-        malloc (sizeof *sc + ~len + 12 /*unit*/ + 12/*ifc*/);
+        malloc (sizeof *sc + len + strlen (val));
 
-    sprintf (sc->com, "%.*s %d %d",
-        ~len,
+    sprintf (sc->com, "%.*s %s",
+        len,
         name + sizeof "Alias$" - 1,
-        unit,
-        aux->ifaceno);
+        val);
 
     sc->next = sysvar_head;
     sysvar_head = sc;
 
     return 0;
+}
+
+// remove any sysvars that are linked to this device
+void kill_system_variable (int unit)
+{
+  char str[sizeof "DeviceFS$USBnnnnnn$Options   "];
+  
+  sprintf (str,"USB$Device_*_USB%d",unit);
+  while (_swix (OS_SetVarVal, _INR(0,4), str, 0, -1, 0, 0) == NULL)
+  {
+      /* do nothing */
+  }
+  sprintf (str,"DeviceFS$USB%d$Options",unit);
+  while (_swix (OS_SetVarVal, _INR(0,4), str, 0, -1, 0, 0) == NULL)
+  {
+      /* do nothing */
+  }
+
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1617,6 +1628,7 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
 int detach_device (struct device* dev, int d)
 {
     struct ugen_softc * udev = (struct ugen_softc*) dev;
+
 
 #ifdef OBSOLETE_SERVICE_CALLS
     /* inform the world that the device has gone */
@@ -2666,7 +2678,7 @@ _kernel_oserror* get_location
     usbd_device_handle dev = udev->sc_udev;
     memset (location, 0, 6);
     while (dev->depth > 0) {
-        dprintf (("", "%d, %d\n", dev->powersrc->portno, dev->depth));
+        dprintf (("main", "%d, %d\n", dev->powersrc->portno, dev->depth));
         location[dev->depth] = dev->powersrc->portno;
         dev = dev->powersrc->parent;
     };
@@ -2758,7 +2770,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
 
     case DeviceFSCallDevice_TxWakeUp:
         str->count = 0;
-        dprintf (("", "wakeup write, resetting count to %d\n",
+        dprintf (("main", "wakeup write, resetting count to %d\n",
             str->count));
         start_write (str);
         break;
@@ -2766,7 +2778,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         str->count = 0;
         /* total length has always been passed in R3, although not documented */
         str->totalcount = r->r[3];
-        dprintf (("", "wakeup read, resetting count to %d, totalcount to %d\n",
+        dprintf (("main", "wakeup read, resetting count to %d, totalcount to %d\n",
             str->count, str->totalcount));
         if (!str->pipe->repeat)
             start_read (str);
@@ -2787,7 +2799,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
     case DeviceFSCallDevice_Halt:
         break;
     case DeviceFSCallDevice_Resume:
-        dprintf (("", "resume ep = %x\n", str->ep));
+        dprintf (("main", "resume ep = %x\n", str->ep));
         /* if the top bit is set, this is an IN endpoint */
         if (UE_GET_DIR(str->ep) == UE_DIR_IN)
         {

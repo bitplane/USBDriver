@@ -74,10 +74,11 @@ extern int callout_init (void*);
 extern int callout_stop (void*);
 extern void callout_reset (void*, int, void (*f)(void *), void *v);
 extern int min (int a, int b);
-extern struct device* riscos_usb_attach(struct device*, void*);
+extern struct device* riscos_usb_attach(void*, struct device*, void*);
 extern void usb_needs_explore_callback (void*);
 extern int config_detach (struct device*, int);
 extern void* (config_found) (struct device*, void*, int (*) (void*, const char*));
+extern void kill_system_variable (int unit);
 
 extern void riscos_abort_pipe (void*);
 extern void riscos_failed_device (void*);
@@ -194,7 +195,7 @@ int __CONCAT(dname,_detach)(struct device *self, int flags)
 	sc = (void *) get_softc(unit)
 
 #define USB_DO_ATTACH(dev, bdev, parent, args, print, sub) \
-        riscos_usb_attach (parent, args)
+        riscos_usb_attach (dev, parent, args)
 
 /* so we don't have to worry about memory allocation types */
 #define M_USB 0

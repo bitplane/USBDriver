@@ -29,7 +29,7 @@ BuffManWS
 
 	EXPORT	call_buffermanager
 call_buffermanager
-	STMFD	R13!,{R4,R5,LR}
+	STMFD	R13!,{R4,R5,r12,LR}
 	MOV	R4,R0
 	MOV	R5,R1
 	MOV	R12,R2
@@ -38,6 +38,6 @@ call_buffermanager
 	MOV	PC,R5
 	STMDB	R4,{R2-R3}
 	MRS	R0,CPSR
-	LDMFD	R13!,{R4,R5,PC}
+	LDMFD	R13!,{R4,R5,r12,PC}
 
         END

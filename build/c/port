@@ -111,7 +111,7 @@ void panic (const char* str, ...)
 void
 delay (int d)
 {
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
     if (usbdebug > 19)
     {
         time_t t;
@@ -181,7 +181,7 @@ extern void callout_veneer (void);
 void
 callout_init (struct callout* c)
 {
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
     if (usbdebug > 15) dprintf (("Port", "callout init %p\n", c));
 #endif
     memset (c, 0, sizeof c);
@@ -190,16 +190,16 @@ callout_init (struct callout* c)
 _kernel_oserror*
 callout_handler (_kernel_swi_regs* r, void* pw, void* _c) {
     struct callout* c = _c;
-#ifdef USB_DEBUG
-    if (usbdebug > 15) dprintf (("Port", "callout %p called\n", c));
+#ifdef USB_DEBUG0
+    if (usbdebug > 15) dprintf (("Port", "callout2 %p called\n", c));
 #endif
-    c->c_func (c->c_arg);
+    if(c->c_func)c->c_func (c->c_arg);
     return NULL;
 }
 
 void
 callout_stop (struct callout *c) {
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
     if (usbdebug > 15) dprintf (("Port", "callout stop %p\n", c));
 #endif
     callx_remove_callafter (callout_handler, c);
@@ -211,7 +211,7 @@ callout_reset (struct callout *c, int i, void (*f)(void *), void *v) {
     c->c_arg = v;
     c->c_func = f;
     c->c_next = (void*) private_word; /* hacky thing to get handler to work */
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
     if (usbdebug > 15) dprintf (("Port", "callout %p reset %dms\n", c, i));
 #endif
     callx_add_callafter ((i + 9) / 10, callout_handler, c);
@@ -220,7 +220,7 @@ callout_reset (struct callout *c, int i, void (*f)(void *), void *v) {
 int kthread_create (void (f) (void*), void* h) {
     (void) f;
     (void) h;
-    dprintf (("Port", "creating thread\n"));
+//    dprintf (("Port", "creating thread\n"));
 
     return 0;
 }
@@ -252,8 +252,14 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 
     t1 = t0 = gettime();
     t1 += ((uint64_t) timo) * 1000000;
-
 #ifdef USB_DEBUG
+
+    int sema = *(int*)(0x108);
+    char bbf[32];strncpy( bbf, wmesg, 31);bbf[31]=0;
+    dprintf(("","enter sleep:%s                  irqstate:%d\n",bbf,sema));
+#endif
+
+#ifdef USB_DEBUG0
     int cs0, cs1;
     _swix (OS_ReadMonotonicTime, _OUT(0), &cs0);
     if (usbdebug > 19)
@@ -302,7 +308,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
             triggercbs ();
             _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
         t2 = gettime ();
 #endif
     }
@@ -315,7 +321,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 
     t_handles[i] = 0;
 
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
     if (usbdebug > 19)
       dprintf (("", "now  %lu.%09lu\n",
         (uint32_t) (t2 / 100000000), (uint32_t) (t2 % 1000000000)));
@@ -327,6 +333,9 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
             (uint32_t) (t2 / 100000000), (uint32_t) (t2 % 1000000000),
             timo, cs1 - cs0));
 #endif
+#ifdef USB_DEBUG
+    dprintf(("","leave sleep:%s                  irqstate:%d\n",bbf,sema));
+#endif
 
     if (s == 0) _kernel_irqs_on ();
 
@@ -335,7 +344,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 
 int wakeup (void* ident) {
     int i;
-#ifdef USB_DEBUG
+#ifdef USB_DEBUG0
     if (usbdebug > 10) dprintf (("", "waking up %p\n", ident));
 #endif
 
@@ -352,11 +361,11 @@ int wakeup (void* ident) {
 }
 
 void kthread_exit (void) {
-    dprintf (("Port", "exit thread\n"));
+//    dprintf (("Port", "exit thread\n"));
 }
 
 void device_probe_and_attach (void) {
-    dprintf (("Port", "probing device\n"));
+//    dprintf (("Port", "probing device\n"));
 }
 
 /*
@@ -386,7 +395,7 @@ void* vtophys (void** v)
 
     return block.physical;
 #else
-    dprintf (("Port", "Converting physical address %p\n", *v));
+//    dprintf (("Port", "Converting physical address %p\n", *v));
     return v; // return actual address for the moment
 #endif
 }

@@ -92,8 +92,8 @@
 
 
 #ifdef EHCI_DEBUG
-#define DPRINTF(x)	if (ehcidebug) logprintf x
-#define DPRINTFN(n,x)	if (ehcidebug>(n)) logprintf x
+#define DPRINTF(x)     if (ehcidebug) logprintf x
+#define DPRINTFN(n,x)  if (ehcidebug>(n)) logprintf x
 int ehcidebug = 0;
 #ifndef __NetBSD__
 #define bitmask_snprintf(q,f,b,l) snprintf((b), (l), "%b", (q), (f))
@@ -433,6 +433,9 @@ ehci_init(ehci_softc_t *sc)
 	/* Reset the controller */
 	DPRINTF(("%s: resetting\n", USBDEVNAME(sc->sc_bus.bdev)));
 	EOWRITE4(sc, EHCI_USBCMD, 0);	/* Halt controller */
+#ifdef __riscos
+        EOREAD4(sc, EHCI_USBCMD);
+#endif	
 	usb_delay_ms(&sc->sc_bus, 1);
 	EOWRITE4(sc, EHCI_USBCMD, EHCI_CMD_HCRESET);
 	for (i = 0; i < 100; i++) {
@@ -599,6 +602,9 @@ ehci_intr(void *v)
 #ifdef DIAGNOSTIC
 		logprintf("ehci_intr: ignored interrupt while polling\n");
 #endif
+#ifdef __riscos
+			EOREAD4(sc, EHCI_USBINTR);
+#endif	
 		return (0);
 	}
 
@@ -635,7 +641,7 @@ ehci_intr1(ehci_softc_t *sc)
         EOWRITE4(sc, EHCI_USBSTS, intrs); /* Acknowledge */
 #ifdef __riscos
         /* make sure it gets there */
-        EOREAD4(sc, EHCI_USBSTS);
+        EOREAD4(sc, EHCI_USBINTR);
 #endif
 	sc->sc_bus.intr_context++;
 	sc->sc_bus.no_intrs++;
@@ -683,7 +689,7 @@ ehci_intr1(ehci_softc_t *sc)
         }
 
 #ifdef __riscos
-	(void) EOREAD4(sc, EHCI_USBSTS); /* Acknowledge */
+	EOREAD4(sc, EHCI_USBINTR); /* Acknowledge */
 #endif
 
 	return (1);
@@ -692,20 +698,30 @@ ehci_intr1(ehci_softc_t *sc)
 void
 ehci_pcd_able(ehci_softc_t *sc, int on)
 {
-	DPRINTFN(4, ("ehci_pcd_able: on=%d\n", on));
+	DPRINTF( ("ehci_pcd_able: on=%d\n", on));
 	if (on)
 		sc->sc_eintrs |= EHCI_STS_PCD;
 	else
 		sc->sc_eintrs &= ~EHCI_STS_PCD;
 	EOWRITE4(sc, EHCI_USBINTR, sc->sc_eintrs);
+#ifdef __riscos
+	EOREAD4(sc, EHCI_USBINTR); /* Acknowledge */
+#endif
 }
 
 void
 ehci_pcd_enable(void *v_sc)
 {
 	ehci_softc_t *sc = v_sc;
-
+//#ifdef __riscos
+//	int s;
+//	s = splhardusb();
+	DPRINTF( ("ehci_pcd_enable\n"));
+//#endif
 	ehci_pcd_able(sc, 1);
+//#ifdef __riscos
+//	splx(s);
+//#endif
 }
 
 void
@@ -2616,7 +2632,11 @@ ehci_abort_xfer(usbd_xfer_handle xfer, usbd_status status)
 	usb_uncallout(xfer->timeout_handle, ehci_timeout, xfer);
 	qhstatus = sqh->qh.qh_qtd.qtd_status;
 	sqh->qh.qh_qtd.qtd_status = qhstatus | htole32(EHCI_QTD_HALTED);
-	for (sqtd = exfer->sqtdstart; ; sqtd = sqtd->nextqtd) {
+	for (sqtd = exfer->sqtdstart;  
+#ifdef __riscos
+	sqtd
+#endif
+	; sqtd = sqtd->nextqtd) {
 		sqtd->qtd.qtd_status |= htole32(EHCI_QTD_HALTED);
 		if (sqtd == exfer->sqtdend)
 			break;
@@ -3275,6 +3295,7 @@ ehci_device_intr_close(usbd_pipe_handle pipe)
         struct ehci_soft_islot *isp;
 
         isp = &sc->sc_islots[epipe->sqh->islot];
+	DPRINTF(("ehci_device_intr_close: pipe=%p\n", pipe));
         ehci_close_pipe(pipe, isp->sqh);
 }
 
