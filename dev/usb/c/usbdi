@@ -436,7 +436,8 @@ usbd_alloc_xfer(usbd_device_handle dev)
 #else
 	usbd_xfer_handle xfer=NULL;
         /* 20040723 check for null dev->bus since it has cropped up */
-	if(dev->bus)
+        /* 20050131 check for null dev since it has cropped up */
+	if(dev && dev->bus)
 #endif
 	xfer = dev->bus->methods->allocx(dev->bus);
 	if (xfer == NULL)

@@ -33,6 +33,7 @@ date-string:	    	EHCIDriverModule_Module_Date_CMHG
 #define XHELPFILE(M) HELPFILE(M)
 international-help-file: XHELPFILE(MSGLOC)
 
+#ifdef EHCI_DEBUG
 command-keyword-table:	module_commands
 
 EHCIRegs(   min-args:0, max-args:0,
@@ -47,6 +48,7 @@ EHCIWrite(  min-args:2, max-args:2,
 EHCIDebug(  min-args:1, max-args:2,
             help-text: "*EHCIDebug sets the debug level for debuglib output, optionally also setting the debug level for output controlled by the usbdebug variable within the ohcidriver.\n",
             add-syntax:, invalid-syntax: "Syntax: EHCIDebug <ehci> [<usb>]")
+#endif
 
 vector-handlers:    	usb_irq_entry/usb_irq_handler,
 			softintr_entry/softintr

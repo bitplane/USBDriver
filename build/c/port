@@ -70,7 +70,7 @@ uint64_t gettime (void)
         ((uint64_t) cs) * 10000000 /* 1e7 */;
 }
 
-/* cold starting */
+/* turn off cold starting */
 int cold = 0;
 
 int hz = 1000;

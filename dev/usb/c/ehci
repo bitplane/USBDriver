@@ -648,7 +648,11 @@ ehci_intr1(ehci_softc_t *sc)
 		DPRINTF(("ehci_intr1: %s %s\n",
 			 eintrs & EHCI_STS_INT ? "INT" : "",
 			 eintrs & EHCI_STS_ERRINT ? "ERRINT" : ""));
+#if defined(__riscos) && !defined(USB_USE_SOFTINTR)
+                ehci_softintr(&sc->sc_bus);
+#else
 		usb_schedsoftintr(&sc->sc_bus);
+#endif
 		eintrs &= ~(EHCI_STS_INT | EHCI_STS_ERRINT);
 	}
 	if (eintrs & EHCI_STS_HSE) {
@@ -678,7 +682,7 @@ ehci_intr1(ehci_softc_t *sc)
 		       USBDEVNAME(sc->sc_bus.bdev), eintrs);
         }
 
-#ifdef __riscos0
+#ifdef __riscos
 	(void) EOREAD4(sc, EHCI_USBSTS); /* Acknowledge */
 #endif
 
@@ -2396,7 +2400,8 @@ ehci_alloc_sqtd_chain(struct ehci_pipe *epipe, ehci_softc_t *sc,
         int len, curlen, mps;
         int i, tog;
 	usb_dma_t *dma = &xfer->dmabuf;
-
+        int flags = xfer->flags;
+        
 	DPRINTFN(alen<4*4096,("ehci_alloc_sqtd_chain: start len=%d\n", alen));
 
 	len = alen;
@@ -2453,7 +2458,16 @@ ehci_alloc_sqtd_chain(struct ehci_pipe *epipe, ehci_softc_t *sc,
 			    dataphys, dataphyslastpage,
 			    len, curlen));
 		len -= curlen;
-		if (len != 0) {
+		
+// Dan addition.. force new NULL length qtd if its an exact write of modulo mps
+// this now matches what is in OHCI .. needed for ethernet deviced e.g.
+		if (len != 0
+		    || (flags & USBD_FORCE_SHORT_XFER
+		         && curlen
+		         && (curlen % mps) == 0
+		         && !rd)) {
+// this is what EHCI came with		         
+//		if (len != 0) {
 			next = ehci_alloc_sqtd(sc);
 			if (next == NULL)
 				goto nomem;
@@ -2492,7 +2506,11 @@ ehci_alloc_sqtd_chain(struct ehci_pipe *epipe, ehci_softc_t *sc,
                         tog ^= 1;
                         qtdstatus ^= EHCI_QTD_TOGGLE_MASK;
                 }
-		if (len == 0)
+// Dan addition.. to match OHCI 
+// JB simplify ..it'll be NULL once end is reached
+		if (next==NULL)    
+// ehci original
+//		if (len == 0)
 			break;
 		DPRINTFN(10,("ehci_alloc_sqtd_chain: extend chain\n"));
 		dataphys += curlen;
@@ -2615,9 +2633,12 @@ ehci_abort_xfer(usbd_xfer_handle xfer, usbd_status status)
 #ifdef USB_USE_SOFTINTR
 	sc->sc_softwake = 1;
 #endif /* USB_USE_SOFTINTR */
-
+#if defined (__riscos) && !defined(USB_USE_SOFTINTR)
+        ehci_softintr(&sc->sc_bus);
+//      tsleep(&sc->sc_softwake, PZERO, "ehciab", 0, 1);
+#else
 	usb_schedsoftintr(&sc->sc_bus);
-
+#endif
 #ifdef USB_USE_SOFTINTR
 #ifdef __riscos
 	tsleep(&sc->sc_softwake, PZERO, "ehciab", 0, 1);

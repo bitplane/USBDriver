@@ -196,11 +196,11 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     _kernel_oserror* e = 0;
 #ifdef EHCI_DEBUG
-    struct dev_struct {
-        devicefs_device dev;
-        int null;
-        char name[32];
-    }* dev = NULL;
+//    struct dev_struct {
+//        devicefs_device dev;
+//        int null;
+//        char name[32];
+//    }* dev = NULL;
 #endif    
 
 
@@ -444,6 +444,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 
 #define OREAD(o) ehci_base[o/4]
 
+#ifdef EHCI_DEBUG
 _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
 {
     ehci_softc_t* sc = &ehci_soft;
@@ -537,7 +538,7 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
 
     return 0;
 }
-
+#endif
 
 
 
