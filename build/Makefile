@@ -42,14 +42,15 @@ include RAMCModule
 include ROMCModule
 
 clean:
-        ${WIPE} o    ${WFLAGS}
-        ${WIPE} aif  ${WFLAGS}
-        ${WIPE} aof  ${WFLAGS}
-        ${WIPE} rm   ${WFLAGS}
-        ${WIPE} i    ${WFLAGS}
-        ${WIPE} maps ${WFLAGS}
-        ${WIPE} gpa  ${WFLAGS}
-        ${WIPE} bin  ${WFLAGS}
+        ${WIPE} o      ${WFLAGS}
+        ${WIPE} aif    ${WFLAGS}
+        ${WIPE} aof    ${WFLAGS}
+        ${WIPE} rm     ${WFLAGS}
+        ${WIPE} i      ${WFLAGS}
+        ${WIPE} maps   ${WFLAGS}
+        ${WIPE} gpa    ${WFLAGS}
+        ${WIPE} bin    ${WFLAGS}
+        ${WIPE} linked ${WFLAGS}
         ${RM}   h.ohcimodhead
         ${RM}   h.usbmodhead
         ${RM}   Resources.UK.USBDevs

@@ -80,7 +80,7 @@ extern void ohci_dumpregs (ohci_softc_t *);
 extern void ohci_dump_ed (ohci_soft_ed_t*);
 #endif
 
-extern char* panic_string;
+extern char panic_string[255];
 
 int* magic = NULL;
 
