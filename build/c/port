@@ -44,11 +44,31 @@ extern void detach_device (struct device*);
 
 static uint64_t gettime (void)
 {
-    uint32_t cs, u2s;
+    uint32_t cs;
+    static uint32_t (*readcode) (void);
+    static void* ws;
+    static uint32_t ns_factor;
+    static uint32_t max_count;
+    if (readcode == NULL)
+    {
+        _swix (OS_Hardware, _INR(8,9)|_OUTR(0,1),
+            1, EntryNo_HAL_CounterRead,
+            &readcode, &ws);
+
+        _swix (OS_Hardware, _INR(8,9)| _OUT(0),
+            0, EntryNo_HAL_CounterPeriod,
+            &max_count);
+
+        /* bug here - force 2000000 */
+        max_count = 2000000;
+
+        /* conversion to ns, assume counter is for 1 cs */
+        ns_factor = 10000000 / max_count;
+    }
+
     _swix (OS_ReadMonotonicTime, _OUT(0), &cs);
-    _swix (OS_Hardware, _INR(8,9)|_OUT(0),
-        0, EntryNo_HAL_CounterRead, &u2s);
-    return (uint64_t) (u2s) * 5 + ((uint64_t) cs) * 10000000 /* 1e7 */;
+    return (uint64_t) (max_count - (readcode) ()) * ns_factor +
+        ((uint64_t) cs) * 10000000 /* 1e7 */;
 }
 
 /* cold starting */

@@ -416,6 +416,7 @@ _kernel_oserror* command_enumerate_devices (void)
         {
             usbd_device_handle udev = ((struct ugen_softc*) dev)->sc_udev;
             usbd_fill_deviceinfo (udev, &di);
+            /* in case the vendor string is null, don't print a leading space */
             printf ("%3d %3d %3d %2X/%2X %s %s\n",
                 i,
                 di.bus,
@@ -1250,8 +1251,7 @@ static int launch_system_variable (struct usb_attach_arg* aux, int unit)
         _kernel_oserror* e = _kernel_swi (OS_ReadVarVal, &r, &r);
         len = r.r[2];
         name = (char*) r.r[3];
-        if (!e && len) goto match;
-        else dprintf (("", "%s\n", e->errmess));
+        if (len) goto match;
     }
 
     /* no match */
@@ -1262,10 +1262,10 @@ match:
         sysvar_attach = true;
 
     struct sysvar_callback* sc =
-        malloc (sizeof *sc + -len + 12 /*unit*/ + 12 /*ifc*/);
+        malloc (sizeof *sc + ~len + 12 /*unit*/ + 12 /*ifc*/);
 
     sprintf (sc->com, "%.*s %lu %lu",
-        -len,
+        ~len,
         name + sizeof "Alias$" - 1,
         unit,
         aux->ifaceno);

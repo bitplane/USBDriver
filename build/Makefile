@@ -18,17 +18,17 @@
 # by including the relevant object file.
 
 TARGET          = ${COMPONENT}
-DIRS		= o._dirs
+DIRS            = o._dirs
 MESSAGELOCATION = Resources.${COMPONENT}.Messages
-LIBS		= ${DEBUGLIB} ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
-RDIR      	= ${RESDIR}.${COMPONENT}
+LIBS            = ${DEBUGLIB} ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
+RDIR            = ${RESDIR}.${COMPONENT}
 
-CINCLUDES	= -Itbox:,TCPIPLibs:,^.,OS:
-CDEFINES	+= ${CDEBUG} -DKERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE
-CMHGINCLUDES	= ${CINCLUDES}
+CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:
+CDEFINES        += ${CDEBUG} -DKERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE
+CMHGINCLUDES    = ${CINCLUDES}
 CMHGDEFINES     = -DMESSAGELOCATION=${MESSAGELOCATION} ${CDEBUG}
-CFLAGS		+= -throwback -wp -wc -zm -zps1
-LDFLAGS		= -LIST maps.${TARGET} -MAP -Xref
+CFLAGS          += -ff -wp -wc -zm -zps1
+LDFLAGS         = -LIST maps.${TARGET} -MAP -Xref
 
 VPATH = ^.build ^.dev.usb
 
@@ -42,17 +42,17 @@ include RAMCModule
 include ROMCModule
 
 clean:
-	${WIPE}	o    ${WFLAGS}
-	${WIPE} aif  ${WFLAGS}
-	${WIPE} aof  ${WFLAGS}
-	${WIPE} rm   ${WFLAGS}
-	${WIPE} i    ${WFLAGS}
-	${WIPE} maps ${WFLAGS}
-	${WIPE} gpa  ${WFLAGS}
-	${WIPE} bin  ${WFLAGS}
-	${RM}	h.ohcimodhead
-	${RM}   h.usbmodhead
-	${RM}   Resources.UK.USBDevs
+        ${WIPE} o    ${WFLAGS}
+        ${WIPE} aif  ${WFLAGS}
+        ${WIPE} aof  ${WFLAGS}
+        ${WIPE} rm   ${WFLAGS}
+        ${WIPE} i    ${WFLAGS}
+        ${WIPE} maps ${WFLAGS}
+        ${WIPE} gpa  ${WFLAGS}
+        ${WIPE} bin  ${WFLAGS}
+        ${RM}   h.ohcimodhead
+        ${RM}   h.usbmodhead
+        ${RM}   Resources.UK.USBDevs
 
 all: o._dirs
 
@@ -70,31 +70,31 @@ resources_USBDriver: LocalRes:USBDriver LocalRes:USBDevs
         @echo ${COMPONENT}: resource files copied
 
 o._dirs:
-	${MKDIR} o
-	${MKDIR} aif
-	${MKDIR} aof
-	${MKDIR} rm
-	${MKDIR} i
-	${MKDIR} maps
-	${MKDIR} gpa
-	${MKDIR} bin
-	${TOUCH} o._dirs
+        ${MKDIR} o
+        ${MKDIR} aif
+        ${MKDIR} aof
+        ${MKDIR} rm
+        ${MKDIR} i
+        ${MKDIR} maps
+        ${MKDIR} gpa
+        ${MKDIR} bin
+        ${TOUCH} o._dirs
 
-ohcimodule.o:	ohcimodhead.h USBDriver.h
-usbmodule.o usbkboard.o:	usbmodhead.h
+ohcimodule.o:   ohcimodhead.h USBDriver.h
+usbmodule.o usbkboard.o:        usbmodhead.h
 
 Resources.UK.USBDevs: bin.makedevs
-	bin.makedevs > Resources.UK.USBDevs
+        bin.makedevs > Resources.UK.USBDevs
 
 # Remove the usbmodhead after creating the SWI table because if OHCIDriver
 # makes it then it has the wrong messages file in it
 USBDriver.h: usbmodhead.h
-	${SED} -n "/define USBDriver_/p" h.usbmodhead > h.USBDriver
-	${RM}   h.usbmodhead
-	${RM}   o.usbmodhead
+        ${SED} -n "/define USBDriver_/p" h.usbmodhead > h.USBDriver
+        ${RM}   h.usbmodhead
+        ${RM}   o.usbmodhead
 
 bin.makedevs: o.makedevs ${CLIB}
-	${LD} -o $@ o.makedevs ${CLIB}
+        ${LD} -o $@ o.makedevs ${CLIB}
 
 usbmsgs.o: Resources.UK.USBMessages Resources.UK.USBDevs
         resgen resource_files o.usbmsgs Resources.UK.USBMessages ${MESSAGELOCATION} Resources.UK.USBDevs Resources.USBDriver.USBDevs
@@ -113,7 +113,7 @@ debug: gpa.${COMPONENT} ${DIRS}
 
 .SUFFIXES: .i
 
-.c.i:;	${CC} -E ${CFLAGS} $< > $@
+.c.i:;  ${CC} -E ${CFLAGS} $< > $@
 
 listing: i.ohci i.ohcimodule i.usb i.usbdi i.usbdi_util i.usb_subr i.ugen i.usbmodule
 
