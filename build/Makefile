@@ -20,6 +20,7 @@
 TARGET          = ${COMPONENT}
 DIRS            = o._dirs
 MSGLOC          = Resources.${COMPONENT}.Messages
+DEVICELIST      = Resources.<Locale>.USBDevs
 LIBS            = ${DEBUGLIB} ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
 RDIR            = ${RESDIR}.${COMPONENT}
 
@@ -64,10 +65,10 @@ resources_OHCIDriver: LocalRes:OHCIMessages
         ${CP} LocalRes:OHCIMessages ${RDIR}.Messages ${CPFLAGS}
         @echo ${COMPONENT}: resource files copied
 
-resources_USBDriver: LocalRes:USBDriver LocalRes:USBDevs
+resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
         ${MKDIR} ${RDIR}
         ${CP} LocalRes:USBMessages ${RDIR}.Messages ${CPFLAGS}
-        ${CP} LocalRes:USBDevs ${RDIR}.USBDevs ${CPFLAGS}
+        ${CP} ${DEVICELIST} ${RDIR}.USBDevs ${CPFLAGS}
         @echo ${COMPONENT}: resource files copied
 
 o._dirs:
@@ -84,7 +85,7 @@ o._dirs:
 ohcimodule.o:   ohcimodhead.h USBDriver.h
 usbmodule.o usbkboard.o:        usbmodhead.h
 
-Resources.UK.USBDevs: bin.makedevs
+Resources.<Locale>.USBDevs: bin.makedevs
         bin.makedevs > Resources.UK.USBDevs
 
 # Remove the usbmodhead after creating the SWI table because if OHCIDriver
@@ -94,7 +95,7 @@ USBDriver.h: usbmodhead.h
         ${RM}   h.usbmodhead
         ${RM}   o.usbmodhead
 
-bin.makedevs: o.makedevs ${CLIB}
+bin.makedevs: o.makedevs ${CLIB} ${DIRS}
         ${LD} -o $@ o.makedevs ${CLIB}
 
 usbmsgs.o: Resources.UK.USBMessages Resources.UK.USBDevs
