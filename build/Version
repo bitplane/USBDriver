@@ -5,5 +5,5 @@
 #define OHCIDriverModule_Module_Date_CMHG  14 Apr 2003
 #define OHCIDriverModule_MajorVersion_CMHG 0.13
 
-#define USBDriverModule_Module_Date_CMHG   14 Apr 2003
-#define USBDriverModule_MajorVersion_CMHG  0.23
+#define USBDriverModule_Module_Date_CMHG   23 Apr 2003
+#define USBDriverModule_MajorVersion_CMHG  0.24
