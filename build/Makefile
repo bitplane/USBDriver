@@ -154,6 +154,7 @@ bbe-usb: bbe-generic
         ${MKDIR} ${BBEDIR}.aof
         BBE_Export_File aof.${TARGET}
         ${CP} rom_link_v.${TARGET} ${VERBATIMROMLINK} ${CPFLAGS}
+        BBE_Export_File ^.VersionNum
 
 
 # Dynamic dependencies:
