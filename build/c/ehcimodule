@@ -42,6 +42,11 @@
 #include "service.h"
 #include "oslib/devicefs.h"
 
+
+
+
+
+
 extern uint64_t gettime (void);
 /* for debugging */
 #ifdef EHCI_DEBUG
@@ -66,6 +71,31 @@ extern void ehci_dump_regs (ehci_softc_t *);
 //extern void ehci_dump_ed (ehci_soft_ed_t*);
 #endif
 extern void ehci_abort_xfer (void*, int);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 int* magic = NULL;
@@ -127,6 +157,9 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
 
     (void) r;
     (void) pw;
+
+
+
     /* register with the usbdriver module if it's already resident */
     bus_register(NULL,NULL,NULL);
 
@@ -145,8 +178,23 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
     return NULL;
 }
 
+
+
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     _kernel_oserror* e = 0;
+#ifdef EHCI_DEBUG
+    struct dev_struct {
+        devicefs_device dev;
+        int null;
+        char name[32];
+    }* dev = NULL;
+#endif    
+
+
+
+
+
+
 
     callx_init (pw);
 
@@ -234,11 +282,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     usbdebug = ehcidebug = atoi (getenv ("ehcidebug"));
     irq0 = gettime () / 1000;
 
-    struct dev_struct {
-        devicefs_device dev;
-        int null;
-        char name[32];
-    }* dev = calloc (sizeof *dev, 1);
+    dev = calloc (sizeof *dev, 1);
     strcpy (dev->name, ehci_soft.sc_bus.bdev.dv_xname);
 
     dev->dev.name_offset = dev->name - (char*) dev;
@@ -295,8 +339,8 @@ error:
 
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
-    if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
-
+    volatile int* eb = ehci_base;
+    int v;
     _swix (OS_Hardware, _IN(0) | _INR(8,9),
         device_number, 0, EntryNo_HAL_IRQDisable);
     _swix (OS_ReleaseDeviceVector, _INR(0,4),
@@ -305,9 +349,15 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     if (usb_soft != NULL)
         _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
 
+// need to stop the controller
+     eb[EHCI_USBCMD/4]= 0;	/* Halt controller */
+     eb[EHCI_USBCMD/4]= EHCI_CMD_HCRESET;
+     v=eb[EHCI_USBCMD/4];       /* flush the command */
+
     callx_remove_all_callbacks ();
     callx_remove_all_callafters ();
     callx_remove_all_calleverys ();
+    if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
 
     return NULL;
 }
@@ -319,6 +369,9 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         if (usb_soft == NULL)
         {
             dprintf (("Main_0", "Registering with USB driver from svcecall\n"));
+
+
+
               callx_add_callback (bus_register, 0);
         }
         break;
@@ -338,7 +391,10 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
 {
     ehci_softc_t* sc = &ehci_soft;
-    switch (cmd_no) {
+
+
+
+   switch (cmd_no) {
     case CMD_EHCIRegs:
         printf
         (
@@ -425,6 +481,17 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
 
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
 
 int usb_irq_handler(_kernel_swi_regs *r, void *pw)
 {
@@ -574,6 +641,34 @@ riscos_abort_pipe (void* v)
     callx_add_callback (_riscos_abort_pipe, v);
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void
 usb_schedsoftintr (struct usbd_bus* sc)
 {
@@ -588,6 +683,7 @@ softintr (_kernel_swi_regs* r, void* pw)
     ehci_softintr ((void*) r->r[0]);
     return 1;
 }
+
 
 /*---------------------------------------------------------------------------*/
 #ifdef EHCI_DEBUG

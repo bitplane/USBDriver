@@ -35,6 +35,7 @@
 #include "dev/usb/usbdi_util.h"
 #include "dev/usb/usbdivar.h"
 #include "dev/usb/usbhid.h"
+#include "dev/usb/usb_quirks.h"
 
 #include "swis.h"
 #include "debuglib/debuglib.h"
@@ -175,7 +176,7 @@ void riscos_failed_device (void* p)
 {
 //#ifdef STANDALONE
 #ifndef RHENIUM
-    _kernel_oserror* e;
+//    _kernel_oserror* e;
     (void) p;
 //    e = uerror (E_BadDevice);
 //    _swix (OS_UpCall, _INR(0,6), UpCall_MediaNotPresent, fsnumber_DeviceFS,
@@ -262,8 +263,6 @@ struct sysvar_callback {
 static int usbbus_no = 1;
 static int usbdev_no = 1;
 
-#define MAX_EXTRA_QUIRKS 30
-void * extra_quirks = NULL;
 
 struct devicelist allbuses = TAILQ_HEAD_INITIALIZER(allbuses);
 struct devicelist allusbdevs = TAILQ_HEAD_INITIALIZER(allusbdevs);
@@ -314,7 +313,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
     _kernel_oserror* e;
     private_word = pw;
     /* set up debugging */
-    debug_initialise ("USBDriver", "", 0);
+    debug_initialise ("USBDriver", "$.dbUSBD", 0);
+//    debug_set_device(FILE_OUTPUT);
     debug_set_device(DEBUGIT_OUTPUT);
     debug_set_unbuffered_files (TRUE);
     debug_set_stamp_debug (TRUE);
@@ -365,7 +365,6 @@ struct cfattach ugen_ca = {
 
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
-    clock_t t;
 
     struct device* dev;
     TAILQ_FOREACH(dev, &allbuses, dv_list)
@@ -560,7 +559,7 @@ _kernel_oserror* command_enumerate_devices (void)
 
 /*---------------------------------------------------------------------------*/
 
-_kernel_oserror* command_enumerate_buses ()
+_kernel_oserror* command_enumerate_buses (void)
 {
     struct usb_device_stats stats;
     printf ("Transfers (%d buses):\n", usbbus_no-1);
@@ -586,7 +585,7 @@ _kernel_oserror* command_enumerate_buses ()
 
 /*---------------------------------------------------------------------------*/
 
-_kernel_oserror* command_discover ()
+_kernel_oserror* command_discover (void)
 {
 #ifdef USB_DEBUG
     total_sleep = 0;
@@ -841,23 +840,13 @@ static _kernel_oserror* command_set_interface (int device, int ifcn, int alt)
 }
 
 /*---------------------------------------------------------------------------*/
-/* format of a quirk .. keep synchronised with entry in dev.usb.usb_quirks */
-typedef struct usbd_quirk_entry {
-	u_int16_t idVendor;
-	u_int16_t idProduct;
-	u_int16_t bcdDevice;
-	u_int32_t quirks;
-} usbd_quirk_entry;
-
-extern const struct usbd_quirks * usbd_find_builtin_quirk(usb_device_descriptor_t *d, void *t);
-
-
-const struct usbd_quirks * usbd_find_quirk(usb_device_descriptor_t *d)
-{
-  const struct usbd_quirks * q;
-  if(extra_quirks) if(q=usbd_find_builtin_quirk(d,extra_quirks),q) return q;
-  return usbd_find_builtin_quirk(d,NULL);  // try as a builtin one
-}
+///* format of a quirk .. keep synchronised with entry in dev.usb.usb_quirks */
+//typedef struct usbd_quirk_entry {
+//	u_int16_t idVendor;
+//	u_int16_t idProduct;
+//	u_int16_t bcdDevice;
+//	u_int32_t quirks;
+//} usbd_quirk_entry;
 
 static _kernel_oserror* command_ListQuirks(void)
 {
@@ -870,7 +859,7 @@ static _kernel_oserror* command_ListQuirks(void)
     for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)
     {
       if(t->idVendor)
-        printf("%04x   %04x    %04x   %08x\n",t->idVendor,t->idProduct,t->bcdDevice,t->quirks);
+        printf("%04x   %04x    %04x   %08x\n",t->idVendor,t->idProduct,t->bcdDevice,t->quirks.uq_flags);
       
     }
   }
@@ -892,7 +881,7 @@ static _kernel_oserror* command_RemoveQuirk(unsigned vendor, unsigned product, u
         t->idVendor  = NULL;
         t->idProduct = NULL;
         t->bcdDevice = NULL;
-        t->quirks    = NULL;
+        t->quirks.uq_flags    = NULL;
         return NULL;
       }
     }
@@ -910,7 +899,7 @@ static _kernel_oserror* command_AddQuirk(unsigned vendor, unsigned product, unsi
         t->idProduct == product&&
         t->bcdDevice == device)
     {    
-      t->quirks = quirk;
+      t->quirks.uq_flags = quirk;
       return NULL;
     }
   }      
@@ -921,7 +910,7 @@ static _kernel_oserror* command_AddQuirk(unsigned vendor, unsigned product, unsi
       t->idVendor  = vendor ;
       t->idProduct = product;
       t->bcdDevice = device;
-      t->quirks    = quirk;
+      t->quirks.uq_flags = quirk;
       return NULL;
     }
   }

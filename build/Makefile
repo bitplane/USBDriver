@@ -44,6 +44,10 @@ include ModuleLibs
 include RAMCModule
 include ROMCModule
 
+UNAME=	"RISC_OS"
+
+
+
 clean:
         ${WIPE} o      ${WFLAGS}
         ${WIPE} aif    ${WFLAGS}
@@ -58,7 +62,9 @@ clean:
         ${RM}   h.ohcimodhead
         ${RM}   h.usbmodhead
         ${RM}   Resources.<Locale>.USBDevs
-
+        ${RM}   ^.dev.usb.h.usbdevs
+        ${RM}   ^.dev.usb.h.usbdevs_data
+        
 all: o._dirs
 
 export: export_${PHASE}
@@ -66,7 +72,7 @@ export: export_${PHASE}
 export_libs:
         @echo ${COMPONENT}: export complete (libs)
 
-export_hdrs:
+export_hdrs:   ^.dev.usb.h.usbdevs
         ${MKDIR} ${USBDIR}.dev.usb.h
         ${MKDIR} ${USBDIR}.h
         ${MKDIR} ${USBDIR}.sys.h
@@ -112,7 +118,10 @@ ehcimodule.o:   ehcimodhead.h
 ohcimodule.o:   ohcimodhead.h USBDriver.h
 usbmodule.o usbkboard.o:        usbmodhead.h
 
-Resources.<Locale>.USBDevs: bin.makedevs
+^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data: ^.dev.usb.usbdevs ^.dev.usb.devlist2h/awk
+	${GAWK} -v os="${UNAME} -s" -f ^.dev.usb.devlist2h/awk ^.dev.usb.usbdevs
+
+Resources.<Locale>.USBDevs: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
         bin.makedevs > Resources.<Locale>.USBDevs
 
 # Remove the usbmodhead after creating the SWI table because if OHCIDriver

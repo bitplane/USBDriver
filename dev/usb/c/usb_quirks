@@ -1,5 +1,5 @@
-/*	$NetBSD: usb_quirks.c,v 1.41 2002/08/26 21:34:28 uwe Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/usb_quirks.c,v 1.13 1999/11/17 22:33:47 n_hibma Exp $	*/
+/*      $NetBSD: usb_quirks.c,v 1.50 2004/06/23 02:30:52 mycroft Exp $  */
+/*      $FreeBSD: src/sys/dev/usb/usb_quirks.c,v 1.30 2003/01/02 04:15:55 imp Exp $     */
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-//__KERNEL_RCSID(0, "$NetBSD: usb_quirks.c,v 1.41 2002/08/26 21:34:28 uwe Exp $");
+//__KERNEL_RCSID(0, "$NetBSD: usb_quirks.c,v 1.50 2004/06/23 02:30:52 mycroft Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -55,12 +55,7 @@ extern int usbdebug;
 
 #define ANY 0xffff
 
-Static const struct usbd_quirk_entry {
-	u_int16_t idVendor;
-	u_int16_t idProduct;
-	u_int16_t bcdDevice;
-	struct usbd_quirks quirks;
-} usb_quirks[] = {
+Static const struct usbd_quirk_entry  usb_quirks[] = {
  { USB_VENDOR_KYE, USB_PRODUCT_KYE_NICHE,	    0x100, { UQ_NO_SET_PROTO}},
  { USB_VENDOR_INSIDEOUT, USB_PRODUCT_INSIDEOUT_EDGEPORT4,
    						    0x094, { UQ_SWAP_UNICODE}},
@@ -119,7 +114,17 @@ Static const struct usbd_quirk_entry {
 };
 
 const struct usbd_quirks usbd_no_quirk = { 0 };
+#ifdef __riscos
+void * extra_quirks;
 
+const struct usbd_quirks * usbd_find_quirk(usb_device_descriptor_t *d)
+{
+  const struct usbd_quirks * q;
+  if(extra_quirks) if(q=usbd_find_builtin_quirk(d,extra_quirks),q) return q;
+  return usbd_find_builtin_quirk(d,NULL);  // try as a builtin one
+}
+
+#endif
 
 const struct usbd_quirks *
 #ifdef __riscos

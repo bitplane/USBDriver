@@ -530,9 +530,9 @@ void ums_intr
     if (sc->sc_iid && *ibuf++ != sc->sc_iid)
       return;
 
-    dx = (u_long) hid_get_data(ibuf, &sc->sc_loc_x);
-    dy = -(u_long) hid_get_data(ibuf, &sc->sc_loc_y);
-    dz = (u_long) hid_get_data(ibuf, &sc->sc_loc_z);
+    dx =  (u_int) hid_get_data(ibuf, &sc->sc_loc_x);
+    dy = -(u_int) hid_get_data(ibuf, &sc->sc_loc_y);
+    dz =  (u_int) hid_get_data(ibuf, &sc->sc_loc_z);
     if (sc->flags & UMS_REVZ)
         dz = -dz;
     relx += dx;

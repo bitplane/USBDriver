@@ -59,3 +59,20 @@ struct usbd_quirks {
 extern const struct usbd_quirks usbd_no_quirk;
 
 const struct usbd_quirks *usbd_find_quirk(usb_device_descriptor_t *);
+/* format of a quirk .. keep synchronised with entry in dev.usb.usb_quirks */
+typedef struct usbd_quirk_entry {
+	u_int16_t idVendor;
+	u_int16_t idProduct;
+	u_int16_t bcdDevice;
+	struct usbd_quirks quirks;
+} usbd_quirk_entry;
+
+
+#ifdef __riscos
+#define MAX_EXTRA_QUIRKS 30
+extern void * extra_quirks;
+
+
+extern const struct usbd_quirks * usbd_find_builtin_quirk(usb_device_descriptor_t *d, const struct usbd_quirk_entry *t);
+
+#endif

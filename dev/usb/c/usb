@@ -1,4 +1,4 @@
-/*	$NetBSD: usb.c,v 1.75 2002/11/26 18:49:49 christos Exp $	*/
+/*      $NetBSD: usb.c,v 1.80 2003/11/07 17:03:25 wiz Exp $     */
 
 /*
  * Copyright (c) 1998, 2002 The NetBSD Foundation, Inc.
@@ -39,12 +39,12 @@
 
 /*
  * USB specifications and other documentation can be found at
- * http://www.usb.org/developers/data/ and
- * http://www.usb.org/developers/index.html .
+ * http://www.usb.org/developers/docs/ and
+ * http://www.usb.org/developers/devclass_docs/
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.75 2002/11/26 18:49:49 christos Exp $");
+//__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.80 2003/11/07 17:03:25 wiz Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -249,7 +249,9 @@ void
 usb_create_event_thread(void *arg)
 {
 	struct usb_softc *sc = arg;
-	static int created = 0;
+#ifndef __riscos
+        static int created = 0;
+#endif
 
 	if (usb_kthread_create1(usb_event_thread, sc, &sc->sc_event_thread,
 			   "%s", sc->sc_dev.dv_xname)) {
@@ -517,10 +519,12 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 #endif
 		break;
 #endif /* USB_DEBUG */
+#ifdef __riscos
         case USB_DISCOVER:
                 sc->sc_bus->needs_explore = 1;
                 usb_discover(sc);
                 break;
+#endif
 	case USB_REQUEST:
 	{
 		struct usb_ctl_request *ur = (void *)data;
@@ -696,12 +700,14 @@ usb_discover(void *v)
 	 * but this is guaranteed since this function is only called
 	 * from the event thread for the controller.
 	 */
+	while (sc->sc_bus->needs_explore && !sc->sc_dying) {
+		sc->sc_bus->needs_explore = 0;
+#ifdef __riscos
         /* this can, in riscos, be called during root hub initialisation
          *  so we must ensure it has a valid root hub pointer before using it
         */ 
-	while (sc->sc_bus->needs_explore && !sc->sc_dying) {
-		sc->sc_bus->needs_explore = 0;
                 if(sc->sc_bus->root_hub)  // ensure root hub is initialised
+#endif
                   sc->sc_bus->root_hub->hub->explore(sc->sc_bus->root_hub);
 	}
 }

@@ -349,11 +349,11 @@ int wakeup (void* ident) {
     return 0;
 }
 
-void kthread_exit () {
+void kthread_exit (void) {
     dprintf (("Port", "exit thread\n"));
 }
 
-void device_probe_and_attach () {
+void device_probe_and_attach (void) {
     dprintf (("Port", "probing device\n"));
 }
 

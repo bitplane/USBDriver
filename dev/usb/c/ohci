@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.135 2002/12/10 14:07:37 toshii Exp $	*/
+/*      $NetBSD: ohci.c,v 1.152 2004/10/26 20:46:16 augustss Exp $      */
 /*	$FreeBSD: src/sys/dev/usb/ohci.c,v 1.22 1999/11/17 22:33:40 n_hibma Exp $	*/
 
 /*
@@ -42,11 +42,11 @@
  * USB Open Host Controller driver.
  *
  * OHCI spec: http://www.compaq.com/productinfo/development/openhci.html
- * USB spec: http://www.usb.org/developers/data/usbspec.zip
+ * USB spec: http://www.usb.org/developers/docs/usbspec.zip
  */
 
 #include <sys/cdefs.h>
-//__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.135 2002/12/10 14:07:37 toshii Exp $");
+//__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.152 2004/10/26 20:46:16 augustss Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -381,7 +381,6 @@ ohci_activate(device_ptr_t self, enum devact act)
 	switch (act) {
 	case DVACT_ACTIVATE:
 		return (EOPNOTSUPP);
-		break;
 
 	case DVACT_DEACTIVATE:
 		if (sc->sc_child != NULL)
@@ -950,9 +949,9 @@ ohci_init(ohci_softc_t *sc)
  bad4:
 	ohci_free_sed(sc, sc->sc_isoc_head);
  bad3:
-	ohci_free_sed(sc, sc->sc_ctrl_head);
- bad2:
 	ohci_free_sed(sc, sc->sc_bulk_head);
+ bad2:
+        ohci_free_sed(sc, sc->sc_ctrl_head);
  bad1:
 	usb_freemem(&sc->sc_bus, &sc->sc_hccadma);
 	return (err);
@@ -1532,7 +1531,7 @@ ohci_softintr(void *v)
                                        std->len, xfer->actlen);
                         }
 
-			DPRINTFN(8,("ohci_process_done: error cc=%d (%s) pipe=%x\n",
+			DPRINTFN(8,("ohci_process_done: error cc=%d (%s) pipe=%p\n",
 			  OHCI_TD_GET_CC(le32toh(std->td.td_flags)),
                           ohci_cc_strs[OHCI_TD_GET_CC(le32toh(std->td.td_flags))],opipe));
 
