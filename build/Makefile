@@ -149,5 +149,11 @@ debug: gpa.${COMPONENT} ${DIRS}
 
 listing: i.ohci i.ohcimodule i.usb i.usbdi i.usbdi_util i.usb_subr i.ugen i.usbmodule i.ehcimodule
 
+BBETYPE = usb
+bbe-usb: bbe-generic
+        ${MKDIR} ${BBEDIR}.aof
+        BBE_Export_File aof.${TARGET}
+        ${CP} rom_link_v.${TARGET} ${VERBATIMROMLINK} ${CPFLAGS}
+
 
 # Dynamic dependencies:
