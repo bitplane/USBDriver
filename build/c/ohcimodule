@@ -277,6 +277,9 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     }
     dprintf (("", "magic at %p", magic));
 
+    /* enable per-port power control on all ports */
+    ohci_base[OHCI_RH_DESCRIPTOR_B / 4] = 0xFFFF0000;
+
     /* for the L7205, clocks need to be started */
     /* in BSD this is called from sys/pci/ohci_pci.c */
     ohci_init (&ohci_soft);
