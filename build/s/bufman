@@ -37,7 +37,7 @@ call_buffermanager
 	MOV	LR,PC
 	MOV	PC,R5
 	STMDB	R4,{R2-R3}
-	MOV	R0,PC
+	MRS     R0,CPSR
 	LDMFD	R13!,{R4,R5,PC}
 
         END

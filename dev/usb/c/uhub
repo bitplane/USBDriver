@@ -185,11 +185,11 @@ USB_ATTACH(uhub)
 	USETW(req.wIndex, 0);
 	USETW(req.wLength, USB_HUB_DESCRIPTOR_SIZE);
 	DPRINTFN(1,("usb_init_hub: getting hub descriptor\n"));
-	err = usbd_do_request(dev, &req, &hubdesc);
+	err = usbd_do_request(dev, &req, (void *)&hubdesc);
 	nports = hubdesc.bNbrPorts;
 	if (!err && nports > 7) {
 		USETW(req.wLength, USB_HUB_DESCRIPTOR_SIZE + (nports+1) / 8);
-		err = usbd_do_request(dev, &req, &hubdesc);
+		err = usbd_do_request(dev, &req, (void *)&hubdesc);
 	}
 	if (err) {
 		DPRINTF(("%s: getting hub descriptor failed, error=%s\n",

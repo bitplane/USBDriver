@@ -57,6 +57,9 @@ usbd_status	usbd_get_hub_status(usbd_device_handle, usb_hub_status_t *);
 usbd_status	usbd_set_protocol(usbd_interface_handle dev, int report);
 usbd_status	usbd_get_report_descriptor(usbd_device_handle dev, int ifcno,
 					   int repid, int size, void *d);
+#if defined(__CC_NORCROFT) && !defined(DISABLE_PACKED)
+__packed
+#endif
 struct usb_hid_descriptor *usbd_get_hid_descriptor(usbd_interface_handle ifc);
 usbd_status	usbd_set_report(usbd_interface_handle iface, int type, int id,
 				void *data,int len);

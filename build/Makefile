@@ -23,9 +23,10 @@ MSGLOC          = Resources.${COMPONENT}.Messages
 DEVICELIST      = Resources.<Locale>.USBDevs
 LIBS            = ${DEBUGLIB} ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
 RDIR            = ${RESDIR}.${COMPONENT}
+USBDIR          = <Lib$Dir>.USB
 
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:
-CDEFINES        += ${CDEBUG} -DKERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE
+CDEFINES        += ${CDEBUG} -DKERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
 CMHGINCLUDES    = ${CINCLUDES}
 CMHGDEFINES     = -DMSGLOC=${MSGLOC} ${CDEBUG}
 CFLAGS          += -ff -wp -wc -zm -zps1
@@ -57,6 +58,24 @@ clean:
         ${RM}   Resources.<Locale>.USBDevs
 
 all: o._dirs
+
+export: export_${PHASE}
+
+export_libs:
+        @echo ${COMPONENT}: export complete (libs)
+
+export_hdrs:
+        ${MKDIR} ${USBDIR}.dev.usb.h
+        ${MKDIR} ${USBDIR}.h
+        ${MKDIR} ${USBDIR}.sys.h
+        ${CP} ^.dev.usb.h.usb      ${USBDIR}.dev.usb.h.usb      ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdevs  ${USBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdi    ${USBDIR}.dev.usb.h.usbdi    ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usb_port ${USBDIR}.dev.usb.h.usb_port ${CPFLAGS}
+        ${CP} h.USBDevFS           ${USBDIR}.h.USBDevFS         ${CPFLAGS}
+        ${CP} ^.sys.h.device       ${USBDIR}.sys.h.device       ${CPFLAGS}
+        ${CP} ^.VersionNum         ${USBDIR}.NetBSDVersion      ${CPFLAGS}
+        @echo ${COMPONENT}: export complete (hdrs)
 
 resources: resources_${COMPONENT}
 

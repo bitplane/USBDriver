@@ -118,16 +118,16 @@ struct iface_softc {
 /* variables definitions                                                     */
 /*---------------------------------------------------------------------------*/
 
-#define E_NoMem         "\x00\x00\x00\x50" "NoMem"
-#define E_NoDevice      "\x01\x00\x00\x50" "NoDevice"
-#define E_NoInterface   "\x02\x00\x00\x50" "NoInterface"
-#define E_NoEndpoint    "\x03\x00\x00\x50" "NoEndpoint"
-#define E_EndpointUsed  "\x04\x00\x00\x50" "EndpointUsed"
-#define E_BadPipe       "\x05\x00\x00\x50" "BadPipe"
-#define E_BadXfer       "\x06\x00\x00\x50" "BadXfer"
-#define E_NoStream      "\x07\x00\x00\x50" "NoStream"
-#define E_BadRequest    "\x08\x00\x00\x50" "BadRequest"
-#define E_XferFailed    "\x09\x00\x00\x50" "XferFailed"
+#define E_NoMem         "\x00\x90\x81\x00" "NoMem"
+#define E_NoDevice      "\x01\x90\x81\x00" "NoDevice"
+#define E_NoInterface   "\x02\x90\x81\x00" "NoInterface"
+#define E_NoEndpoint    "\x03\x90\x81\x00" "NoEndpoint"
+#define E_EndpointUsed  "\x04\x90\x81\x00" "EndpointUsed"
+#define E_BadPipe       "\x05\x90\x81\x00" "BadPipe"
+#define E_BadXfer       "\x06\x90\x81\x00" "BadXfer"
+#define E_NoStream      "\x07\x90\x81\x00" "NoStream"
+#define E_BadRequest    "\x08\x90\x81\x00" "BadRequest"
+#define E_XferFailed    "\x20\x90\x81\x00" "XferFailed"
 
 #define USBDEV_MESSAGES "Resources:$.Resources.USBDriver.USBDevs"
 
@@ -391,19 +391,29 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         case Service_USBDriver_Connected:
         {
             struct device* dev;
-            // in case there are no devices
-            USBServiceAnswer* serv = (USBServiceAnswer*) r->r[2];
+            USBServiceAnswer* serv;
             // to link to existing list
             USBServiceAnswer* lastserv = (USBServiceAnswer*) r->r[2];
+            while (lastserv != NULL && lastserv->link != NULL)
+            {
+                lastserv = lastserv->link;
+            }
             TAILQ_FOREACH(dev, &allusbdevs, dv_list)
             {
                 struct ugen_softc * udev = (struct ugen_softc*) dev;
                 serv = (USBServiceAnswer*)
                     service_call (udev->sc_udev, dev->dv_unit, 1);
-                serv->link = lastserv;
+                serv->link = NULL;
+                if (lastserv == NULL)
+                {
+                    r->r[2] = (int) serv;
+                }
+                else
+                {
+                    lastserv->link = serv;
+                }
                 lastserv = serv;
             }
-            r->r[2] = (int) serv;
         }
             break;
         case Service_USBDriver_Attach:
@@ -1169,8 +1179,8 @@ char* service_call (usbd_device_handle dev, int unit, int link)
     serv->hostport = dev->powersrc->portno;
     serv->speed = dev->lowspeed? 0: 1;
 
-    memcpy (&serv->ddesc, &dev->ddesc, sizeof serv->ddesc);
-    memcpy ((char*)(serv + 1) - 2, dev->cdesc, UGETW(dev->cdesc->wTotalLength));
+    memcpy ((void *)&serv->ddesc, (void *)&dev->ddesc, sizeof serv->ddesc);
+    memcpy ((char*)(serv + 1) - 2, (void *)dev->cdesc, UGETW(dev->cdesc->wTotalLength));
 
     return real_serv;
 }
@@ -2396,12 +2406,13 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
             CallBufMan (&r);
 
             static _kernel_oserror err;
-            char cc[5], *cp;
+            char errtoken[sizeof E_XferFailed] = E_XferFailed, cc[5], *cp;
+            ((_kernel_oserror *)errtoken)->errnum += status;
             sprintf (cc, "CC%02d", status);
             _swix (MessageTrans_Lookup, _INR(0,2)|_OUT(2),
                 &mod_messages, cc, 0, &cp);
             return _swix (MessageTrans_ErrorLookup, _INR(0,4),
-                E_XferFailed, &mod_messages, &err, sizeof err, cp);
+                errtoken, &mod_messages, &err, sizeof err, cp);
         }
         break;
     case DeviceFSCallDevice_USBRequest:

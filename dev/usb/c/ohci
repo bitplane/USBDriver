@@ -1690,7 +1690,7 @@ ohci_device_request(usbd_xfer_handle xfer)
 		std->td.td_flags |= htole32(OHCI_TD_TOGGLE_1);
 	}
 
-	memcpy(KERNADDR(&opipe->u.ctl.reqdma), req, sizeof *req);
+	memcpy(KERNADDR(&opipe->u.ctl.reqdma), (void *)req, sizeof *req);
 
 	setup->td.td_flags = htole32(OHCI_TD_SETUP | OHCI_TD_NOCC |
 				     OHCI_TD_TOGGLE_0 | OHCI_TD_NOINTR);
@@ -2441,7 +2441,7 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 			}
 			totlen = l = min(len, USB_DEVICE_DESCRIPTOR_SIZE);
 			USETW(ohci_devd.idVendor, sc->sc_id_vendor);
-			memcpy(buf, &ohci_devd, l);
+			memcpy(buf, (void *)&ohci_devd, l);
 			break;
 		case UDESC_CONFIG:
 			if ((value & 0xff) != 0) {
@@ -2449,17 +2449,17 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 				goto ret;
 			}
 			totlen = l = min(len, USB_CONFIG_DESCRIPTOR_SIZE);
-			memcpy(buf, &ohci_confd, l);
+			memcpy(buf, (void *)&ohci_confd, l);
 			buf = (char *)buf + l;
 			len -= l;
 			l = min(len, USB_INTERFACE_DESCRIPTOR_SIZE);
 			totlen += l;
-			memcpy(buf, &ohci_ifcd, l);
+			memcpy(buf, (void *)&ohci_ifcd, l);
 			buf = (char *)buf + l;
 			len -= l;
 			l = min(len, USB_ENDPOINT_DESCRIPTOR_SIZE);
 			totlen += l;
-			memcpy(buf, &ohci_endpd, l);
+			memcpy(buf, (void *)&ohci_endpd, l);
 			break;
 		case UDESC_STRING:
 			if (len == 0)
@@ -2604,7 +2604,7 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 		hubd.bDescLength = USB_HUB_DESCRIPTOR_SIZE + i;
 		l = min(len, hubd.bDescLength);
 		totlen = l;
-		memcpy(buf, &hubd, l);
+		memcpy(buf, (void *)&hubd, l);
 		break;
 	case C(UR_GET_STATUS, UT_READ_CLASS_DEVICE):
 		if (len != 4) {
@@ -2631,7 +2631,7 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 		USETW(ps.wPortStatus, v);
 		USETW(ps.wPortChange, v >> 16);
 		l = min(len, sizeof ps);
-		memcpy(buf, &ps, l);
+		memcpy(buf, (void *)&ps, l);
 		totlen = l;
 		break;
 	case C(UR_SET_DESCRIPTOR, UT_WRITE_CLASS_DEVICE):

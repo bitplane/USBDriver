@@ -166,11 +166,11 @@ usbd_get_string_desc(usbd_device_handle dev, int sindex, int langid,
 	USETW2(req.wValue, UDESC_STRING, sindex);
 	USETW(req.wIndex, langid);
 	USETW(req.wLength, 1);	/* only size byte first */
-	err = usbd_do_request(dev, &req, sdesc);
+	err = usbd_do_request(dev, &req, (void *)sdesc);
 	if (err)
 		return (err);
 	USETW(req.wLength, sdesc->bLength);	/* the whole string */
-	return (usbd_do_request(dev, &req, sdesc));
+	return (usbd_do_request(dev, &req, (void *)sdesc));
 }
 
 char *
@@ -557,7 +557,7 @@ usbd_set_config_index(usbd_device_handle dev, int index, int msg)
 		for (ifcidx = 0; ifcidx < nifc; ifcidx++)
 			usbd_free_iface_data(dev, ifcidx);
 		free(dev->ifaces, M_USB);
-		free(dev->cdesc, M_USB);
+		free((void *)dev->cdesc, M_USB);
 		dev->ifaces = NULL;
 		dev->cdesc = NULL;
 		dev->config = USB_UNCONFIG_NO;
@@ -582,7 +582,7 @@ usbd_set_config_index(usbd_device_handle dev, int index, int msg)
 	if (cdp == NULL)
 		return (USBD_NOMEM);
 	/* Get the full descriptor. */
-	err = usbd_get_desc(dev, UDESC_CONFIG, index, len, cdp);
+	err = usbd_get_desc(dev, UDESC_CONFIG, index, len, (void *)cdp);
 	if (err)
 		goto bad;
 	if (cdp->bDescriptorType != UDESC_CONFIG) {
@@ -669,7 +669,7 @@ usbd_set_config_index(usbd_device_handle dev, int index, int msg)
 	return (USBD_NORMAL_COMPLETION);
 
  bad:
-	free(cdp, M_USB);
+	free((void *)cdp, M_USB);
 	return (err);
 }
 
@@ -998,7 +998,7 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 	/* Try a few times in case the device is slow (i.e. outside specs.) */
 	for (i = 0; i < 3; i++) {
 		/* Get the first 8 bytes of the device descriptor. */
-		err = usbd_get_desc(dev, UDESC_DEVICE, 0, USB_MAX_IPACKET, dd);
+		err = usbd_get_desc(dev, UDESC_DEVICE, 0, USB_MAX_IPACKET, (void *)dd);
 		if (!err)
 			break;
 		usbd_delay_ms(dev, 200);
@@ -1260,7 +1260,7 @@ usb_free_device(usbd_device_handle dev)
 		free(dev->ifaces, M_USB);
 	}
 	if (dev->cdesc != NULL)
-		free(dev->cdesc, M_USB);
+		free((void *)dev->cdesc, M_USB);
 	if (dev->subdevs != NULL)
 		free(dev->subdevs, M_USB);
 	free(dev, M_USB);

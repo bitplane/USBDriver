@@ -88,7 +88,7 @@ usbd_get_config_desc(usbd_device_handle dev, int confidx,
 
 	DPRINTFN(3,("usbd_get_config_desc: confidx=%d\n", confidx));
 	err = usbd_get_desc(dev, UDESC_CONFIG, confidx,
-			    USB_CONFIG_DESCRIPTOR_SIZE, d);
+			    USB_CONFIG_DESCRIPTOR_SIZE, (void *)d);
 	if (err)
 		return (err);
 	if (d->bDescriptorType != UDESC_CONFIG) {
@@ -112,7 +112,7 @@ usbd_get_device_desc(usbd_device_handle dev, usb_device_descriptor_t *d)
 {
 	DPRINTFN(3,("usbd_get_device_desc:\n"));
 	return (usbd_get_desc(dev, UDESC_DEVICE,
-			     0, USB_DEVICE_DESCRIPTOR_SIZE, d));
+			     0, USB_DEVICE_DESCRIPTOR_SIZE, (void *)d));
 }
 
 usbd_status
@@ -125,7 +125,7 @@ usbd_get_device_status(usbd_device_handle dev, usb_status_t *st)
 	USETW(req.wValue, 0);
 	USETW(req.wIndex, 0);
 	USETW(req.wLength, sizeof(usb_status_t));
-	return (usbd_do_request(dev, &req, st));
+	return (usbd_do_request(dev, &req, (void *)st));
 }
 
 usbd_status
@@ -138,7 +138,7 @@ usbd_get_hub_status(usbd_device_handle dev, usb_hub_status_t *st)
 	USETW(req.wValue, 0);
 	USETW(req.wIndex, 0);
 	USETW(req.wLength, sizeof(usb_hub_status_t));
-	return (usbd_do_request(dev, &req, st));
+	return (usbd_do_request(dev, &req, (void *)st));
 }
 
 usbd_status
@@ -164,7 +164,7 @@ usbd_get_port_status(usbd_device_handle dev, int port, usb_port_status_t *ps)
 	USETW(req.wValue, 0);
 	USETW(req.wIndex, port);
 	USETW(req.wLength, sizeof *ps);
-	return (usbd_do_request(dev, &req, ps));
+	return (usbd_do_request(dev, &req, (void *)ps));
 }
 
 usbd_status
