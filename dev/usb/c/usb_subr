@@ -416,7 +416,11 @@ usbd_reset_port(usbd_device_handle dev, int port, usb_port_status_t *ps)
 	n = 10;
 	do {
 		/* Wait for device to recover from reset. */
+#ifdef __riscos
+		QueryDelay(dev, "USB$PortResetDelay",USB_PORT_RESET_DELAY);
+#else
 		usbd_delay_ms(dev, USB_PORT_RESET_DELAY);
+#endif
 		err = usbd_get_port_status(dev, port, ps);
 		if (err) {
 			DPRINTF(("usbd_reset_port: get status failed %d\n",

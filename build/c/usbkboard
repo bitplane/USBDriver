@@ -338,8 +338,8 @@ void ukbd_intr
     uint8_t moddiff;
     uint32_t newstatus[8];
 
-    if (ustatus == USBD_CANCELLED)
-        return;
+//    if (ustatus == USBD_CANCELLED)
+//        return;
 
     if (ustatus) {
         dprintf(("", "ukbd_intr: status=%d\n", ustatus));

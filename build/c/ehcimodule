@@ -56,7 +56,7 @@ int usbdebug;
 
 uint32_t irq0;
 int irq_device;
-int irq_buf;
+//int irq_buf;
 char debugname[16];
 #endif
 
@@ -581,14 +581,14 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
         int t = (u2s - u2s1) * 5;
         if (t < 0) t += 10000000; /* it wrapped */
         if (ehcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
-        if (irq_buf)
-        {
-            _swix (OS_CallAVector, _INR(1,3)|_IN(9),
-                irq_buf | (1<<31),
-                (int [2]) { gettime () / 1000 - irq0, t},
-                8,
-                20);
-        }
+//        if (irq_buf)
+//        {
+//            _swix (OS_CallAVector, _INR(1,3)|_IN(9),
+//                irq_buf | (1<<31),
+//                (int [2]) { gettime () / 1000 - irq0, t},
+//                8,
+//                20);
+//        }
 //        irq_tot += t;
 //        if (t < irq_min) irq_min = t;
 //        if (t > irq_max) irq_max = t;

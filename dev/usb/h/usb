@@ -531,7 +531,7 @@ typedef struct {
 #ifdef RHENIUM
 #define USB_PORT_RESET_DELAY	200  /* ms */
 #else  /*RHENIUM*/
-#define USB_PORT_RESET_DELAY	200  /* 100 ms */
+#define USB_PORT_RESET_DELAY	100  /* 100 ms */  /* 200ms kills chicony kbd */
 #endif /*RHENIUM*/
 #define USB_PORT_ROOT_RESET_DELAY	50 /* 50 ms */
 #define USB_PORT_RESET_RECOVERY	50 /* 50 ms */
