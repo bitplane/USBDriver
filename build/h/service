@@ -24,9 +24,10 @@
 #define Service_USBDriver_Starting          0x03
 #define Service_USBDriver_Dying             0x04
 
-/* allow for the obsolete service call interface that Castle adapted from
+/* Allow for the obsolete service call interface that Castle adapted from
    some vague thoughts I had a couple of years ago */
-//#define OBSOLETE_SERVICE_CALLS 1
+#define   OBSOLETE_SERVICE_CALLS 1
+#undef    OBSOLETE_SERVICE_CALLS
 
 #ifdef OBSOLETE_SERVICE_CALLS
 /*
@@ -39,12 +40,12 @@
 typedef struct USBDevFSDevice USBDevFSDevice; // rest of definition below
 
 typedef struct USBDevFSEndpoint{
- USBDevFSDevice*            dev;           // the device containing this
- uint8_t                   ifc;           // primary interface number
- uint8_t                   altifc;        // alternate interface number
- usb_endpoint_descriptor_t*     ep;            // endpoint
- int                        device_handle; // device and stream handles
- int                        stream_handle; // for this endpoint
+ USBDevFSDevice*            dev;            // the device containing this
+ uint8_t                   ifc;             // primary interface number
+ uint8_t                   altifc;          // alternate interface number
+ usb_endpoint_descriptor_t*     ep;         // endpoint
+ int                        device_handle;  // device and stream handles
+ int                        stream_handle;  // for this endpoint
  char                       device_name[20];// device name
 } USBDevFSEndpoint;
 
@@ -53,8 +54,8 @@ struct USBDevFSDevice{                      // part defined above
  usb_port_status_t          port_status;    // status bits
  USBDevFSEndpoint           ep_default;     // structure for default endpoint
  usb_device_descriptor_t    dev;            // Device Descriptor from device
- usb_config_descriptor_t    *config;         // points to the Config recovered
- usb_interface_descriptor_t **ifcs;           // array if interface structures
+ usb_config_descriptor_t    *config;        // points to the Config recovered
+ usb_interface_descriptor_t **ifcs;         // array if interface structures
  USBDevFSEndpoint         **eps;            // array of endpoint structures
  uint32_t                   str_default;    // default stream
  char                       name[20];       // device name
@@ -92,7 +93,7 @@ typedef struct USBServiceCall {
                                       // followed immediately by the entire
                                       // config string from the device
                                       // (with no word alignment gaps)
-                            // 1 or more NULLs to achieve word alignment
+                                      // 1 or more NULLs to achieve word alignment
 } USBServiceCall;
 
 #endif

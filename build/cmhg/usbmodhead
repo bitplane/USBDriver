@@ -59,8 +59,10 @@ USBSetConfig(   min-args:2, max-args:2,
 USBSetInterface(min-args:3, max-args:3,
                 international:,help-text:"HUSBINT",invalid-syntax:"SUSBINT"),
 
+#ifdef USB_DEBUG
 USBDiscover(    min-args:0, max-args:0,
                 international:,help-text:"HUSBDIS",invalid-syntax:"SUSBDIS"),
+#endif
 
 USBReset(       min-args:1, max-args:1,
                 international:,help-text:"HUSBRES",invalid-syntax:"SUSBRES")

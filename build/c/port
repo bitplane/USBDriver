@@ -27,12 +27,6 @@
 #include "sys/time.h"
 #include "Global/HALEntries.h"
 
-#define Service_USBDriver 0xD2
-#define Service_USBDriver_Starting 0x0
-#define Service_USBDriver_Dying    0x1
-#define Service_USBDriver_Attach    0x02
-#define Service_USBDriver_Dettach   0x03
-
 #ifdef USB_DEBUG
 extern int usbdebug;
 int total_sleep;

@@ -41,6 +41,8 @@ extern void ums_disable (void*);
 
 extern int umsdebug;
 
+extern struct messages mod_messages;
+
 extern struct cfattach ums_ca;
 
 static int relx = 0, rely = 0;
@@ -117,7 +119,9 @@ int pointerv (_kernel_swi_regs* r, void* pw)
             p->next = (struct pointer_device *) r->r[1];
             p->flags = 0;
             p->typenname[0] = PointerDevice_USB;
-            strcpy(&p->typenname[1], "USB mouse"); /* should be internationalised */
+
+            _swix (MessageTrans_Lookup, _INR(0,3),
+                   &mod_messages, "Mouse:USB mouse", &p->typenname[1], 31);
             r->r[1] = (int) p;
         }
         break;

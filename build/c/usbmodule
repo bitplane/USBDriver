@@ -747,8 +747,10 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
         }
         break;
 
+#ifdef USB_DEBUG
     case CMD_USBDiscover:
         return command_discover ();
+#endif
 
     case CMD_USBReset:
         return command_reset ((int) strtoul (arg_string, 0, 10));
