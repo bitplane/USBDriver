@@ -14,5 +14,4 @@
  */
 struct device* attach_mouse (struct device* parent, void* aux);
 int detach_mouse (struct device* ms);
-
-
+void remove_keyboards (void);

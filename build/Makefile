@@ -26,7 +26,7 @@ RDIR            = ${RESDIR}.${COMPONENT}
 USBDIR          = <Lib$Dir>.USB
 
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:
-CDEFINES        += ${CDEBUG} -DKERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
+CDEFINES        += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
 CMHGINCLUDES    = ${CINCLUDES}
 CMHGDEFINES     = -DMSGLOC=${MSGLOC} ${CDEBUG}
 CFLAGS          += -ff -wp -wc -zm -zps1
@@ -53,6 +53,7 @@ clean:
         ${WIPE} gpa    ${WFLAGS}
         ${WIPE} bin    ${WFLAGS}
         ${WIPE} linked ${WFLAGS}
+        ${RM}   h.ehcimodhead
         ${RM}   h.ohcimodhead
         ${RM}   h.usbmodhead
         ${RM}   Resources.<Locale>.USBDevs
@@ -84,6 +85,11 @@ resources_OHCIDriver: LocalRes:OHCIMessages
         ${CP} LocalRes:OHCIMessages ${RDIR}.Messages ${CPFLAGS}
         @echo ${COMPONENT}: resource files copied
 
+resources_EHCIDriver: LocalRes:EHCIMessages
+        ${MKDIR} ${RDIR}
+        ${CP} LocalRes:EHCIMessages ${RDIR}.Messages ${CPFLAGS}
+        @echo ${COMPONENT}: resource files copied
+
 resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
         ${MKDIR} ${RDIR}
         ${CP} LocalRes:USBMessages ${RDIR}.Messages ${CPFLAGS}
@@ -101,6 +107,7 @@ o._dirs:
         ${MKDIR} bin
         ${TOUCH} o._dirs
 
+ehcimodule.o:   ehcimodhead.h
 ohcimodule.o:   ohcimodhead.h USBDriver.h
 usbmodule.o usbkboard.o:        usbmodhead.h
 
@@ -123,6 +130,9 @@ usbmsgs.o: Resources.<Locale>.USBMessages Resources.<Locale>.USBDevs
 ohcimsgs.o: Resources.<Locale>.OHCIMessages
         resgen resource_files o.ohcimsgs Resources.<Locale>.OHCIMessages ${MSGLOC}
 
+ehcimsgs.o: Resources.<Locale>.EHCIMessages
+        resgen resource_files o.ehcimsgs Resources.<Locale>.EHCIMessages ${MSGLOC}
+
 # RISC OS debug:
 aif.${COMPONENT}: ${RAM_OBJS} ${RAM_LIBS} ${CLIB} ${DIRS}
         link -base 0 -aif -bin -d -o $@ ${RAM_OBJS} ${RAM_LIBS} ${CLIB}
@@ -136,7 +146,7 @@ debug: gpa.${COMPONENT} ${DIRS}
 
 .c.i:;  ${CC} -E ${CFLAGS} $< > $@
 
-listing: i.ohci i.ohcimodule i.usb i.usbdi i.usbdi_util i.usb_subr i.ugen i.usbmodule
+listing: i.ohci i.ohcimodule i.usb i.usbdi i.usbdi_util i.usb_subr i.ugen i.usbmodule i.ehcimodule
 
 
 # Dynamic dependencies:

@@ -17,3 +17,4 @@
 #define USBDriver_DeRegisterBus         0x054a41
 #define USBDriver_InsertTransfer        0x054a42
 #define USBDriver_TransferComplete      0x054a43
+#define USBDriver_ScheduleSoftInterrupt  0x054a44

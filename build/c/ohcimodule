@@ -79,6 +79,7 @@ extern void* resource_files (void);
 extern void ohci_dumpregs (ohci_softc_t *);
 extern void ohci_dump_ed (ohci_soft_ed_t*);
 #endif
+extern void ohci_abort_xfer (void*, int);
 
 extern char panic_string[255];
 
@@ -251,6 +252,9 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     memset (&ohci_soft, 0, sizeof ohci_soft);
 
     sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
+    _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
+    strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
+        [sizeof ohci_soft.sc_vendor - 1] = '\0';
 
     _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
     strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor)
@@ -386,43 +390,26 @@ static void service_pci (_kernel_swi_regs* r)
             sizeof p,
             r->r[3]);
         sprintf (tok, "D%04X%04X", p & 0xffff, p >> 16);
-
-        /* claim service call if lookup was successful */
-        if (NULL == _swix (MessageTrans_Lookup, _INR(0,2)|_OUT(2),
-            &mod_messages,
-            tok,
-            0,
-            r->r + 2))
-            {
-            r->r[1] = 0;
-            }
         break;
-
     case 1:
-        _swix (PCI_ReadInfo, _INR(0,3),
-        PCI_ReadInfo_ClassCode,
-        &p,
-        sizeof p,
-        r->r[3]);
-        if (p == 0x0C0310)
-           {
-           /* Only lookup a vendor id if it's an OHCI controller */
-           sprintf (tok, "V%04X", r->r[0]);
-
-           /* claim service call if lookup was successful */
-           if (NULL == _swix (MessageTrans_Lookup, _INR(0,2)|_OUT(2),
-               &mod_messages,
-               tok,
-               0,
-               r->r + 2))
-               {
-               r->r[1] = 0;
-               }
-           }
+        sprintf (tok, "V%04X", r->r[0]);
         break;
-
     default:
         return;
+    }
+
+    /* claim service call if lookup was successful */
+    if (NULL == _swix (MessageTrans_Lookup, _INR(0,2)|_OUT(2),
+        &mod_messages,
+        tok,
+        0,
+        r->r + 2))
+    {
+        r->r[1] = 0;
+    }
+    else
+    {
+        dprintf (("", "Couldn't find token %s\n", tok));
     }
 }
 
@@ -669,7 +656,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
             0, EntryNo_HAL_CounterRead, &u2s1);
         int t = (u2s - u2s1) * 5;
         if (t < 0) t += 10000000; /* it wrapped */
-        if (ohcidebug > 15) dprintf(("", "irq for: %d nsecs", t));
+        if (ohcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
         irq_tot += t;
         if (t < irq_min) irq_min = t;
         if (t > irq_max) irq_max = t;
@@ -731,4 +718,32 @@ void
 usb_transfer_complete(usbd_xfer_handle xfer)
 {
     _swix (USBDriver_TransferComplete, _IN (0), xfer);
+}
+
+_kernel_oserror*
+_riscos_abort_pipe (_kernel_swi_regs * r, void* pw, void* v)
+{
+    ohci_abort_xfer (v, USBD_TIMEOUT);
+    return NULL;
+}
+
+void
+riscos_abort_pipe (void* v)
+{
+    callx_add_callback (_riscos_abort_pipe, v);
+}
+
+void
+usb_schedsoftintr (struct usbd_bus* sc)
+{
+//    dprintf (("", "Scheduling soft interrupt\n"));
+//    *(void**) sc->soft = (void*) softintr_entry;
+    _swix (USBDriver_ScheduleSoftInterrupt, _IN(0), sc);
+}
+
+int
+softintr (_kernel_swi_regs* r, void* pw)
+{
+    ohci_softintr ((void*) r->r[0]);
+    return 0;
 }

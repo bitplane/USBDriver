@@ -14,4 +14,4 @@
  */
 struct device* attach_keyboard (struct device* parent, void* aux);
 int detach_keyboard (struct device* ms);
-
+void remove_keyboards (void);

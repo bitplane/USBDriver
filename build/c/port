@@ -36,7 +36,9 @@ int total_sleep;
 extern void detach_hub (struct device*);
 extern void detach_device (struct device*);
 
-static uint64_t gettime (void)
+extern uint64_t gettime (void);
+
+uint64_t gettime (void)
 {
     uint32_t cs;
     static uint32_t (*readcode) (void);
@@ -53,8 +55,10 @@ static uint64_t gettime (void)
             0, EntryNo_HAL_CounterPeriod,
             &max_count);
 
+#if 0 // fixed in RISC OS 5.03
         /* bug here - force 2000000 */
         max_count = 2000000;
+#endif
 
         /* conversion to ns, assume counter is for 1 cs */
         ns_factor = 10000000 / max_count;
@@ -79,12 +83,14 @@ int spltty (void)
 void splx (int s)
 {
     if (s == 0) _kernel_irqs_on ();
+//    dprintf (("", "int on\n"));
 }
 
 int splbio (void)
 {
     int s = _kernel_irqs_disabled ();
     _kernel_irqs_off ();
+//    dprintf (("", "int off\n"));
     return s;
 }
 
@@ -254,8 +260,8 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
                       "from %lu.%.09lu\n"
                       "til  %lu.%.09lu\n",
             wmesg, ident, priority, timo,
-            (uint32_t) t0 / 1000000000, (uint32_t) t0 % 1000000000,
-            (uint32_t) t1 / 1000000000, (uint32_t) t1 % 1000000000));
+            (uint32_t) (t0 / 1000000000), (uint32_t) (t0 % 1000000000),
+            (uint32_t) (t1 / 1000000000), (uint32_t) (t1 % 1000000000)));
 #endif
 
     for (i = 0; i < nhandles && t_handles[i] && t_handles[i] != ident; ++i);
@@ -306,13 +312,13 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 #ifdef USB_DEBUG
     if (usbdebug > 19)
       dprintf (("", "now  %lu.%09lu\n",
-        (uint32_t) t2 / 100000000, (uint32_t) t2 % 1000000000));
+        (uint32_t) (t2 / 100000000), (uint32_t) (t2 % 1000000000)));
     t2 -= t0;
     _swix (OS_ReadMonotonicTime, _OUT(0), &cs1);
     total_sleep += cs1 - cs0;
     if (usbdebug > 10)
-        dprintf (("", "slept for %lu.%.06lu seconds (timo = %dms), %d cs\n",
-            (uint32_t) t2 / 100000000, (uint32_t) t2 % 1000000000,
+        dprintf (("", "slept for %lu.%.09lu seconds (timo = %dms), %d cs\n",
+            (uint32_t) (t2 / 100000000), (uint32_t) (t2 % 1000000000),
             timo, cs1 - cs0));
 #endif
 
@@ -418,3 +424,30 @@ void logprintf (char* format, ...)
     va_start (p, format);
     dvprintf (("Log", format, p));
 }
+
+#ifdef USB_USE_SOFTINTR
+void* softintr_establish(int pri, void (*f) (void*), void* h)
+{
+    void** p = malloc (3 * sizeof *p);
+    if (p == NULL) return p;
+
+    p[0] = 0;
+    p[1] = h;
+    p[2] = (void*) f;
+
+    _swix (CBAI_RegisterPollWord, _INR(0, 2), p, pri, private_word);
+    return p;
+}
+
+//void softintr_schedule (void** p)
+//{
+//    dprintf (("", "Setting pollword to %p\n", p[2]));
+//    p[0] = p[2];
+//}
+
+void softintr_disestablish (void* p)
+{
+    _swix (CBAI_DeregisterPollWord, _IN(0), p);
+    free (p);
+}
+#endif

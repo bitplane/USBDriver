@@ -51,9 +51,18 @@
 #define	config_pending_decr()
 #define le16toh(a) a
 #define htole16(a) a
+#define le32toh(a) (a)
+#define htole32(a) (a)
+
+/* XXX don't know what to do about locks yet */
+#define lockinit(a,b,c,d,e)
+#define lockmgr(a,b,c)
+struct lock { int a; };
 
 extern int hz;
 
+#define splhigh splbio
+#define splsoftnet splbio
 extern int splbio (void);
 extern int spltty (void);
 extern void splx (int);
@@ -67,7 +76,9 @@ extern int min (int a, int b);
 extern struct device* riscos_usb_attach(struct device*, void*);
 extern void usb_needs_explore_callback (void*);
 extern int config_detach (struct device*, int);
-extern void* config_found (struct device*, void*, int (*) (void*, const char*));
+extern void* (config_found) (struct device*, void*, int (*) (void*, const char*));
+
+extern void riscos_abort_pipe (void*);
 
 extern int kthread_create (void (*) (void*), void*);
 extern int kthread_create1 (void (*) (void*), void*, void*, char*, char*);
@@ -81,12 +92,22 @@ extern void* malloc_contig (int size, int alignment);
 #define		usb_allocmem(t,s,a,p)	(*(p) = malloc_contig(s, a), (*(p) == NULL? USBD_NOMEM: USBD_NORMAL_COMPLETION))
 extern void free_contig(void **mem);
 #define usb_freemem(p, m) free_contig (m)
-#define DMAADDR(dma)	(vtophys(*(dma)))
-#define KERNADDR(dma)	((void *) *(dma))
+#define DMAADDR(dma, o)	(vtophys((void*) (((char*) *(dma)) + o)))
+#define KERNADDR(dma, o)	((void*) (((char *) *(dma)) + (o)))
 
 int ratecheck (void*, void*);
 
 int config_deactivate (struct device* dev);
+
+#ifdef USB_USE_SOFTINTR
+#define __HAVE_GENERIC_SOFT_INTERRUPTS
+#define IPL_SOFTNET 0
+void* softintr_establish(int, void (*) (void*), void*);
+void softintr_schedule (void*);
+void softintr_disestablish (void*);
+#endif
+
+typedef struct proc *usb_proc_ptr;
 
 typedef struct device *device_ptr_t;
 #define USBBASEDEVICE struct device
@@ -136,21 +157,13 @@ struct cfattach __CONCAT(dname,_ca) = { \
 Static int __CONCAT(dname,_devclass)
 
 #define USB_MATCH(dname) \
-int \
-__CONCAT(dname,_match)( \
-	struct device *parent, \
-	struct cfdata *match, \
-	void *aux)
+int __CONCAT(dname,_match)(struct device *parent, struct cfdata *match, void *aux)
 
 #define USB_MATCH_START(dname, uaa) \
 	struct usb_attach_arg *uaa = aux
 
 #define USB_ATTACH(dname) \
-void \
-__CONCAT(dname,_attach)( \
-	struct device *parent, \
-	struct device *self, \
-	void *aux)
+void __CONCAT(dname,_attach)(struct device *parent, struct device *self, void *aux)
 
 #define USB_ATTACH_START(dname, sc, uaa) \
 	struct __CONCAT(dname,_softc) *sc = \
@@ -164,10 +177,7 @@ __CONCAT(dname,_attach)( \
 #define USB_ATTACH_SETUP logprintf("Attach setup\n")
 
 #define USB_DETACH(dname) \
-int \
-__CONCAT(dname,_detach)( \
-	struct device *self, \
-	int flags)
+int __CONCAT(dname,_detach)(struct device *self, int flags)
 
 #define USB_DETACH_START(dname, sc) \
 	struct __CONCAT(dname,_softc) *sc = \
@@ -187,6 +197,7 @@ __CONCAT(dname,_detach)( \
 /* so we don't have to worry about memory allocation types */
 #define M_USB 0
 #define M_USBDEV 0
+#define M_ZERO 0
 
 /* ioctl types */
 #ifndef FIONBIO

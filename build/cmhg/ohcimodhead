@@ -69,5 +69,6 @@ TargetFM(   min-args:1, max-args:1,
 event-handler:		vsync_entry/vsync Event_VSync
 #endif
 
-vector-handlers:    	usb_irq_entry/usb_irq_handler
+vector-handlers:    	usb_irq_entry/usb_irq_handler,
+			softintr_entry/softintr
 generic-veneers:    	callout_entry/callout_handler

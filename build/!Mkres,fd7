@@ -18,4 +18,5 @@ mkdir -p bin
 amu_machine bin.MakeDevs COMPONENT=USBDriver
 amu_machine resources RESDIR=rm COMPONENT=OHCIdriver
 amu_machine resources RESDIR=rm COMPONENT=USBDriver
+amu_machine resources RESDIR=rm COMPONENT=EHCIDriver
 

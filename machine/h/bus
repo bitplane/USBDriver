@@ -20,5 +20,11 @@ typedef u_int bus_size_t;
 void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x);
 int bus_space_read_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o);
 
+void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x);
+int bus_space_read_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o);
+
+void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x);
+int bus_space_read_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o);
+
 /* do nothing for this call */
 #define bus_space_barrier(a,b,c,d,e) 0

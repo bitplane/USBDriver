@@ -1,0 +1,591 @@
+/* Copyright 2004 Castle Technology Ltd
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+#include "ehcimodhead.h"
+#include "USBDriver.h"
+#include "swis.h"
+#include <string.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <machine/bus.h>
+
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <sys/systm.h>
+
+#include <dev/usb/usb.h>
+#include <dev/usb/usbdi.h>
+#include <dev/usb/usbdivar.h>
+#include <dev/usb/ehcireg.h>
+#include <dev/usb/ehcivar.h>
+
+#include "Global/RISCOS.h"
+#include "Global/HALEntries.h"
+#include "Interface/PCI.h"
+#include "callx/callx.h"
+
+/* Have to avoid including stdio as there's a clash with the BSD stuff */
+#define __stdio_h
+
+#include "DebugLib/DebugLib.h"
+#include "service.h"
+#include "oslib/devicefs.h"
+
+extern uint64_t gettime (void);
+/* for debugging */
+#ifdef EHCI_DEBUG
+extern int ehcidebug;
+int usbdebug;
+
+uint32_t irq0;
+int irq_device;
+int irq_buf;
+#endif
+
+void* private_word;
+
+volatile int* ehci_base;
+
+ehci_softc_t ehci_soft;
+struct device * usb_soft;
+extern int * init_veneer (void);
+#ifdef EHCI_DEBUG
+extern void ehci_dump_regs (ehci_softc_t *);
+//extern void ehci_dump_ed (ehci_soft_ed_t*);
+#endif
+extern void ehci_abort_xfer (void*, int);
+
+
+int* magic = NULL;
+
+void build_veneer (int* vn, int* st, size_t sz)
+{
+    int i;
+    dprintf (("", "writing veneer from %p at %p\n", st, vn));
+    int* entry_table = vn + sz / sizeof (void*);
+    for (i = 0; i < sz / sizeof (void*); ++i) {
+        int* entry = entry_table + 2 * i;
+
+        /* copy function pointer into veneer */
+        vn[i] = st[i];
+
+        /* copy new pointer into structure */
+        st[i] = (int) entry;
+
+        /* LDR ip, function[i] */
+        entry[0] = 0xe51fC000       /* LDR ip, [pc, #-0] */
+                  + 8               /* go back to current instruction */
+                  + i * 8           /* go back to beginning of veneers */
+                  + sz              /* go back to beginning of struct */
+                  - i * 4;          /* go to func pointer */
+
+        /* B common */
+        entry[1] = 0xea000000       /* B here + 8 */
+                  | ((magic - entry - 1) & 0x00ffffff);
+                                    /* branch to diff */
+    }
+}
+
+int pci_device = 0;
+int instance = 0;
+int device_number;
+int unhandled_irqs;
+
+_kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw)
+{
+    _kernel_oserror * e;
+
+    (void) r;
+    (void) pw;
+
+    // allow enough space for name, % and number, then space, and
+    // another number
+    char name[sizeof Module_Title + 1 + 12 + 1 + 12];
+    sprintf (name, Module_Title"%%%d %d", instance + 1, pci_device);
+    dprintf (("Main_0", "Trying to start %s\n", name));
+    e = _swix (OS_Module, _INR(0,1), 14, name);
+
+    if (e)
+    {
+        dprintf (("", "Failed to start %s: %s\n", name, e->errmess));
+    }
+
+    return NULL;
+}
+
+_kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
+    _kernel_oserror* e = 0;
+
+    callx_init (pw);
+
+    /* set up debugging */
+    debug_initialise ("EHCIDriver", 0, 0);
+    debug_set_device(DEBUGIT_OUTPUT);
+    debug_set_unbuffered_files (TRUE);
+
+    dprintf (("Main_0", "Starting driver\n"));
+
+    /* simulate having one OHCI device attached.  This section has to
+    communicate with HAL or podule manager to find out where it can read/write    to some OHCI registers */
+
+    /* assume podule_base is actually instantiation number - how to do this
+       in a HAL world?  If we're the first instance, then search for devices
+       on the PCI bus */
+
+    instance = podule_base;
+
+
+    /* if we're the first instance, then start searching from device # 0,
+       otherwise the device to start searching from was passed as a string
+       in the command tail */
+
+    if (podule_base != 0)
+    {
+        pci_device = atoi (cmd_tail);
+    }
+
+
+    /* quick bodge */
+    if (pci_device == 10)
+    {
+        pci_device = 13;
+    }
+    else
+    do {
+        e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
+            0x0C0320,
+            0xFFFFFF,
+            pci_device,
+            &pci_device);
+        if (e) return e;
+    } while (0);//pci_device == 2 || pci_device == 3);
+
+
+    /* if there were no more OHCI controllers, then return an error.  This
+       will be thrown away by the callback above */
+
+    if (pci_device == 0)
+    {
+        return (_kernel_oserror*) "\0\0\0\0No EHCI devices found";
+    }
+
+    dprintf (("Main_0", "Found EHCI controller on device %d\n", pci_device));
+
+
+    /* now establish our interrupt and address */
+
+    e = _swix(PCI_ReadInfo, _INR(0,3),
+        PCI_ReadInfo_IntDeviceVector,
+        &device_number,
+        sizeof device_number,
+        pci_device);
+    if (e) goto error;
+
+    dprintf (("Main_0", "interrupt device %d\n", device_number));
+
+    e = _swix(PCI_HardwareAddress, _INR(0,1)|_IN(3)|_OUT(4),
+        0, 0, pci_device, &ehci_base);
+    if (e) goto error;
+
+    dprintf (("Main_0", "hardware address %p\n", ehci_base));
+
+    memset (&ehci_soft, 0, sizeof ehci_soft);
+
+    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+
+    private_word = pw;
+
+#ifdef EHCI_DEBUG
+    usbdebug = ehcidebug = atoi (getenv ("ehcidebug"));
+    irq0 = gettime () / 1000;
+
+    struct dev_struct {
+        devicefs_device dev;
+        int null;
+        char name[32];
+    }* dev = calloc (sizeof *dev, 1);
+    strcpy (dev->name, ehci_soft.sc_bus.bdev.dv_xname);
+
+    dev->dev.name_offset = dev->name - (char*) dev;
+    dev->dev.flags = 3;
+    dev->dev.tx_flags = 0x8;
+    dev->dev.tx_buffer_size = 0;
+    dev->dev.rx_flags = 0x8;
+    dev->dev.rx_buffer_size = 1024;
+
+    e = _swix (DeviceFS_Register, _INR (0, 7) | _OUT(0),
+        4,
+        dev,
+        driver_entry,
+        NULL,
+        pw,
+        NULL,
+        INT_MAX, // XXX should be -1, but that doesn't seem to work
+        INT_MAX,
+        &irq_device);
+#endif
+
+    _swix (OS_ClaimDeviceVector, _INR(0,4),
+        device_number| (1u<<31), usb_irq_entry, pw, 0, 0);
+    _swix (OS_Hardware, _IN(0) | _INR(8,9),
+        device_number, 0, EntryNo_HAL_IRQEnable);
+
+    if ((magic = init_veneer ()) == NULL)
+    {
+        return (_kernel_oserror*) "\0\0\0\0Couldn't claim magic";
+    }
+    dprintf (("", "magic at %p", magic));
+
+    /* fix n companions */
+    ehci_soft.sc_ncomp = 2;
+
+    /* in BSD this is called from sys/pci/ehci_pci.c */
+    ehci_init (&ehci_soft);
+
+
+    /* register with the usbdriver module if it's already resident */
+    dprintf (("Main_0", "Registering with USB driver\n"));
+    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+            &ehci_soft, &usb_soft);
+
+    dprintf (("Main_0", "Finished module initialisation\n"));
+
+    /* try and start a new instance to catch any more controllers on the bus */
+
+    _swix (OS_AddCallBack, _INR(0,1), new_entry, pw);
+
+    return 0;
+
+error:
+    dprintf (("Failed initialisation: %s\n", e->errmess));
+    return e;
+}
+
+
+_kernel_oserror *module_final(int fatal, int podule, void *pw)
+{
+    if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
+
+    _swix (OS_Hardware, _IN(0) | _INR(8,9),
+        device_number, 0, EntryNo_HAL_IRQDisable);
+    _swix (OS_ReleaseDeviceVector, _INR(0,4),
+        device_number | (1u<<31), usb_irq_entry, pw, 0, 0);
+
+    if (usb_soft != NULL)
+        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+
+    callx_remove_all_callbacks ();
+    callx_remove_all_callafters ();
+    callx_remove_all_calleverys ();
+
+    return NULL;
+}
+
+void module_services(int service_number, _kernel_swi_regs *r, void *pw)
+{
+    switch (r->r[0]) {
+    case Service_USBDriver_Starting:
+        if (usb_soft == NULL)
+        {
+            dprintf (("Main_0", "Registering with USB driver\n"));
+            _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
+                &ehci_soft, &usb_soft);
+        }
+        break;
+    case Service_USBDriver_Dying:
+        dprintf (("", "Deregistering with USB driver\n"));
+        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+        usb_soft = NULL;
+        memset (&ehci_soft, 0, sizeof ehci_soft);
+        sprintf (ehci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
+        ehci_init (&ehci_soft);
+        break;
+    }
+}
+
+#define OREAD(o) ehci_base[o/4]
+
+_kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
+{
+    ehci_softc_t* sc = &ehci_soft;
+    switch (cmd_no) {
+    case CMD_EHCIRegs:
+        printf
+        (
+            "   PCI device             %8d\n"
+            "   Unhandled IRQs         %8d\n"
+            "%2X USB Command            %8.8X\n"
+            "%2X USB Status             %8.8X\n"
+            "%2X USB Interrupt Enable   %8.8X\n"
+            "%2X USB Frame Index        %8.8X\n"
+            "%2X 4G Segment Selector    %8.8X\n"
+            "%2X Frame List Base Addres %8.8X\n"
+            "%2X Next Asynch List       %8.8X\n"
+//            "%2X Config flag            %8.8X\n"
+            "%2X Port1                  %8.8X\n"
+            "%2X Port2                  %8.8X\n"
+            "%2X Port3                  %8.8X\n"
+            "%2X Port4                  %8.8X\n"
+            "%2X Port5                  %8.8X\n"
+            "%2X Port6                  %8.8X\n",
+               pci_device,
+               unhandled_irqs,
+	       EHCI_USBCMD, EOREAD4(sc, EHCI_USBCMD),
+	       EHCI_USBSTS, EOREAD4(sc, EHCI_USBSTS),
+	       EHCI_USBSTS, EOREAD4(sc, EHCI_USBINTR),
+	       EHCI_FRINDEX, EOREAD4(sc, EHCI_FRINDEX),
+	       EHCI_CTRLDSSEGMENT, EOREAD4(sc, EHCI_CTRLDSSEGMENT),
+	       EHCI_PERIODICLISTBASE, EOREAD4(sc, EHCI_PERIODICLISTBASE),
+	       EHCI_ASYNCLISTADDR, EOREAD4(sc, EHCI_ASYNCLISTADDR),
+               EHCI_PORTSC(1), EOREAD4(sc, EHCI_PORTSC(1)),
+               EHCI_PORTSC(2), EOREAD4(sc, EHCI_PORTSC(2)),
+               EHCI_PORTSC(3), EOREAD4(sc, EHCI_PORTSC(3)),
+               EHCI_PORTSC(4), EOREAD4(sc, EHCI_PORTSC(4)),
+               EHCI_PORTSC(5), EOREAD4(sc, EHCI_PORTSC(5)),
+               EHCI_PORTSC(6), EOREAD4(sc, EHCI_PORTSC(6))
+        );
+
+#ifdef EHCI_DEBUG
+        ehci_dump_regs (&ehci_soft);
+        break;
+    case CMD_EHCIDebug:
+        {
+        char* ptr;
+        ehcidebug = (int) strtoul (arg_string, &ptr, 0);
+        if (ptr) usbdebug = (int) strtoul (ptr, &ptr, 0);
+        }
+#endif
+        break;
+//    case CMD_OHCIEDS:
+//        {
+//#ifdef EHCI_DEBUG
+//            ehci_soft_ed_t* sed;
+//            sed = ehci_soft.sc_isoc_head;
+//            while (sed != NULL) {
+//                ehci_dump_ed(sed);
+//                sed = sed->next;
+//            }
+//            sed = ehci_soft.sc_ctrl_head;
+//            while (sed != NULL) {
+//
+//                ehci_dump_ed(sed);
+//                sed = sed->next;
+//            }
+//            sed = ehci_soft.sc_bulk_head;
+//            while (sed != NULL) {
+//                ehci_dump_ed(sed);
+//                sed = sed->next;
+//            }
+//#endif
+//            break;
+//        }
+//    case CMD_OHCIWrite:
+//        {
+//        int a, b;
+//        char* ptr;
+//        a = (int) strtoul (arg_string, &ptr, 16);
+//        b = (int) strtoul (ptr, 0, 16);
+//        printf ("writing %x to %x\n", b, a);
+//        ehci_base[a / 4] = b;
+//        }
+//        break;
+//    default:
+//        break;
+    }
+
+    return 0;
+}
+
+int usb_irq_handler(_kernel_swi_regs *r, void *pw)
+{
+    int ret;
+    // ehci_intr returns 0 for failure, 1 for success, the inverse of what
+    // we're expected to return
+
+#ifdef EHCI_DEBUG
+    int u2s, u2s1;
+    _swix (OS_Hardware, _INR(8,9)|_OUT(0),
+        0, EntryNo_HAL_CounterRead, &u2s);
+//    irqs++;
+    ehci_softc_t* sc = &ehci_soft;
+//    if (ehcidebug > 1) dprintf (("", "Frame index: %x\n",
+//            EOREAD4(sc, EHCI_FRINDEX)));
+#endif
+
+    ret = !ehci_intr (&ehci_soft);
+
+#ifdef EHCI_DEBUG
+    if (ret)
+    {
+        unhandled_irqs++;
+    }
+    else
+    {
+        _swix (OS_Hardware, _INR(8,9)|_OUT(0),
+            0, EntryNo_HAL_CounterRead, &u2s1);
+        int t = (u2s - u2s1) * 5;
+        if (t < 0) t += 10000000; /* it wrapped */
+        if (ehcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
+        if (irq_buf)
+        {
+            _swix (OS_CallAVector, _INR(1,3)|_IN(9),
+                irq_buf | (1<<31),
+                (int [2]) { gettime () / 1000 - irq0, t},
+                8,
+                20);
+        }
+//        irq_tot += t;
+//        if (t < irq_min) irq_min = t;
+//        if (t > irq_max) irq_max = t;
+    }
+#endif
+
+    return ret;
+}
+
+void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
+{
+#ifdef EHCI_DEBUG
+    if (ehcidebug > 10)
+        dprintf  (("", "write %x to %p\n", x, ehci_base + o/4));
+#endif
+    ehci_base[o/4] = x;
+}
+
+int bus_space_read_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
+{
+#ifdef EHCI_DEBUG
+    if (ehcidebug > 15)
+         dprintf  (("", "read %x from %p\n", ehci_base[o/4], ehci_base + o/4));
+#endif
+    return ehci_base[o/4];
+}
+
+void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
+{
+#ifdef EHCI_DEBUG
+    if (ehcidebug > 10)
+        dprintf  (("", "write %x to %p\n", x, ((uint16_t*) ehci_base) + o/2));
+#endif
+    ((uint16_t*) ehci_base)[o/2] = x;
+}
+
+int bus_space_read_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
+{
+#ifdef EHCI_DEBUG
+    if (ehcidebug > 15)
+         dprintf  (("", "read %x from %p\n",
+            ((uint16_t*)ehci_base)[o/2], ((uint16_t*)ehci_base) + o/2));
+#endif
+    return ehci_base[o/4];
+}
+
+void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
+{
+#ifdef EHCI_DEBUG
+    if (ehcidebug > 10)
+        dprintf  (("", "write %x to %p\n", x, ((uint8_t*) ehci_base) + o));
+#endif
+    ((uint8_t*) ehci_base)[o] = x;
+}
+
+int bus_space_read_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
+{
+#ifdef EHCI_DEBUG
+    if (ehcidebug > 15)
+         dprintf  (("", "read %x from %p\n",
+            ((uint8_t*) ehci_base)[o], ehci_base + o));
+#endif
+    return ((uint8_t*) ehci_base)[o];
+}
+
+
+void timeout(timeout_func_t f, void * h, int t)
+{
+    dprintf (("Main_0", "timeout %p %d\n", h, t));
+}
+
+void untimeout(timeout_func_t f, void * h)
+{
+    dprintf (("Main_0", "untimeout %p\n", h));
+}
+
+/* declare here to avoid clash with sys/types.h */
+int	tsleep(void *chan, int pri, char *wmesg, int timo, int noblock);
+void usb_delay_ms(usbd_bus_handle h, u_int d)
+{
+    tsleep (&d, 0, "usbdly", d, 0);
+}
+
+usbd_status
+usb_insert_transfer(usbd_xfer_handle xfer)
+{
+    usbd_status status;
+    _swix (USBDriver_InsertTransfer, _IN (0) | _OUT (0), xfer, &status);
+    return status;
+}
+
+void
+usb_transfer_complete(usbd_xfer_handle xfer)
+{
+    _swix (USBDriver_TransferComplete, _IN (0), xfer);
+}
+
+_kernel_oserror*
+_riscos_abort_pipe (_kernel_swi_regs * r, void* pw, void* v)
+{
+    ehci_abort_xfer (v, USBD_TIMEOUT);
+    return NULL;
+}
+
+void
+riscos_abort_pipe (void* v)
+{
+    callx_add_callback (_riscos_abort_pipe, v);
+}
+
+void
+usb_schedsoftintr (struct usbd_bus* sc)
+{
+//    dprintf (("", "Scheduling soft interrupt\n"));
+//    *(void**) sc->soft = (void*) softintr_entry;
+    _swix (USBDriver_ScheduleSoftInterrupt, _IN(0), sc);
+}
+
+int
+softintr (_kernel_swi_regs* r, void* pw)
+{
+    ehci_softintr ((void*) r->r[0]);
+    return 1;
+}
+
+/*---------------------------------------------------------------------------*/
+#ifdef EHCI_DEBUG
+
+_kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
+{
+    switch (r->r[0])
+    {
+    case DeviceFSCallDevice_Terminate:
+        irq_buf = 0;
+        break;
+    case DeviceFSCallDevice_StreamCreated:
+        irq_buf = r->r[3];
+        break;
+    }
+
+    return NULL;
+}
+
+#endif

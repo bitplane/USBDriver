@@ -1,0 +1,7 @@
+OBJS = \
+ehcimodhead.o \
+ehcimodule.o \
+ehci.o \
+port.o \
+call_veneer.o \
+triggercbs.o

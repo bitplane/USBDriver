@@ -76,7 +76,8 @@ swi-decoding-table: 	USBDriver,
                         RegisterBus,
                         DeRegisterBus,
                         InsertTransfer,
-                        TransferComplete
+                        TransferComplete,
+                        ScheduleSoftInterrupt
 ;                        IOCtl,
 ;                        OpenPipe,
 ;                        ClosePipe,
@@ -118,4 +119,5 @@ swi-decoding-table: 	USBDriver,
 generic-veneers:        driver_entry/driver
 
 vector-handlers:        pointerv_entry/pointerv,
-			keyv_entry/keyv
+			keyv_entry/keyv,
+			softintr_entry/softintr

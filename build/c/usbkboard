@@ -35,6 +35,8 @@
 #include "dev/usb/usbdivar.h"
 #include "dev/usb/usbhid.h"
 
+#include "usbkboard.h"
+
 #include "wimplib.h"
 
 #define NUM_LOCK 0x01
@@ -149,6 +151,15 @@ RSVD,               RSVD,            RSVD,             RSVD,
 RSVD,               RSVD,            RSVD,             RSVD
 };
 
+extern void remove_all_keyboards (void)
+{
+    struct ukbd_softc* sc;
+    TAILQ_FOREACH(sc, &allukbds, link_kb)
+    {
+        detach_keyboard ((struct device*) sc);
+    }
+}
+
 struct device* attach_keyboard (struct device* parent, void* aux)
 {
     struct ukbd_softc* softc;
@@ -210,6 +221,8 @@ struct device* attach_keyboard (struct device* parent, void* aux)
         KeyV_KeyboardPresent, KeyboardID_PC, KEYV);
     dprintf (("", "USB keyboard enabled\n"));
 
+    /* set idle rate to 0 */
+    usbd_set_idle (softc->sc_iface, 0, 0);
 
     /* Set up interrupt pipe. */
     usbd_open_pipe_intr(softc->sc_iface, softc->sc_ep_addr,
@@ -279,6 +292,24 @@ int keyv (_kernel_swi_regs* r, void* pw)
 
     return 1;
 }
+
+#ifdef PS2KLUDGE
+_kernel_oserror* keyup (_kernel_swi_regs* r, void* pw, void* k)
+{
+    (void) r;
+    (void) pw;
+
+//    dprintf (("", "Key Up: %x\n", (int) k));
+    return _swix (OS_CallAVector,
+
+        _INR(0,1) | _IN(9),
+
+        KeyV_KeyUp,
+        k,
+        KEYV
+    );
+}
+#endif
 
 void ukbd_intr
 (
@@ -352,6 +383,7 @@ void ukbd_intr
             bit = 1 << (key % 32);
             newstatus[key / 32] |= bit;
             if ((status[key / 32] & bit) == 0)
+            {
                 _swix (OS_CallAVector,
 
                     _INR(0,1) | _IN(9),
@@ -360,6 +392,8 @@ void ukbd_intr
                     key,
                     KEYV
                 );
+//                dprintf (("", "Key Down: %x\n", key));
+            }
         }
     }
 
@@ -369,6 +403,10 @@ void ukbd_intr
         if (key != RSVD && key != NEQV) {
             bit = 1 << (key % 32);
             if ((newstatus[key / 32] & bit) == 0)
+            {
+#ifdef PS2KLUDGE
+                callx_add_callafter (2, keyup, (void*) key);
+#else
                 _swix (OS_CallAVector,
 
                     _INR(0,1) | _IN(9),
@@ -377,6 +415,9 @@ void ukbd_intr
                     key,
                     KEYV
                 );
+//                dprintf (("", "Key Up: %x\n", key));
+#endif
+            }
         }
     }
 
