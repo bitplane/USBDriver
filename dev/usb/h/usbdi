@@ -66,7 +66,6 @@ typedef enum {		/* keep in sync with usbd_status_msgs */
 	USBD_SHORT_XFER,	/* 16 */
 	USBD_STALLED,		/* 17 */
 	USBD_INTERRUPTED,	/* 18 */
-	USBD_SHORT_XFER_DONE,	/* 19 */
 
 	USBD_ERROR_MAX		/* must be last */
 } usbd_status;

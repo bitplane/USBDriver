@@ -167,7 +167,7 @@ _kernel_oserror* uerror (char* e)
 void riscos_failed_device (void* p)
 {
 //#ifdef STANDALONE
-#ifndef RHENIUM 
+#ifndef RHENIUM
     _kernel_oserror* e;
     (void) p;
     e = uerror (E_BadDevice);
@@ -1086,7 +1086,7 @@ struct device* attach_hub (struct device* parent, void* aux)
     softc->dv_cfdata = (void*) 1; // hub
 
     (*uhub_uhub_ca.ca_attach) (parent, softc, aux);
-      
+
     dprintf (("", "Matched hub\n"));
 
     return softc;
@@ -1191,7 +1191,7 @@ char* service_call (usbd_device_handle dev, int unit, int link)
     serv->dev.ifcs = idescs;
 
     for (epn = 0, iface = 0; iface < nifs; ++iface)
-    {                      
+    {
         int ifcepn = dev->ifaces[iface].idesc->bNumEndpoints;
         dprintf(("", "iface %d, num endpoints = %d, at %p\n", iface, ifcepn, idescs[iface]));
         memcpy (idescs[iface], dev->ifaces[iface].idesc,
@@ -1463,9 +1463,13 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
     if (e != NULL)
     {
         dprintf (("", "failed to register: %s\n", e->errmess));
+#if 0
         free (dev);
         free (softc);
         return NULL;
+#else
+        softc->sc_devfs = 0;
+#endif
     }
 
     dprintf (("", "registered driver %p\n", softc->sc_devfs));
@@ -1495,7 +1499,8 @@ int detach_device (struct device* dev, int d)
 #endif
 
 
-    _swix (DeviceFS_Deregister, _IN(0), udev->sc_devfs);
+    if (udev->sc_devfs)
+        _swix (DeviceFS_Deregister, _IN(0), udev->sc_devfs);
     dprintf (("", "deregistered driver %p\n", udev->sc_devfs));
    free (udev);
    return 0;
@@ -2117,8 +2122,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 {
     struct devstream* str = priv;
 
-    if (  (status != USBD_NORMAL_COMPLETION)
-        &&(status != USBD_SHORT_XFER_DONE))
+    if (  (status != USBD_NORMAL_COMPLETION))
     {
         dprintf (("", "Bad completion code: %d (%s) %d bytes read\n",
             status, ccodes[status], xfer->actlen));
@@ -2135,14 +2139,14 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
        this is not a interrupt endpoint (the BSD framework restarts
        repeating transfers) */
     /* if we've got a number of bytes including a part packet, then
-       transfer must have ended.. else.. try more */   
+       transfer must have ended.. else.. try more */
 //    if (!(xfer->actlen/UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))  &&
 //      str->count != str->totalcount)
-    if(status == USBD_SHORT_XFER_DONE)
+    if(xfer->actlen < xfer->length)
     {
         char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
         memset (zero, 0, sizeof zero);
-        // fill up the rest of the request with garbage! 
+        // fill up the rest of the request with garbage!
         _kernel_swi_regs r;
         r.r[0] = BM_InsertBlock;
         r.r[1] = (int) str->buffer_id;

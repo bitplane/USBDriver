@@ -866,15 +866,12 @@ usb_transfer_complete(usbd_xfer_handle xfer)
 		[pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE];
 
 	xfer->done = 1;
-	if (!xfer->status && xfer->actlen < xfer->length)
-	{ 
-	   if (!(xfer->flags & USBD_SHORT_XFER_OK)) {
+	if (!xfer->status && xfer->actlen < xfer->length
+	                  && !(xfer->flags & USBD_SHORT_XFER_OK))
+	{
 		DPRINTFN(-1,("usbd_transfer_cb: short transfer %d<%d\n",
 			     xfer->actlen, xfer->length));
 		xfer->status = USBD_SHORT_XFER;
-	}
-	else
-	  xfer->status = USBD_SHORT_XFER_DONE;
 	}
 
 	if (xfer->callback)
