@@ -1,4 +1,4 @@
-/*      $NetBSD: ehci.c,v 1.90 2004/12/21 16:41:24 fvdl Exp $ */
+/*      $NetBSD: ehci.c,v 1.91 2005/02/27 00:27:51 perry Exp $ */
 
 /*
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-//__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.90 2004/12/21 16:41:24 fvdl Exp $");
+//__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.91 2005/02/27 00:27:51 perry Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -354,7 +354,8 @@ ehci_init(ehci_softc_t *sc)
 	u_int i;
 	usbd_status err;
 	ehci_soft_qh_t *sqh;
-
+	u_int ncomp;
+	
 	DPRINTF(("ehci_init: start\n"));
 #if defined (__riscos)
         if (!veneers_built)
@@ -396,13 +397,16 @@ ehci_init(ehci_softc_t *sc)
 	sparams = EREAD4(sc, EHCI_HCSPARAMS);
 	DPRINTF(("ehci_init: sparams=0x%x\n", sparams));
 	sc->sc_npcomp = EHCI_HCS_N_PCC(sparams);
-        if (EHCI_HCS_N_CC(sparams) != sc->sc_ncomp) {
-		logprintf("%s: wrong number of companions (%d != %d)\n",
+        ncomp = EHCI_HCS_N_CC(sparams);
+        if (ncomp != sc->sc_ncomp) {
+                logprintf("%s: wrong number of companions (%d != %d)\n",
 		       USBDEVNAME(sc->sc_bus.bdev),
-                       EHCI_HCS_N_CC(sparams), sc->sc_ncomp);
+                       ncomp, sc->sc_ncomp);
 #ifdef __riscos0
 		return (USBD_IOERROR);
 #endif
+                if (ncomp < sc->sc_ncomp)
+                        sc->sc_ncomp = ncomp;
 	}
 	if (sc->sc_ncomp > 0) {
 		logprintf("%s: companion controller%s, %d port%s each:",
@@ -496,13 +500,15 @@ ehci_init(ehci_softc_t *sc)
                         sqh->qh.qh_link = EHCI_NULL;
                         sqh->next = NULL;
                 } else {
+                        int val = i + 1, b = 0, v2 = val;
+                        while (v2 >>= 1) b++;
+                        val = ((val & ~(1<<b)) | (1<<(b - 1)))-1;
                         /* Otherwise the next QH has half the poll interval */
-                        sqh->next = sc->sc_islots[(i + 1) / 2 - 1].sqh;
+                        sqh->next = sc->sc_islots[val].sqh;
                         sqh->qh.qh_link = htole32(sqh->next->physaddr |
                             EHCI_LINK_QH);
                 }
                 sqh->qh.qh_endp = htole32(EHCI_QH_SET_EPS(EHCI_QH_SPEED_HIGH));
-                sqh->qh.qh_link = EHCI_NULL;
                 sqh->qh.qh_curqtd = EHCI_NULL;
                 sqh->next = NULL;
                 sqh->qh.qh_qtd.qtd_next = EHCI_NULL;
@@ -641,7 +647,7 @@ ehci_intr1(ehci_softc_t *sc)
         EOWRITE4(sc, EHCI_USBSTS, intrs); /* Acknowledge */
 #ifdef __riscos
         /* make sure it gets there */
-        EOREAD4(sc, EHCI_USBINTR);
+        EOREAD4(sc, EHCI_USBSTS);
 #endif
 	sc->sc_bus.intr_context++;
 	sc->sc_bus.no_intrs++;
@@ -689,7 +695,7 @@ ehci_intr1(ehci_softc_t *sc)
         }
 
 #ifdef __riscos
-	EOREAD4(sc, EHCI_USBINTR); /* Acknowledge */
+        (void) EOREAD4(sc, EHCI_USBSTS); /* Acknowledge */
 #endif
 
 	return (1);
@@ -713,15 +719,8 @@ void
 ehci_pcd_enable(void *v_sc)
 {
 	ehci_softc_t *sc = v_sc;
-//#ifdef __riscos
-//	int s;
-//	s = splhardusb();
-	DPRINTF( ("ehci_pcd_enable\n"));
-//#endif
+
 	ehci_pcd_able(sc, 1);
-//#ifdef __riscos
-//	splx(s);
-//#endif
 }
 
 void
@@ -919,7 +918,7 @@ ehci_idone(struct ehci_xfer *ex)
 	DPRINTFN(/*10*/2, ("ehci_idone: len=%d, actlen=%d, status=0x%x\n",
 			   xfer->length, actlen, status));
 	xfer->actlen = actlen;
-	if (status != 0) {
+        if (status & EHCI_QTD_HALTED) {
 #ifdef EHCI_DEBUG
 		char sbuf[128];
 
@@ -1485,16 +1484,6 @@ ehci_open(usbd_pipe_handle pipe)
 	case USB_SPEED_HIGH: speed = EHCI_QH_SPEED_HIGH; break;
 	default: panic("ehci_open: bad device speed %d", dev->speed);
 	}
-        if (speed != EHCI_QH_SPEED_HIGH) {
-                printf("%s: *** WARNING: opening low/full speed device, this "
-                       "does not work yet.\n",
-                       USBDEVNAME(sc->sc_bus.bdev));
-                DPRINTFN(1,("ehci_open: hshubaddr=%d hshubport=%d\n",
-                            hshubaddr, hshubport));
-                if (xfertype != UE_CONTROL && xfertype != UE_BULK)
-                        return USBD_INVAL;
-        }
-
 	naks = 8;		/* XXX */
 	sqh = ehci_alloc_sqh(sc);
 	if (sqh == NULL)
@@ -1514,8 +1503,8 @@ ehci_open(usbd_pipe_handle pipe)
                 EHCI_QH_SET_MULT(1) |
                 EHCI_QH_SET_HUBA(hshubaddr) |
                 EHCI_QH_SET_PORT(hshubport) |
-                EHCI_QH_SET_CMASK(0xf0) | /* XXX */
-                EHCI_QH_SET_SMASK(xfertype == UE_INTERRUPT ? 0x01 : 0)
+                EHCI_QH_SET_CMASK(0x08) | /* XXX */
+                EHCI_QH_SET_SMASK(xfertype == UE_INTERRUPT ? 0x02 : 0)
 		);
 	sqh->qh.qh_curqtd = EHCI_NULL;
 	/* Fill the overlay qTD */
@@ -2632,11 +2621,11 @@ ehci_abort_xfer(usbd_xfer_handle xfer, usbd_status status)
 	usb_uncallout(xfer->timeout_handle, ehci_timeout, xfer);
 	qhstatus = sqh->qh.qh_qtd.qtd_status;
 	sqh->qh.qh_qtd.qtd_status = qhstatus | htole32(EHCI_QTD_HALTED);
-	for (sqtd = exfer->sqtdstart;  
+        for (sqtd = exfer->sqtdstart;  
 #ifdef __riscos
-	sqtd
+        sqtd
 #endif
-	; sqtd = sqtd->nextqtd) {
+        ; sqtd = sqtd->nextqtd) {
 		sqtd->qtd.qtd_status |= htole32(EHCI_QTD_HALTED);
 		if (sqtd == exfer->sqtdend)
 			break;

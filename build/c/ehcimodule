@@ -428,6 +428,8 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
              ehci_detach(&ehci_soft,0);
              ehci_shutdown(&ehci_soft);
              usb_soft = NULL;
+             memset (&ehci_soft, 0, sizeof ehci_soft);
+             ehci_init (&ehci_soft);
              break;
            default:break;
          }

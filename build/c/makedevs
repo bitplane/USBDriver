@@ -12,15 +12,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*  Amended JWB 17/5/2005 to build with current NetBSD usbdevs.h   */
+/*                  */
 #include <stddef.h>
 #include <stdio.h>
 #include "dev/usb/usbdevs.h"
 
-struct usb_knowndev {
+struct usb_vendor {
+	unsigned int	vendor;
+	char		*vendorname;
+};
+struct usb_product {
 	unsigned int	vendor;
         unsigned int    product;
-	int		flags;
-	char		*vendorname, *productname;
+	char		*productname;
 };
 #define	USB_KNOWNDEV_NOPROD	0x01		/* match on vendor only */
 
@@ -28,24 +33,20 @@ struct usb_knowndev {
 
 int main (void)
 {
-    const struct usb_knowndev *kdp;
+    const struct usb_vendor *kdv;
+    const struct usb_product *kdp;
+    int i=0;
     puts ("# USB Vendors\n");
-    for (kdp = usb_knowndevs; kdp->vendorname != NULL; ++kdp)
+    for (kdv = usb_vendors; i++  <usb_nvendors ; ++kdv)
     {
-        if (kdp->flags & USB_KNOWNDEV_NOPROD)
-        {
-            printf ("V%04X:%s\n", kdp->vendor, kdp->vendorname);
-        }
+            printf ("V%04X:%s\n", kdv->vendor, kdv->vendorname);
     }
-
+    
     puts ("\n# USB Products\n");
-    for (kdp = usb_knowndevs; kdp->vendorname != NULL; ++kdp)
+    for (kdp = usb_products, i = 0; i++ < usb_nproducts ; ++kdp)
     {
-        if (!(kdp->flags & USB_KNOWNDEV_NOPROD))
-        {
             printf ("P%04X%04X:%s\n", kdp->vendor, kdp->product,
                 kdp->productname);
-        }
     }
 
     return 0;
