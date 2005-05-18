@@ -260,9 +260,9 @@ struct sysvar_callback {
     char com[];
 }* sysvar_head = NULL;
 
-static int usbbus_no = 1;
-static int usbdev_no = 1;
-static int maxdev_no = 1;
+static int usbbus_no = 1;       /* next number to use  */
+static int usbdev_no = 1;       /* next number to use  */
+static int maxdev_no = 0;       /* highest number found*/
 
 
 struct devicelist allbuses = TAILQ_HEAD_INITIALIZER(allbuses);
@@ -347,7 +347,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 
     usbbus_no = 1;
     usbdev_no = 1;
-    maxdev_no = 1;
+    maxdev_no = 0;
     extra_quirks = NULL;
 
     /* do this in a callback so that clients can call our SWIs */
@@ -374,14 +374,8 @@ struct cfattach ugen_ca = {
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
 
-    struct device* dev;
-    TAILQ_FOREACH(dev, &allbuses, dv_list)
-    {
-        (*usb_ca.ca_detach)(dev, 0);
-        free (dev);
-    }
-
     /* issue a service call to request any running HCDs can object */
+    /* do this first in case other things still need to happen     */
     _swix (OS_ServiceCall, _INR (0, 1),
         Service_USBDriver_Dying, Service_USBDriver);
 
@@ -391,6 +385,13 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     /* devices will all get removed as buses remove themselves from the
        above service call */
+    struct device* dev;
+    TAILQ_FOREACH(dev, &allbuses, dv_list)
+    {
+        (*usb_ca.ca_detach)(dev, 0);
+        free (dev);
+    }
+
 
     /* get rid of the system variables */
     while (_swix (OS_SetVarVal, _INR(0,4), "USB$Device_*", 0, -1, 0, 0) == NULL)
@@ -468,7 +469,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
     case Service_DeviceFSStarting:/*attempt to register what we know about*/
         {
           usbdev_no = 1;
-          maxdev_no = 1;
+          maxdev_no = 0;
           struct device* dev;
           TAILQ_FOREACH(dev, &allusbdevs, dv_list)
           {
@@ -485,7 +486,7 @@ dprintf(("","registering %d \n",dev->dv_unit));
     case Service_DeviceFSDying:   /*ensure we've forgotten any linkage*/
         {
           usbdev_no = 1;
-          maxdev_no = 1;
+          maxdev_no = 0;
           struct device* dev;
           TAILQ_FOREACH(dev, &allusbdevs, dv_list)
           {
@@ -530,6 +531,18 @@ dprintf(("","forgetting %d \n",dev->dv_unit));
         case Service_USBDriver_Attach:
             break;
         case Service_USBDriver_Detach:
+            break;
+        }
+        break;
+    case Service_PreReset:
+        {
+    /* issue a service call to request any running HCDs can object */
+    /* do this first in case other things still need to happen     */
+    _swix (OS_ServiceCall, _INR (0, 1),
+        Service_USBDriver_Dying, Service_USBDriver);
+            callx_remove_all_calleverys ();
+            callx_remove_all_callafters ();
+            callx_remove_all_callbacks ();
             break;
         }
     }
@@ -599,8 +612,9 @@ _kernel_oserror* command_discover (void)
 {
 #ifdef USB_DEBUG
     total_sleep = 0;
+    dprintf (("", "discovering max of %d busses\n", usbbus_no-1));
 #endif
-    for (int i = 1; i <= usbbus_no; ++i)
+    for (int i = 1; i < usbbus_no; i++)
     {
         if (get_softc (i << 16) != NULL)
             usbioctl (i << 16, USB_DISCOVER, 0, 0, 0);
@@ -626,7 +640,6 @@ _kernel_oserror* command_reset (int n)
     usbd_device_handle udev = ((struct ugen_softc*) dev)->sc_udev;
     struct usbd_port * port = udev->powersrc;
     usbd_device_handle parent = port?port->parent:NULL;
-
     if (parent == NULL)   // its a root hub..
     {
         return uerror (E_NotRootP);
@@ -634,9 +647,12 @@ _kernel_oserror* command_reset (int n)
 
     usb_disconnect_port (port, (device_ptr_t) parent->hub);
     usbd_clear_port_feature(parent, port->portno, UHF_PORT_POWER);
-    usbd_delay_ms(parent, USB_PORT_RESET_DELAY);
+    usbd_delay_ms(parent, /*USB_PORT_RESET_DELAY*/ USB_PORT_POWER_DOWN_TIME);
     usbd_set_port_feature(parent, port->portno, UHF_PORT_POWER);
-
+    int pwrdly = parent->hub->hubdesc.bPwrOn2PwrGood
+					             * UHD_PWRON_FACTOR
+					    + USB_EXTRA_POWER_UP_TIME;
+					usbd_delay_ms(parent, pwrdly);
     return NULL;
 }
 
@@ -1117,7 +1133,7 @@ static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h)
 //    struct device* dev;
     if(rd_active) return NULL;
     rd_active++;
-    for (int i = 1; i <= usbbus_no; ++i)
+    for (int i = 1; i < usbbus_no; i++)             
     {
         if (get_softc (i << 16) != NULL)
         {
@@ -1125,11 +1141,6 @@ static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h)
             usbioctl (i << 16, USB_DISCOVER, 0, 0, 0);
         }
     }
-//    TAILQ_FOREACH(dev, &allbuses, dv_list)
-//    {
-// dprintf(("","rediscover bus %p, %p \n",dev,&dev->dv_list));
-//        usb_needs_explore_callback (&dev->dv_list);
-//    }
     rd_active=0;
     return NULL;
 }
@@ -1164,15 +1175,17 @@ struct device* riscos_usb_attach
     {
       int startnum = usbdev_no;
 reloop:
-      usbdev_no++;
       if (usbdev_no > 999) usbdev_no=1;     /* cycle around mod 1000 */
       if (usbdev_no > maxdev_no) maxdev_no = usbdev_no;
       if (get_usbdev (usbdev_no)!=NULL)
       {
-          if( usbdev_no != startnum) 
+          if( usbdev_no != startnum)
+          { 
+            usbdev_no++;
             goto reloop;                    /* not looped yet .. try again */
+          }  
       }
-      ((usbd_device_handle)dev)->dv_unit = usbdev_no;
+      ((usbd_device_handle)dev)->dv_unit = usbdev_no++;
     }
     ret = attach_device (parent, aux, ((usbd_device_handle)dev)->dv_unit);
     if (ret != NULL)

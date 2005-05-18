@@ -129,7 +129,6 @@ unsigned int irq_min = INT_MAX, irq_max = 0;
 unsigned long long irq_tot;
 
 #ifdef RHENIUM
-#define REPOWER_DELAY               10
 void (*ohci_ppower)(int port, int state);  //(used with rhenium)
 int  (*ohci_error)(int port);              //(used with rhenium)
 int  (*ohci_pirq)(int port, int mode);     //(used with rhenium)
@@ -179,7 +178,7 @@ _kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v)
                if(do_hal_perror(1))      // power is not yet good
                {
                  p->state=P_going_on2;   // wait a little longer
-                 callx_add_callafter(2, _hal_powercheck, p);
+                 callx_add_callafter(USB_PORT_RESET_DELAY/10, _hal_powercheck, p);
                  break;
                }                         // else fall through
       case P_going_on2:
@@ -209,6 +208,7 @@ _kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v)
 /* Note OHCI numbers ports from 1, the HAL from 0 */
 void do_hal_ppower(int port, int state)
 {
+  dprintf (("", "HAL port %d power state %d\n", port, state));
   _swix(OS_Hardware, _INR(0,2)|_INR(8,9), 0, port-1, state,
                                         0, EntryNo_HAL_USBPortPower);
   // only allowed to monitor overcurrent status if port is on
@@ -218,7 +218,8 @@ void do_hal_ppower(int port, int state)
     {
       pchk.state=P_going_on;
       pchk.unit = port;
-      callx_add_callafter(2,_hal_powercheck,(void*)&pchk);    // delay monitoring
+      /* give it a little turn on time before grumbling */
+      callx_add_callafter(USB_PORT_RESET_DELAY/10,_hal_powercheck,(void*)&pchk);    // delay monitoring
     }
     else
     if (!state )
@@ -226,7 +227,8 @@ void do_hal_ppower(int port, int state)
       do_hal_pirq(1,0);
       pchk.state=P_retry;
       pchk.unit = port;
-      callx_add_callafter(100*REPOWER_DELAY,
+      /* try again after a delay of a second or so */  
+      callx_add_callafter(10*(USB_PORT_STARTUP_DELAY/10),
                           _hal_powercheck,(void*)&pchk); // try again 
       if(hal_error_irq_claimed)
       _swix (OS_ReleaseDeviceVector, _INR(0,4),
@@ -259,6 +261,7 @@ int do_ohci_pirq (int port, int mode)
 
 void do_ohci_ppower(int port, int state)
 {
+  dprintf (("", "OHCI port %d power state %d\n", port, state));
     ohci_base[OHCI_RH_PORT_STATUS(port)/4] =
         state ? UPS_PORT_POWER : UPS_LOW_SPEED;
 }

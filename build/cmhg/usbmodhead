@@ -23,7 +23,8 @@ service-call-handler:	module_services	Service_ResourceFSStarted,
 					Service_ResourceFSStarting,
 					Service_DeviceFSStarting,
 					Service_DeviceFSDying,
-					Service_USB
+					Service_USB,
+					Service_PreReset
 title-string:	    	USBDriver
 
 help-string:	     	USBDriver  USBDriverModule_MajorVersion_CMHG

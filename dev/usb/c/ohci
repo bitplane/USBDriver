@@ -2843,6 +2843,8 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 			break;
 		case UHF_PORT_POWER:
 			/* Yes, writing to the LOW_SPEED bit clears power. */
+			DPRINTFN(2,("ohci_root_ctrl_transfer: clear port power "
+				    "%d\n", index));
 			OWRITE4(sc, port, UPS_LOW_SPEED);
 			#ifdef RHENIUM
 			(*ohci_ppower)(1, 0); // port power off
