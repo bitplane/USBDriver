@@ -2110,14 +2110,14 @@ static _kernel_oserror* device_initialise
             if (ifc->sc_iface->index == iface)     
             {
                 dprintf (("", "throwing off subdevice %d\n", n));
-                config_detach (ugen->sc_udev->subdevs[n], 0);
-                /* compact the list */
+                /* compact the list first  */
                 do
                 {
                     ugen->sc_udev->subdevs[n] = ugen->sc_udev->subdevs[n + 1];
                     n++;
                 }
                 while (ugen->sc_udev->subdevs[n] != 0);
+                config_detach ((struct device*)ifc, 0);
                 goto detach_done;
             }
             break;

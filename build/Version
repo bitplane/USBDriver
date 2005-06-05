@@ -8,5 +8,5 @@
 #define EHCIDriverModule_Module_Date_CMHG  15 May 2005
 #define EHCIDriverModule_MajorVersion_CMHG 0.14
         
-#define USBDriverModule_Module_Date_CMHG   15 May 2005
-#define USBDriverModule_MajorVersion_CMHG  0.42
+#define USBDriverModule_Module_Date_CMHG   05 Jun 2005
+#define USBDriverModule_MajorVersion_CMHG  0.43
