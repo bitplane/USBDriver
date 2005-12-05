@@ -1160,15 +1160,27 @@ struct device* riscos_usb_attach
         sysvar_attach = false;
         announce_attach = false;
     }
+    char str[sizeof "USB$Ignore_VVVV_PPPP"];
+    char* getenv (const char*); 
+    int atoi (const char*);     
+    dprintf (("", "Trying match on ignore device\n"));
+    char* getenv (const char*); 
+    int atoi (const char*);     
+    char* del ;   
+    sprintf (str, "USB$Ignore_%04X_%04X", ((struct usb_attach_arg*)aux)->vendor, ((struct usb_attach_arg*)aux)->product);
+    dprintf (("", "look for %s.. got x%sx\n",str,getenv (str)));
 
-    typedef device_ptr_t pf (device_ptr_t, void*);
-    pf* funcs[] = { attach_hub, attach_mouse, attach_keyboard, NULL };
-    for (pf** f = funcs; *f != NULL; ++f)
+    if(!getenv (str) )    /* check if we are allowed to handle it */
     {
-        if ((ret = (*f) (parent, aux)) != NULL)
-        {
-          return ret;
-        }
+      typedef device_ptr_t pf (device_ptr_t, void*);
+      pf* funcs[] = { attach_hub, attach_mouse, attach_keyboard, NULL };
+      for (pf** f = funcs; *f != NULL; ++f)
+      {
+          if ((ret = (*f) (parent, aux)) != NULL)
+          {
+            return ret;
+          }
+      }
     }
     /* get a number.. dev->dvunit will be 0 if this is the first time through */
     if(((usbd_device_handle)dev)->dv_unit == NULL)
