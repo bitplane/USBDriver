@@ -30,18 +30,12 @@
 #include <sys/ioctl.h>
 #include "sys/time.h"
 
-/* avoid redefinition of printf */
-#define no_printf 1
 #include "dev/usb/usb.h"
 #include "dev/usb/usbdi.h"
 #include "dev/usb/usbdi_util.h"
 #include "dev/usb/usbdivar.h"
 #include "dev/usb/usbhid.h"
-<<<<<<< usbmodule
-#undef no_printf
-=======
 #include "dev/usb/usb_quirks.h"
->>>>>>> 1.26
 
 #include "swis.h"
 #include "debuglib/debuglib.h"
@@ -62,7 +56,7 @@
 /*---------------------------------------------------------------------------*/
 
 /* for interfacing with ioctl */
-#define	FWRITE		0x0002
+#define FWRITE          0x0002
 
 #define DeviceFSCallDevice_MonitorTX        12
 #define DeviceFSCallDevice_MonitorRX        13
@@ -130,7 +124,7 @@ struct dev_struct {
 };
 
 struct ugen_softc {
-    USBBASEDEVICE sc_dev;		/* base device */
+    USBBASEDEVICE sc_dev;               /* base device */
     usbd_device_handle sc_udev;
     struct dev_struct mydev;
     devicefs_device* sc_devfs;
@@ -237,25 +231,25 @@ extern int total_sleep;
 #endif
 #ifdef DEBUGLIB
 char* ccodes []= {
-	"NORMAL_COMPLETION",
-	"IN_PROGRESS",
-	"PENDING_REQUESTS",
-	"NOT_STARTED",
-	"INVAL",
-	"NOMEM",
-	"CANCELLED",
-	"BAD_ADDRESS",
-	"IN_USE",
-	"NO_ADDR",
-	"SET_ADDR_FAILED",
-	"NO_POWER",
-	"TOO_DEEP",
-	"IOERROR",
-	"NOT_CONFIGURED",
-	"TIMEOUT",
-	"SHORT_XFER",
-	"STALLED",
-	"INTERRUPTED"};
+        "NORMAL_COMPLETION",
+        "IN_PROGRESS",
+        "PENDING_REQUESTS",
+        "NOT_STARTED",
+        "INVAL",
+        "NOMEM",
+        "CANCELLED",
+        "BAD_ADDRESS",
+        "IN_USE",
+        "NO_ADDR",
+        "SET_ADDR_FAILED",
+        "NO_POWER",
+        "TOO_DEEP",
+        "IOERROR",
+        "NOT_CONFIGURED",
+        "TIMEOUT",
+        "SHORT_XFER",
+        "STALLED",
+        "INTERRUPTED"};
 #endif
 
 extern int cold;
@@ -291,6 +285,7 @@ extern int usbioctl(int devt, u_long cmd, void* data, int flag, void *p);
 
 struct device* get_usbdev (int unit);
 
+extern char* usbd_get_string (usbd_device_handle, size_t, char*);
 extern void microtime (struct timeval* tv);
 extern void triggercbs(void);
 extern uint32_t clock (void); // avoid header clash with sys/types.h
@@ -411,7 +406,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
     _swix (MessageTrans_CloseFile, _IN(0), &usbdev_messages);
     if(extra_quirks) free(extra_quirks);
-    
+
 #ifdef STANDALONE
     _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
 #endif
@@ -453,7 +448,7 @@ _kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
 #endif
         &softc->sc_devfs);
     return e;
-}    
+}
 
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
@@ -480,8 +475,8 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
           {
               if (dev)
               {
-                  dev->dv_unit = maxdev_no = usbdev_no++; 
-                  
+                  dev->dv_unit = maxdev_no = usbdev_no++;
+
 dprintf(("","registering %d \n",dev->dv_unit));
                   RegisterNewDevice( ((struct ugen_softc*) dev),dev->dv_unit);
                }
@@ -593,7 +588,7 @@ _kernel_oserror* command_enumerate_buses (void)
     struct usb_device_stats stats;
     printf ("Transfers (%d buses):\n", usbbus_no-1);
 //         012345678901234567890123456789012345678901234567890
-    puts ("Bus   Control Isochronous    Bulk Interrupt  Errors");
+    puts ("Bus   Control Isochronous    Bulk Interrupt");
     for (int i = 1; i < usbbus_no; ++i)
     {
         if (get_softc (i << 16) == NULL ||
@@ -602,24 +597,18 @@ _kernel_oserror* command_enumerate_buses (void)
             continue;
         }
 
-        printf ("%3d %9lu %9lu %9lu %9lu %9lu\n",
+        printf ("%3d %9lu %9lu %9lu %9lu\n",
             i,
             stats.uds_requests[UE_CONTROL],
             stats.uds_requests[UE_ISOCHRONOUS],
             stats.uds_requests[UE_BULK],
-            stats.uds_requests[UE_INTERRUPT],
-            stats.uds_errors);
+            stats.uds_requests[UE_INTERRUPT]);
     }
     return 0;
 }
 
 /*---------------------------------------------------------------------------*/
-<<<<<<< usbmodule
-
 _kernel_oserror* command_discover (void)
-=======
-_kernel_oserror* command_discover (void)
->>>>>>> 1.26
 {
 #ifdef USB_DEBUG
     total_sleep = 0;
@@ -638,6 +627,7 @@ _kernel_oserror* command_discover (void)
 
 
 /*---------------------------------------------------------------------------*/
+
 _kernel_oserror* command_reset (int n)
 {
     struct device* dev = get_usbdev (n);
@@ -645,38 +635,26 @@ _kernel_oserror* command_reset (int n)
     {
         return uerror (E_NoDevice);
     }
+
     /* pretend it's a ugen to get the udev */
     usbd_device_handle udev = ((struct ugen_softc*) dev)->sc_udev;
     struct usbd_port * port = udev->powersrc;
     usbd_device_handle parent = port?port->parent:NULL;
     if (parent == NULL)   // its a root hub..
     {
-        struct usbd_hub* hub = udev->hub;
-        int nports = hub->hubdesc.bNbrPorts, p;
-        for(p = 0; p < nports; p++)
-        {
-            if (hub->ports[p].device)
-            {
-                usb_disconnect_port (hub->ports + p, hub->hubsoftc);
-                usbd_clear_port_feature(udev, p, UHF_PORT_POWER);
-                usbd_delay_ms(udev, USB_PORT_RESET_DELAY);
-                usbd_set_port_feature(udev, p, UHF_PORT_POWER);
-            }
-        }
-        return NULL;
+        return uerror (E_NotRootP);
     }
 
-    usb_disconnect_port (port, parent->myhub->hub->hubsoftc);
+    usb_disconnect_port (port, (device_ptr_t) parent->hub);
     usbd_clear_port_feature(parent, port->portno, UHF_PORT_POWER);
     usbd_delay_ms(parent, /*USB_PORT_RESET_DELAY*/ USB_PORT_POWER_DOWN_TIME);
     usbd_set_port_feature(parent, port->portno, UHF_PORT_POWER);
     int pwrdly = parent->hub->hubdesc.bPwrOn2PwrGood
-					             * UHD_PWRON_FACTOR
-					    + USB_EXTRA_POWER_UP_TIME;
-					usbd_delay_ms(parent, pwrdly);
+                                                     * UHD_PWRON_FACTOR
+                                            + USB_EXTRA_POWER_UP_TIME;
+                                        usbd_delay_ms(parent, pwrdly);
     return NULL;
 }
-
 
 /*---------------------------------------------------------------------------*/
 
@@ -889,10 +867,10 @@ static _kernel_oserror* command_set_interface (int device, int ifcn, int alt)
 /*---------------------------------------------------------------------------*/
 ///* format of a quirk .. keep synchronised with entry in dev.usb.usb_quirks */
 //typedef struct usbd_quirk_entry {
-//	u_int16_t idVendor;
-//	u_int16_t idProduct;
-//	u_int16_t bcdDevice;
-//	u_int32_t quirks;
+//      u_int16_t idVendor;
+//      u_int16_t idProduct;
+//      u_int16_t bcdDevice;
+//      u_int32_t quirks;
 //} usbd_quirk_entry;
 
 static _kernel_oserror* command_ListQuirks(void)
@@ -900,14 +878,14 @@ static _kernel_oserror* command_ListQuirks(void)
   int i;
   usbd_quirk_entry *t;
   printf("\n USB Extra Quirk listing:\nVendor Product Device Quirk\n");
-  
+
   if(extra_quirks)
   {
     for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)
     {
       if(t->idVendor)
         printf("%04x   %04x    %04x   %08x\n",t->idVendor,t->idProduct,t->bcdDevice,t->quirks.uq_flags);
-      
+
     }
   }
   return NULL;
@@ -945,11 +923,11 @@ static _kernel_oserror* command_AddQuirk(unsigned vendor, unsigned product, unsi
     if (t->idVendor  == vendor &&
         t->idProduct == product&&
         t->bcdDevice == device)
-    {    
+    {
       t->quirks.uq_flags = quirk;
       return NULL;
     }
-  }      
+  }
   for(i=0,t=extra_quirks;i<MAX_EXTRA_QUIRKS;i++,t++)  /* new */
   {
     if(!t->idVendor)
@@ -977,7 +955,7 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
         {
         char* ptr;
         usbdebug = (int) strtoul (arg_string, &ptr, 0);
-//        uhidevdebug = usbdebug;
+        uhidevdebug = usbdebug;
         if (ptr) uhubdebug = (int) strtoul (ptr, &ptr, 0);
         }
         break;
@@ -1155,7 +1133,7 @@ static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h)
 //    struct device* dev;
     if(rd_active) return NULL;
     rd_active++;
-    for (int i = 1; i < usbbus_no; i++)             
+    for (int i = 1; i < usbbus_no; i++)
     {
         if (get_softc (i << 16) != NULL)
         {
@@ -1183,12 +1161,12 @@ struct device* riscos_usb_attach
         announce_attach = false;
     }
     char str[sizeof "USB$Ignore_VVVV_PPPP"];
-    char* getenv (const char*); 
-    int atoi (const char*);     
+    char* getenv (const char*);
+    int atoi (const char*);
     dprintf (("", "Trying match on ignore device\n"));
-    char* getenv (const char*); 
-    int atoi (const char*);     
-    char* del ;   
+    char* getenv (const char*);
+    int atoi (const char*);
+    char* del ;
     sprintf (str, "USB$Ignore_%04X_%04X", ((struct usb_attach_arg*)aux)->vendor, ((struct usb_attach_arg*)aux)->product);
     dprintf (("", "look for %s.. got x%sx\n",str,getenv (str)));
 
@@ -1214,10 +1192,10 @@ reloop:
       if (get_usbdev (usbdev_no)!=NULL)
       {
           if( usbdev_no != startnum)
-          { 
+          {
             usbdev_no++;
             goto reloop;                    /* not looped yet .. try again */
-          }  
+          }
       }
       ((usbd_device_handle)dev)->dv_unit = usbdev_no++;
     }
@@ -1618,15 +1596,9 @@ match:
     if (aux->ifaceno == UHUB_UNK_INTERFACE)
         sysvar_attach = true;
 
-<<<<<<< usbmodule
-    dprintf (("", "Found match for %s = %s\n", str, name));
+    len = strlen (name);
 
-    len = strlen (name);
-=======
-    len = strlen (name);
-    
     dprintf (("", "Found match for %s\n", name));
->>>>>>> 1.26
 
     struct sysvar_callback* sc =
         malloc (sizeof *sc + len + strlen (val));
@@ -1646,7 +1618,7 @@ match:
 void kill_system_variable (int unit)
 {
   char str[sizeof "DeviceFS$USBnnnnnn$Options   "];
-  
+
   sprintf (str,"USB$Device_*_USB%d",unit);
   while (_swix (OS_SetVarVal, _INR(0,4), str, 0, -1, 0, 0) == NULL)
   {
@@ -1778,11 +1750,6 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
     return NULL;
 
 valid:
-    if (bus->root_hub == NULL)
-    {
-       dprintf (("", "discover called before root hub established\n"));
-       return NULL;
-    }
 #ifdef STANDALONE
     _swix (Hourglass_On, 0);
     _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
@@ -1886,27 +1853,7 @@ void bufins (void* dma, void* x)
     CallBufMan (&r);
 }
 
-<<<<<<< usbmodule
-static void
-usbd_trim_spaces(char *p)
-{
-	char *q, *e;
-
-	if (p == NULL)
-		return;
-	q = e = p;
-	while (*q == ' ')	/* skip leading spaces */
-		q++;
-	while ((*p = *q++))	/* copy string */
-		if (*p++ != ' ') /* remember last non-space */
-			e = p;
-	*e = 0;			/* kill trailing spaces */
-}
-
 void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t pl, int usedev)
-=======
-void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t pl, int usedev)
->>>>>>> 1.26
 {
     _kernel_oserror* e = NULL;
     usb_device_descriptor_t *udd = &dev->ddesc;
@@ -1922,23 +1869,8 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
 
     if (usedev)
     {
-                if (usbd_get_string(dev, udd->iManufacturer, v))
-                        vendor = NULL;
-                else
-                        vendor = v;
-		usbd_trim_spaces(vendor);
-                if (usbd_get_string(dev, udd->iProduct, p))
-                        product = NULL;
-                else
-                        product = p;
-		usbd_trim_spaces(product);
-		if (vendor && !*vendor)
-			vendor = NULL;
-	if (product && !*product)
-	    product = NULL;
-    } else {
-	vendor = NULL;
-	product = NULL;
+        vendor = usbd_get_string(dev, udd->iManufacturer, v);
+        product = usbd_get_string(dev, udd->iProduct, p);
     }
 
     if (vendor == NULL) {
@@ -2041,7 +1973,7 @@ static void find_interface_and_endpoint
         valid->ep_type = UE_BULK;
     }
 
-    dprintf (("", "looking for %x, iface %x, alt %d, type %x, dir %x\n",
+    dprintf (("", "looking for %x, iface %d, alt %d, type %x, dir %x\n",
         valid->endpoint, valid->interface, valid->alternate,
         valid->ep_type, dir));
 
@@ -2181,13 +2113,13 @@ static _kernel_oserror* device_initialise
     {
         struct iface_softc* ifc;
         /* throw off mice or keyboards */
-        
+
         switch ((int) (ugen->sc_udev->subdevs[n]->dv_cfdata))
         {
         case 3:
         case 4:
             ifc = (struct iface_softc*) ugen->sc_udev->subdevs[n];
-            if (ifc->sc_iface->index == iface)     
+            if (ifc->sc_iface->index == iface)
             {
                 dprintf (("", "throwing off subdevice %d\n", n));
                 /* compact the list first  */
@@ -2299,13 +2231,13 @@ void start_write (struct devstream* str);
 void start_read (struct devstream* str);
 
 static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
-		      usbd_status status)
+                      usbd_status status)
 {
     struct devstream* str = priv;
 
     if (status != USBD_NORMAL_COMPLETION)
     {
-        dprintf (("", "Bad completion code: %d (%s), %d bytes read\n", status, ccodes[status], xfer->actlen));
+        dprintf (("", "Bad completion code: %d (%s), %d bytes written\n", status, ccodes[status], xfer->actlen));
         return;
     }
 
@@ -2380,19 +2312,19 @@ void start_write (struct devstream* str)
             str->timeout,
             write_cb);
 
-	str->xfer->rqflags |= URQ_RISCOS_BUF;
-	dprintf (("", "transferring %d bytes\n", r.r[2]));
+        str->xfer->rqflags |= URQ_RISCOS_BUF;
+        dprintf (("", "transferring %d bytes\n", r.r[2]));
 #endif
-	str->xfer->status = usbd_transfer (str->xfer);
+        str->xfer->status = usbd_transfer (str->xfer);
 
-	/* this can either return in progress, or normal completion (if
-	   the pipe wasn't already running) */
-	if (str->xfer->status != USBD_IN_PROGRESS &&
-	    str->xfer->status != USBD_NORMAL_COMPLETION)
-	{
-	    dprintf (("", "Failed to insert transfer, status = %d (%s)\n",
-	        str->xfer->status, ccodes[str->xfer->status]));
-	}
+        /* this can either return in progress, or normal completion (if
+           the pipe wasn't already running) */
+        if (str->xfer->status != USBD_IN_PROGRESS &&
+            str->xfer->status != USBD_NORMAL_COMPLETION)
+        {
+            dprintf (("", "Failed to insert transfer, status = %d (%s)\n",
+                str->xfer->status, ccodes[str->xfer->status]));
+        }
     }
     else
     {
@@ -2407,7 +2339,7 @@ void start_write (struct devstream* str)
 /*---------------------------------------------------------------------------*/
 
 static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
-		      usbd_status status)
+                      usbd_status status)
 {
     struct devstream* str = priv;
 
@@ -2427,22 +2359,6 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
     /* only start another transfer if we haven't finished the transfer and
        this is not a interrupt endpoint (the BSD framework restarts
        repeating transfers) */
-<<<<<<< usbmodule
-    if ((xfer->actlen % UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)) &&
-      str->count != str->totalcount && !xfer->pipe->repeat)
-    {
-        char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
-        memset (zero, 0, sizeof zero);
-        /* fill up the rest of the request with garbage! */
-        _kernel_swi_regs r;
-        r.r[0] = BM_InsertBlock;
-        r.r[1] = (int) str->buffer_id;
-        r.r[2] = (int) zero;
-        r.r[3] = str->totalcount - str->count;
-        CallBufMan (&r);
-    }
-    else if (str->count != str->totalcount && !xfer->pipe->repeat)
-=======
     /* if we've got a number of bytes including a part packet, then
        transfer must have ended.. else.. try more */
 //    if(!xfer->pipe->repeat)
@@ -2460,7 +2376,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 //          dprintf (("", "Fill insert %x bytes\n",r.r[3]));
 //          CallBufMan (&r);
 //      }
-//      else if (str->count != str->totalcount) 
+//      else if (str->count != str->totalcount)
 //      {
 //          dprintf (("", "Starting read from callback\n"));
 //          start_read (str);
@@ -2481,7 +2397,6 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
         CallBufMan (&r);
     }
     else if (str->count != str->totalcount && !xfer->pipe->repeat)
->>>>>>> 1.26
     {
         dprintf (("", "Starting read from callback\n"));
         start_read (str);
@@ -2598,26 +2513,26 @@ void start_read (struct devstream* str)
                 USBD_SHORT_XFER_OK,
                 str->timeout,
                 read_cb);
-	    dprintf (("", "starting (bulk/interrupt) transfer of %d bytes\n",
-	        actlen));
+            dprintf (("", "starting (bulk/interrupt) transfer of %d bytes\n",
+                actlen));
             break;
         case UE_ISOCHRONOUS:
             fill_isoc_xfer (str, maxpacket);
-	    dprintf (("", "starting (isoc) transfer of %d bytes\n", str->size));
+            dprintf (("", "starting (isoc) transfer of %d bytes\n", str->size));
             break;
         }
 
-	str->xfer->rqflags |= URQ_RISCOS_BUF;
+        str->xfer->rqflags |= URQ_RISCOS_BUF;
 #endif
-	str->xfer->status = usbd_transfer (str->xfer);
-	/* this can either return in progress, or normal completion (if
-	   the pipe wasn't already running) */
-	if (str->xfer->status != USBD_IN_PROGRESS &&
-	    str->xfer->status != USBD_NORMAL_COMPLETION)
-	{
-	    dprintf (("", "Failed to insert transfer, status = %d (%s)\n",
-	        str->xfer->status, ccodes[str->xfer->status]));
-	}
+        str->xfer->status = usbd_transfer (str->xfer);
+        /* this can either return in progress, or normal completion (if
+           the pipe wasn't already running) */
+        if (str->xfer->status != USBD_IN_PROGRESS &&
+            str->xfer->status != USBD_NORMAL_COMPLETION)
+        {
+            dprintf (("", "Failed to insert transfer, status = %d (%s)\n",
+                str->xfer->status, ccodes[str->xfer->status]));
+        }
     }
 end:
     reentry = 0;
@@ -2629,7 +2544,7 @@ end:
 void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill)
 {
     dprintf (("", "terminate stream %p, ep %x, kill = %d\n",
-        str, str->ep, kill));
+        str, str?str->ep:0, kill));
 
     if (str == NULL)
     {
@@ -2986,19 +2901,11 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
                 UE_ISOCHRONOUS
         )
         {
-            start_read (str);
-//            dprintf (("", "inserting interrupt transfer\n"));
-//            usbd_setup_xfer(
-//                str->xfer,
-//                str->pipe,
-//                str,
-//                (void*) str->buffer_id,
-//                UGETW(str->pipe->endpoint->edesc->wMaxPacketSize),
-//                USBD_SHORT_XFER_OK,
-//                str->timeout,
-//                read_cb);
-//
-//            str->xfer->status = usbd_transfer (str->xfer);
+            /* obviously only do this if we're an in endpoint */
+            if (UE_GET_DIR(str->ep) == UE_DIR_IN)
+            {
+              start_read(str);
+            }
         }
         break;
     case DeviceFSCallDevice_MonitorTX:
