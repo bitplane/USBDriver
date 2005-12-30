@@ -246,7 +246,10 @@ usbd_open_pipe_intr(usbd_interface_handle iface, u_int8_t address,
 	usbd_setup_xfer(xfer, ipipe, priv, buffer, len, flags,
 	    USBD_NO_TIMEOUT, cb);
 	ipipe->intrxfer = xfer;
-	ipipe->repeat = 1;
+
+	/* only IN endpoints should repeat */
+	ipipe->repeat = UE_GET_DIR(ipipe->endpoint->edesc->bEndpointAddress)
+	                == UE_DIR_IN;
 	err = usbd_transfer(xfer);
 	*pipe = ipipe;
 	if (err != USBD_IN_PROGRESS)
@@ -435,10 +438,9 @@ usbd_alloc_xfer(usbd_device_handle dev)
 	usbd_xfer_handle xfer;
 #else
 	usbd_xfer_handle xfer=NULL;
-        /* 20050517 check for null dev->bus->methods since it has cropped up */
         /* 20040723 check for null dev->bus since it has cropped up */
         /* 20050131 check for null dev since it has cropped up */
-	if(dev && dev->bus && dev->bus->methods)
+	if(dev && dev->bus)
 #endif
 	xfer = dev->bus->methods->allocx(dev->bus);
 	if (xfer == NULL)
@@ -605,22 +607,16 @@ usbd_abort_pipe(usbd_pipe_handle pipe)
 usbd_status
 usbd_clear_endpoint_stall(usbd_pipe_handle pipe)
 {
-#ifndef __riscos
 	usbd_device_handle dev = pipe->device;
-#endif
 	usb_device_request_t req;
 	usbd_status err;
 
 	DPRINTFN(8, ("usbd_clear_endpoint_stall\n"));
+
 	/*
 	 * Clearing en endpoint stall resets the endpoint toggle, so
 	 * do the same to the HC toggle.
 	 */
-#ifdef __riscos
-	usbd_device_handle dev ;
-        if(pipe && (dev=pipe->device))
-        {
-#endif
 	pipe->methods->cleartoggle(pipe);
 
 	req.bmRequestType = UT_WRITE_ENDPOINT;
@@ -636,9 +632,6 @@ XXX should we do this?
 		/* XXX activate pipe */
 	}
 #endif
-#ifdef __riscos
-	}
-#endif
 	return (err);
 }
 
@@ -648,10 +641,10 @@ usbd_clear_endpoint_stall_async(usbd_pipe_handle pipe)
 #ifdef __riscos
 	usb_device_request_t req;
 	usbd_status err = USBD_NORMAL_COMPLETION;
-        if(pipe && pipe->device)
+        if(pipe->device)
         {
 	usbd_device_handle dev = pipe->device;
-#else                
+#else
 	usbd_device_handle dev = pipe->device;
 	usb_device_request_t req;
 	usbd_status err;
@@ -674,7 +667,7 @@ usbd_clear_endpoint_stall_async(usbd_pipe_handle pipe)
 	err = usbd_do_request_async(dev, &req, 0);
 #ifdef __riscos
         }
-#endif                
+#endif
 	return (err);
 }
 

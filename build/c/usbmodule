@@ -30,12 +30,18 @@
 #include <sys/ioctl.h>
 #include "sys/time.h"
 
+/* avoid redefinition of printf */
+#define no_printf 1
 #include "dev/usb/usb.h"
 #include "dev/usb/usbdi.h"
 #include "dev/usb/usbdi_util.h"
 #include "dev/usb/usbdivar.h"
 #include "dev/usb/usbhid.h"
+<<<<<<< usbmodule
+#undef no_printf
+=======
 #include "dev/usb/usb_quirks.h"
+>>>>>>> 1.26
 
 #include "swis.h"
 #include "debuglib/debuglib.h"
@@ -285,7 +291,6 @@ extern int usbioctl(int devt, u_long cmd, void* data, int flag, void *p);
 
 struct device* get_usbdev (int unit);
 
-extern char* usbd_get_string (usbd_device_handle, size_t, char*);
 extern void microtime (struct timeval* tv);
 extern void triggercbs(void);
 extern uint32_t clock (void); // avoid header clash with sys/types.h
@@ -588,7 +593,7 @@ _kernel_oserror* command_enumerate_buses (void)
     struct usb_device_stats stats;
     printf ("Transfers (%d buses):\n", usbbus_no-1);
 //         012345678901234567890123456789012345678901234567890
-    puts ("Bus   Control Isochronous    Bulk Interrupt");
+    puts ("Bus   Control Isochronous    Bulk Interrupt  Errors");
     for (int i = 1; i < usbbus_no; ++i)
     {
         if (get_softc (i << 16) == NULL ||
@@ -597,18 +602,24 @@ _kernel_oserror* command_enumerate_buses (void)
             continue;
         }
 
-        printf ("%3d %9lu %9lu %9lu %9lu\n",
+        printf ("%3d %9lu %9lu %9lu %9lu %9lu\n",
             i,
             stats.uds_requests[UE_CONTROL],
             stats.uds_requests[UE_ISOCHRONOUS],
             stats.uds_requests[UE_BULK],
-            stats.uds_requests[UE_INTERRUPT]);
+            stats.uds_requests[UE_INTERRUPT],
+            stats.uds_errors);
     }
     return 0;
 }
 
 /*---------------------------------------------------------------------------*/
+<<<<<<< usbmodule
+
 _kernel_oserror* command_discover (void)
+=======
+_kernel_oserror* command_discover (void)
+>>>>>>> 1.26
 {
 #ifdef USB_DEBUG
     total_sleep = 0;
@@ -627,7 +638,6 @@ _kernel_oserror* command_discover (void)
 
 
 /*---------------------------------------------------------------------------*/
-
 _kernel_oserror* command_reset (int n)
 {
     struct device* dev = get_usbdev (n);
@@ -635,17 +645,28 @@ _kernel_oserror* command_reset (int n)
     {
         return uerror (E_NoDevice);
     }
-
     /* pretend it's a ugen to get the udev */
     usbd_device_handle udev = ((struct ugen_softc*) dev)->sc_udev;
     struct usbd_port * port = udev->powersrc;
     usbd_device_handle parent = port?port->parent:NULL;
     if (parent == NULL)   // its a root hub..
     {
-        return uerror (E_NotRootP);
+        struct usbd_hub* hub = udev->hub;
+        int nports = hub->hubdesc.bNbrPorts, p;
+        for(p = 0; p < nports; p++)
+        {
+            if (hub->ports[p].device)
+            {
+                usb_disconnect_port (hub->ports + p, hub->hubsoftc);
+                usbd_clear_port_feature(udev, p, UHF_PORT_POWER);
+                usbd_delay_ms(udev, USB_PORT_RESET_DELAY);
+                usbd_set_port_feature(udev, p, UHF_PORT_POWER);
+            }
+        }
+        return NULL;
     }
 
-    usb_disconnect_port (port, (device_ptr_t) parent->hub);
+    usb_disconnect_port (port, parent->myhub->hub->hubsoftc);
     usbd_clear_port_feature(parent, port->portno, UHF_PORT_POWER);
     usbd_delay_ms(parent, /*USB_PORT_RESET_DELAY*/ USB_PORT_POWER_DOWN_TIME);
     usbd_set_port_feature(parent, port->portno, UHF_PORT_POWER);
@@ -655,6 +676,7 @@ _kernel_oserror* command_reset (int n)
 					usbd_delay_ms(parent, pwrdly);
     return NULL;
 }
+
 
 /*---------------------------------------------------------------------------*/
 
@@ -955,7 +977,7 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
         {
         char* ptr;
         usbdebug = (int) strtoul (arg_string, &ptr, 0);
-        uhidevdebug = usbdebug;
+//        uhidevdebug = usbdebug;
         if (ptr) uhubdebug = (int) strtoul (ptr, &ptr, 0);
         }
         break;
@@ -1596,9 +1618,15 @@ match:
     if (aux->ifaceno == UHUB_UNK_INTERFACE)
         sysvar_attach = true;
 
+<<<<<<< usbmodule
+    dprintf (("", "Found match for %s = %s\n", str, name));
+
+    len = strlen (name);
+=======
     len = strlen (name);
     
     dprintf (("", "Found match for %s\n", name));
+>>>>>>> 1.26
 
     struct sysvar_callback* sc =
         malloc (sizeof *sc + len + strlen (val));
@@ -1750,6 +1778,11 @@ _kernel_oserror* discover_callback (_kernel_swi_regs* r, void* pw, void* sc)
     return NULL;
 
 valid:
+    if (bus->root_hub == NULL)
+    {
+       dprintf (("", "discover called before root hub established\n"));
+       return NULL;
+    }
 #ifdef STANDALONE
     _swix (Hourglass_On, 0);
     _swix (Hourglass_LEDs, _INR(0,1), 1, 0);
@@ -1853,7 +1886,27 @@ void bufins (void* dma, void* x)
     CallBufMan (&r);
 }
 
+<<<<<<< usbmodule
+static void
+usbd_trim_spaces(char *p)
+{
+	char *q, *e;
+
+	if (p == NULL)
+		return;
+	q = e = p;
+	while (*q == ' ')	/* skip leading spaces */
+		q++;
+	while ((*p = *q++))	/* copy string */
+		if (*p++ != ' ') /* remember last non-space */
+			e = p;
+	*e = 0;			/* kill trailing spaces */
+}
+
 void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t pl, int usedev)
+=======
+void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t pl, int usedev)
+>>>>>>> 1.26
 {
     _kernel_oserror* e = NULL;
     usb_device_descriptor_t *udd = &dev->ddesc;
@@ -1869,8 +1922,23 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
 
     if (usedev)
     {
-        vendor = usbd_get_string(dev, udd->iManufacturer, v);
-        product = usbd_get_string(dev, udd->iProduct, p);
+                if (usbd_get_string(dev, udd->iManufacturer, v))
+                        vendor = NULL;
+                else
+                        vendor = v;
+		usbd_trim_spaces(vendor);
+                if (usbd_get_string(dev, udd->iProduct, p))
+                        product = NULL;
+                else
+                        product = p;
+		usbd_trim_spaces(product);
+		if (vendor && !*vendor)
+			vendor = NULL;
+	if (product && !*product)
+	    product = NULL;
+    } else {
+	vendor = NULL;
+	product = NULL;
     }
 
     if (vendor == NULL) {
@@ -1973,7 +2041,7 @@ static void find_interface_and_endpoint
         valid->ep_type = UE_BULK;
     }
 
-    dprintf (("", "looking for %x, iface %d, alt %d, type %x, dir %x\n",
+    dprintf (("", "looking for %x, iface %x, alt %d, type %x, dir %x\n",
         valid->endpoint, valid->interface, valid->alternate,
         valid->ep_type, dir));
 
@@ -2359,6 +2427,22 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
     /* only start another transfer if we haven't finished the transfer and
        this is not a interrupt endpoint (the BSD framework restarts
        repeating transfers) */
+<<<<<<< usbmodule
+    if ((xfer->actlen % UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)) &&
+      str->count != str->totalcount && !xfer->pipe->repeat)
+    {
+        char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
+        memset (zero, 0, sizeof zero);
+        /* fill up the rest of the request with garbage! */
+        _kernel_swi_regs r;
+        r.r[0] = BM_InsertBlock;
+        r.r[1] = (int) str->buffer_id;
+        r.r[2] = (int) zero;
+        r.r[3] = str->totalcount - str->count;
+        CallBufMan (&r);
+    }
+    else if (str->count != str->totalcount && !xfer->pipe->repeat)
+=======
     /* if we've got a number of bytes including a part packet, then
        transfer must have ended.. else.. try more */
 //    if(!xfer->pipe->repeat)
@@ -2397,6 +2481,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
         CallBufMan (&r);
     }
     else if (str->count != str->totalcount && !xfer->pipe->repeat)
+>>>>>>> 1.26
     {
         dprintf (("", "Starting read from callback\n"));
         start_read (str);
@@ -2544,7 +2629,7 @@ end:
 void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill)
 {
     dprintf (("", "terminate stream %p, ep %x, kill = %d\n",
-        str, str?str->ep:0, kill));
+        str, str->ep, kill));
 
     if (str == NULL)
     {
