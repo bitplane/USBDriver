@@ -1,23 +1,23 @@
-/* (0.43)
+/* (0.44)
  *
  * This file is automatically maintained by srccommit, do not edit manually.
  * Last processed by srccommit version: 1.2.
  *
  */
-#define Module_MajorVersion_CMHG        0.43
+#define Module_MajorVersion_CMHG        0.44
 #define Module_MinorVersion_CMHG        
-#define Module_Date_CMHG                30 Dec 2005
+#define Module_Date_CMHG                31 Dec 2005
 
-#define Module_MajorVersion             "0.43"
-#define Module_Version                  43
+#define Module_MajorVersion             "0.44"
+#define Module_Version                  44
 #define Module_MinorVersion             ""
-#define Module_Date                     "30 Dec 2005"
+#define Module_Date                     "31 Dec 2005"
 
-#define Module_ApplicationDate          "30-Dec-05"
+#define Module_ApplicationDate          "31-Dec-05"
 
 #define Module_ComponentName            "NetBSD"
 #define Module_ComponentPath            "RiscOS/Sources/HWSupport/USB/NetBSD"
 
-#define Module_FullVersion              "0.43"
-#define Module_HelpVersion              "0.43 (30 Dec 2005)"
-#define Module_LibraryVersionInfo       "0:43"
+#define Module_FullVersion              "0.44"
+#define Module_HelpVersion              "0.44 (31 Dec 2005)"
+#define Module_LibraryVersionInfo       "0:44"
