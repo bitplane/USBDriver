@@ -610,7 +610,8 @@ ehci_intr(void *v)
 #endif
 #ifdef __riscos
 			EOREAD4(sc, EHCI_USBINTR);
-#endif	
+			riscos_irqclear();
+#endif
 		return (0);
 	}
 
@@ -643,11 +644,12 @@ ehci_intr1(ehci_softc_t *sc)
 		     (u_int)eintrs));
 	if (!eintrs)
 		return (0);
-		
+
         EOWRITE4(sc, EHCI_USBSTS, intrs); /* Acknowledge */
 #ifdef __riscos
         /* make sure it gets there */
         EOREAD4(sc, EHCI_USBSTS);
+        riscos_irqclear();
 #endif
 	sc->sc_bus.intr_context++;
 	sc->sc_bus.no_intrs++;
@@ -2702,11 +2704,9 @@ ehci_timeout(void *addr)
 	ehci_softc_t *sc = (ehci_softc_t *)epipe->pipe.device->bus;
 
 	DPRINTF(("ehci_timeout: exfer=%p\n", exfer));
-#ifdef USB_DEBUG
+#if defined(USB_DEBUG) && !defined(__riscos)
 	if (ehcidebug > 1)
-#ifndef __riscos
 		usbd_dump_pipe(exfer->xfer.pipe);
-#endif
 #endif
 
 	if (sc->sc_dying) {

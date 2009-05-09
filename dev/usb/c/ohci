@@ -1187,7 +1187,10 @@ ohci_intr(void *p)
 #endif
                 /* for level triggered intrs, should do something to ack */
                 OWRITE4(sc, OHCI_INTERRUPT_STATUS,
-                        OREAD4(sc, OHCI_INTERRUPT_STATUS));
+                OREAD4(sc, OHCI_INTERRUPT_STATUS));
+#ifdef __riscos
+                riscos_irqclear();
+#endif
 
 		return (0);
 	}
@@ -1264,6 +1267,7 @@ ohci_intr1(ohci_softc_t *sc)
 	 * if this was a shared interrupt, the write is totally pointless
          */
 	OWRITE4(sc, OHCI_INTERRUPT_STATUS, intrs); /* Acknowledge */
+	riscos_irqclear();
 #endif
 	eintrs = intrs & sc->sc_eintrs;
 	if (!eintrs)
