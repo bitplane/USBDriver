@@ -122,7 +122,7 @@ usbmodule.o usbkboard.o:        usbmodhead.h
 	${GAWK} -v os="${UNAME} -s" -f ^.dev.usb.devlist2h/awk ^.dev.usb.usbdevs
 
 Resources.<Locale>.USBDevs: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
-        bin.makedevs > Resources.<Locale>.USBDevs
+        ${RUN}bin.makedevs > Resources.<Locale>.USBDevs
 
 # Remove the usbmodhead after creating the SWI table because if OHCIDriver
 # makes it then it has the wrong messages file in it
@@ -131,8 +131,8 @@ USBDriver.h: usbmodhead.h
         ${RM}   h.usbmodhead
         ${RM}   o.usbmodhead
 
-bin.makedevs: o.makedevs ${CLIB} ${DIRS}
-        ${LD} -o $@ o.makedevs ${CLIB}
+bin.makedevs: c.makedevs ${CLIB} ${DIRS}
+        ${MAKE} -f makedevs/mk COMPONENT=makedevs THROWBACK=${THROWBACK}
 
 usbmsgs.o: Resources.<Locale>.USBMessages Resources.<Locale>.USBDevs
         resgen resource_files o.usbmsgs Resources.<Locale>.USBMessages ${MSGLOC} Resources.<Locale>.USBDevs Resources.USBDriver.USBDevs

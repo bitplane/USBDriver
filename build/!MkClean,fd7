@@ -15,3 +15,4 @@
 dir <obey$dir>
 amu_machine clean COMPONENT=USBDriver
 stripdepnd
+stripdepnd makedevs/mk
