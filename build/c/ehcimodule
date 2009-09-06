@@ -222,9 +222,11 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 #endif    
     debug_initialise (debugname, 0, 0);
 //    debug_set_device(DEBUGIT_OUTPUT);
-    debug_set_device(PRINTF_OUTPUT);
+//    debug_set_device(PRINTF_OUTPUT);
+    debug_set_device(DADEBUG_OUTPUT);
     debug_set_unbuffered_files (TRUE);
-    /* cannot debug_set_stamp_debug (TRUE).. get stack overflow!!!  */
+    /* cannot debug_set_stamp_debug (TRUE).. get stack overflow!!!
+       Plus it causes interrupts to be briefly enabled during debug output, breaking all kinds of stuff  */
 /*    debug_set_stamp_debug (TRUE);*/
 
     dprintf (("Main_0", "Starting driver\n"));

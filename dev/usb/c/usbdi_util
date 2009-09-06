@@ -131,7 +131,7 @@ usbd_get_device_status(usbd_device_handle dev, usb_status_t *st)
 	req.bRequest = UR_GET_STATUS;
 	USETW(req.wValue, 0);
 	USETW(req.wIndex, 0);
-	USETW(req.wLength, sizeof(usb_status_t));
+	USETW(req.wLength, USB_STATUS_SIZE);
         return (usbd_do_request(dev, &req, st));
 }
 

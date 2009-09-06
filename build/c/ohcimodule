@@ -351,7 +351,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     debug_initialise (debugname, 0, 0);
     debug_set_device(DEBUGIT_OUTPUT);
     debug_set_unbuffered_files (TRUE);
-    debug_set_stamp_debug (TRUE);
+    /* Can't set debug_set_stamp_debug(TRUE) - causes interrupts to be briefly enabled during debug output, which breaks all kinds of stuff */
+/*    debug_set_stamp_debug (TRUE); */
 
     dprintf (("Main_0", "Starting driver\n"));
 

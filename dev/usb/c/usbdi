@@ -1122,12 +1122,12 @@ usbd_do_request_flags_pipe(usbd_device_handle dev, usbd_pipe_handle pipe,
 		treq.bRequest = UR_GET_STATUS;
 		USETW(treq.wValue, 0);
 		USETW(treq.wIndex, 0);
-		USETW(treq.wLength, sizeof(usb_status_t));
+		USETW(treq.wLength, USB_STATUS_SIZE);
 		usbd_setup_default_xfer(xfer, dev, 0, USBD_DEFAULT_TIMEOUT,
 #ifdef __riscos
-					   &treq, (void *)&status,sizeof(usb_status_t),
+					   &treq, (void *)&status,USB_STATUS_SIZE,
 #else
-					   &treq, &status,sizeof(usb_status_t),
+					   &treq, &status,USB_STATUS_SIZE,
 #endif
 					   0, 0);
 		nerr = usbd_sync_transfer(xfer);

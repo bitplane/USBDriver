@@ -372,6 +372,11 @@ typedef struct {
 /* Endpoint status flags */
 #define UES_HALT			0x0001
 } UPACKED usb_status_t;
+#if defined(__CC_NORCROFT) && defined(DISABLE_PACKED)
+#define USB_STATUS_SIZE 2 /* Someone should really fix __packed! */
+#else
+#define USB_STATUS_SIZE sizeof(usb_status_t)
+#endif
 
 typedef struct {
 	uWord		wHubStatus;
