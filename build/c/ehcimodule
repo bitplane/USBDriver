@@ -128,6 +128,9 @@ void build_veneer (int* vn, int* st, size_t sz)
                   | ((magic - entry - 1) & 0x00ffffff);
                                     /* branch to diff */
     }
+    _swix(OS_SynchroniseCodeAreas, _INR(0,2), 1,
+                                   entry_table,
+                                   entry_table + 2 * (sz / sizeof (void*)) - 1);
 }
 
 int pci_device = 0;

@@ -46,6 +46,13 @@ init_veneer
 	STMIA	a1, {a2,a3}
 	ADD	sl, sl, #540
 
+	; Flush the cache!
+	MOV	a2, a1
+	ADD	a3, a2, #magic_end - magic_start
+	MOV	a1, #1
+	SWI	XOS_SynchroniseCodeAreas
+	MOV	a1, a2
+
         ; return pointing to the block
         LDMFD   sp!, {pc}
 
