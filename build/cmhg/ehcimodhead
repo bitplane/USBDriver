@@ -29,9 +29,7 @@ help-string:	     	EHCIDriver  EHCIDriverModule_MajorVersion_CMHG
 
 date-string:	    	EHCIDriverModule_Module_Date_CMHG
 
-#define HELPFILE(M) "Resources:$." #M
-#define XHELPFILE(M) HELPFILE(M)
-international-help-file: XHELPFILE(MSGLOC)
+international-help-file: "Resources:$.Resources.EHCIDriver.Messages"
 
 #ifdef EHCI_DEBUG
 command-keyword-table:	module_commands

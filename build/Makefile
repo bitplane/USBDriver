@@ -29,7 +29,7 @@ USBDIR          = <Lib$Dir>.USB
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:
 CDEFINES        += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
 CMHGINCLUDES    = ${CINCLUDES}
-CMHGDEFINES     = -DMSGLOC=${MSGLOC} ${CDEBUG}
+CMHGDEFINES     = ${CDEBUG}
 CFLAGS          += -ff -wp -wc -zm -zps1
 LDFLAGS         = -LIST maps.${TARGET} -MAP -Xref -Symbols rm.sym${TARGET}
 
@@ -124,12 +124,8 @@ usbmodule.o usbkboard.o:        usbmodhead.h
 Resources.<Locale>.USBDevs: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
         ${RUN}bin.makedevs > Resources.<Locale>.USBDevs
 
-# Remove the usbmodhead after creating the SWI table because if OHCIDriver
-# makes it then it has the wrong messages file in it
 USBDriver.h: usbmodhead.h
         ${SED} -n "/define USBDriver_/p" h.usbmodhead > h.USBDriver
-        ${RM}   h.usbmodhead
-        ${RM}   o.usbmodhead
 
 bin.makedevs: c.makedevs ${CLIB} ${DIRS}
         ${MAKE} -f makedevs/mk COMPONENT=makedevs THROWBACK=${THROWBACK}

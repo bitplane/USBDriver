@@ -31,9 +31,7 @@ help-string:	     	USBDriver  USBDriverModule_MajorVersion_CMHG
 
 date-string:	    	USBDriverModule_Module_Date_CMHG
 
-#define HELPFILE(M) "Resources:$." #M
-#define XHELPFILE(M) HELPFILE(M)
-international-help-file: XHELPFILE(MSGLOC)
+international-help-file: "Resources:$.Resources.USBDriver.Messages"
 
 command-keyword-table:	module_commands
 
