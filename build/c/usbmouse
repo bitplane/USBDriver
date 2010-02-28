@@ -413,11 +413,15 @@ int pointerv (_kernel_swi_regs* r, void* pw)
     case PointerReason_Request:
         if (r->r[1] == PointerDevice_USB) {
             /* Turn off interrupts while updating */
-            _kernel_irqs_off ();
+            int irqs = _kernel_irqs_disabled();
+            if(!irqs)
+              _kernel_irqs_off ();
             r->r[2] = relx;
             r->r[3] = rely;
             relx = rely = 0;
-            _kernel_irqs_on ();
+            if(!irqs)
+              _kernel_irqs_on ();
+            return 0; /* PRM says we should intercept */             
             }
         break;
 
