@@ -1,5 +1,5 @@
 #! /usr/bin/awk -f
-#	$NetBSD: devlist2h.awk,v 1.13 2005/03/04 05:03:19 mycroft Exp $
+#	$NetBSD: devlist2h.awk,v 1.14 2005/12/11 12:24:00 christos Exp $
 #
 # RISC OS version JB 20041213
 #
@@ -40,7 +40,7 @@ BEGIN {
         }else{
 	dfile="usbdevs_data.h"
 	hfile="usbdevs.h"
-}
+	}
 }
 NR == 1 {
 	VERSION = $0

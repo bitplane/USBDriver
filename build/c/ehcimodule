@@ -65,7 +65,7 @@ void* private_word;
 volatile int* ehci_base;
 
 ehci_softc_t ehci_soft;
-struct device * usb_soft;
+struct device * usb_soft = NULL;
 extern int * init_veneer (void);
 //extern void* resource_files (void);
 #ifdef EHCI_DEBUG
@@ -142,23 +142,21 @@ int unhandled_irqs;
 int registers_32bit=0;                    //(used with rhenium)
 #endif        /* RHENIUM */
 
-
-//_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
-//{
-//    /* register with the usbdriver module if it's already resident */
-//    dprintf (("", "Registering with USB driver\n"));
-//
-//    memset (&ehci_soft, 0, sizeof ehci_soft);
-//    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
-//    /* fix n companions */
-//    ehci_soft.sc_ncomp = 2;
-//    ehci_init (&ehci_soft);
-//
-//    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-//            &ehci_soft, &usb_soft);
-//
-//    return NULL;
-//}
+_kernel_oserror* register_bus(void *in,struct device **out)
+{
+    *out = NULL;
+    /* Check USBDriver is new enough */
+    int version;
+    _kernel_oserror *e = _swix(USBDriver_Version,_OUT(0),&version);
+    if(e)
+        return e;
+    if(version < RISCOS_USBDRIVER_API_VERSION)
+        return (_kernel_oserror*)"\0\0\0\0USBDriver too old";
+    /* Now attempt to register */
+    e = _swix(USBDriver_RegisterBus, _INR(0,1)|_OUT(0),in,RISCOS_USBDRIVER_API_VERSION,out);
+    if(e) *out = NULL;
+    return e;
+}
 
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
@@ -172,16 +170,15 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 
     /* register with the usbdriver module if it's already resident */
     dprintf (("", "Registering with USB driver\n"));
-
-//    memset (&ehci_soft, 0, sizeof ehci_soft);
-//    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
-//    /* fix n companions */
-//    ehci_soft.sc_ncomp = 2;
-//    ehci_init (&ehci_soft);
-
-    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-            &ehci_soft, &usb_soft);
-    dprintf (("", "Registering with USB driver-done\n"));
+    e = register_bus(&ehci_soft, &usb_soft);
+    if (e)
+    {
+        dprintf (("", "Failed to register: %s\n", e->errmess));
+    }
+    else
+    {
+        dprintf (("", "Registering with USB driver-done\n"));
+    }
 
 
     // allow enough space for name, % and number, then space, and
@@ -203,19 +200,6 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     _kernel_oserror* e = 0;
-#ifdef EHCI_DEBUG
-//    struct dev_struct {
-//        devicefs_device dev;
-//        int null;
-//        char name[32];
-//    }* dev = NULL;
-#endif    
-
-
-
-
-
-
 
     callx_init (pw);
 
@@ -348,27 +332,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 #ifdef EHCI_DEBUG
     usbdebug = ehcidebug = atoi (getenv ("ehcidebug"));
     irq0 = gettime () / 1000;
-
-//    dev = calloc (sizeof *dev, 1);
-//    strcpy (dev->name, ehci_soft.sc_bus.bdev.dv_xname);
-//
-//    dev->dev.name_offset = dev->name - (char*) dev;
-//    dev->dev.flags = 3;
-//    dev->dev.tx_flags = 0x8;
-//    dev->dev.tx_buffer_size = 0;
-//    dev->dev.rx_flags = 0x8;
-//    dev->dev.rx_buffer_size = 1024;
-//
-//    e = _swix (DeviceFS_Register, _INR (0, 7) | _OUT(0),
-//        4,
-//        dev,
-//        driver_entry,
-//        NULL,
-//        pw,
-//        NULL,
-//        INT_MAX, // XXX should be -1, but that doesn't seem to work
-//        INT_MAX,
-//        &irq_device);
 #endif
 
     _swix (OS_ClaimDeviceVector, _INR(0,4),
@@ -455,17 +418,16 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
            case Service_USBDriver_Starting:
              if (usb_soft == NULL)
              {
-
-
-
-
-             dprintf (("", "Registering with USB driver from svcecall\n"));
-                    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-                             &ehci_soft, &usb_soft);
-             dprintf (("", "Registering with USB driver from svcecall-done\n"));
-
-
-
+                 dprintf (("", "Registering with USB driver from svcecall\n"));
+                 _kernel_oserror *e = register_bus(&ehci_soft,&usb_soft);
+                 if(e)
+                 {
+                     dprintf (("", "Failed to register: %s\n", e->errmess));
+                 }
+                 else
+                 {
+                     dprintf (("", "Registering with USB driver from svcecall-done\n"));
+                 }
              }
              break;
            case Service_USBDriver_Dying:

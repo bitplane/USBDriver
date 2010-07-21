@@ -68,8 +68,10 @@
 #define DeviceFSCallDevice_GetLocation      0x80000004
 #define DeviceFSCallDevice_ClearStall       0x80000005
 #define DeviceFSCallDevice_TransferInfo     0x80000006
+#define DeviceFSCallDevice_GetHandles2      0x80000007
+#define DeviceFSCallDevice_GetSetOptions    0x80000008
 
-
+/* Was this used by the Castle podule at some time? - JL
 #define DeviceFSCallDevice_GetConfig        0x80000001
 #define DeviceFSCallDevice_SetConfig        0x80000002
 #define DeviceFSCallDevice_GetAltInterface  0x80000003
@@ -80,6 +82,7 @@
 #define DeviceFSCallDevice_GetInterfaceDesc 0x80000008
 #define DeviceFSCallDevice_GetEndpointDesc  0x80000009
 #define DeviceFSCallDevice_GetString        0x8000000a
+*/
 
 struct ugen_softc;
 
@@ -117,6 +120,10 @@ struct devstream {
     int residue;
     int dying;
     int padded_bytes; /* only greater 0 in case of short packages */
+    int flags; /* Flags altered by the GetSetOptions call */
+#define FLAG_NOPAD 1
+#define FLAG_SHORT 2
+#define FLAG_VALIDMASK 3 /* Which bits can be modified */
     struct isoc_buffer * isoc;
 };
 
@@ -442,7 +449,7 @@ _kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
         driver_entry,
         softc,
         private_word,
-        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/N",
+        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/Nnopad/Sshort/S",
 #ifdef DEVICEFSISBROKEN
         INT_MAX, // should be -1, but that doesn't seem to work
         INT_MAX,
@@ -1063,11 +1070,11 @@ static void deregister_bus (device_ptr_t bus)
 _kernel_oserror *module_swis(int swi_offset, _kernel_swi_regs *r, void *pw)
 {
     switch (swi_offset) {
-//    case USBDriver_Register:
-//        break;
-//    case USBDriver_DeRegister:
-//        break;
     case USBDriver_RegisterBus - USBDriver_00:
+        /* R1 now contains internal API version number
+           This check should be made more permissive when appropriate */
+        if(r->r[1] != RISCOS_USBDRIVER_API_VERSION)
+            return (_kernel_oserror *)"\0\0\0\0Incompatible USBDriver version";
         r->r[0] = (int) register_bus ((device_ptr_t) r->r[0]);
         break;
 
@@ -1090,6 +1097,9 @@ _kernel_oserror *module_swis(int swi_offset, _kernel_swi_regs *r, void *pw)
                 /* discustingly hacky */
                 usb_schedsoftintr (*(void**) (bus + 1));
         }
+        break;
+    case USBDriver_Version - USBDriver_00:
+        r->r[0] = Module_VersionNumber;
         break;
     default:
         return error_BAD_SWI;
@@ -1955,6 +1965,8 @@ typedef struct device_valid {
     uint32_t    ep_type;
     uint32_t    timeout;
     uint32_t    size;
+    uint32_t    nopad;
+    uint32_t    shortflag;
 } device_valid;
 
 static void find_interface_and_endpoint
@@ -2076,6 +2088,9 @@ static _kernel_oserror* device_initialise
 
     /* usb timeout, used for transfers */
     str->timeout = valid->timeout;
+
+    /* New flags to work around deficencies in the DeviceFS interface */
+    str->flags = (valid->nopad?0:FLAG_NOPAD)|(valid->shortflag?0:FLAG_SHORT);
 
     /* see if an interface was specified, if not then look for the interface
        with the endpoint specified */
@@ -2303,7 +2318,7 @@ void start_write (struct devstream* str)
     {
 #ifdef DMA_FROM_BUFFER
         usbd_setup_xfer(str->xfer, str->pipe, str,
-            (void*) r.r[2], r.r[3], USBD_NO_COPY, 500, write_cb);
+            (void*) r.r[2], r.r[3], USBD_NO_COPY | (str->flags & FLAG_SHORT?USBD_FORCE_SHORT_XFER:0), 500, write_cb);
 #else
         usbd_setup_xfer(
             str->xfer,
@@ -2311,7 +2326,7 @@ void start_write (struct devstream* str)
             str,
             (void*) str->buffer_id,
             r.r[2],
-            0,
+            (str->flags & FLAG_SHORT?USBD_FORCE_SHORT_XFER:0),
             str->timeout,
             write_cb);
 
@@ -2359,47 +2374,38 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
         return;
     }
 
+    if((str->flags & FLAG_NOPAD) || (str->count == str->totalcount))
+    {
+       /* Whatever happened, we're finished */
+       return;
+    }
     /* only start another transfer if we haven't finished the transfer and
        this is not a interrupt endpoint (the BSD framework restarts
        repeating transfers) */
     /* if we've got a number of bytes including a part packet, then
        transfer must have ended.. else.. try more */
-//    if(!xfer->pipe->repeat)
-//    {
-//      if(xfer->actlen < xfer->length)
-//      {
-//          char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
-//          memset (zero, 0, sizeof zero);
-//          /* fill up the rest of the request with garbage! */
-//          _kernel_swi_regs r;
-//          r.r[0] = BM_InsertBlock;
-//          r.r[1] = (int) str->buffer_id;
-//          r.r[2] = (int) zero;
-//          r.r[3] = str->totalcount - str->count;
-//          dprintf (("", "Fill insert %x bytes\n",r.r[3]));
-//          CallBufMan (&r);
-//      }
-//      else if (str->count != str->totalcount)
-//      {
-//          dprintf (("", "Starting read from callback\n")UGUGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize);
-    if ((xfer->actlen % UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))
-        && str->count != str->totalcount)
+    if (xfer->actlen % UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))
     {
         /* required due to DeviceFS concept. */
         char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
 
         /* Note difference for later correction by application */
-        str->padded_bytes=str->totalcount - str->count;
+        int remain = str->padded_bytes = str->totalcount - str->count;
         memset (zero, 0, sizeof zero);
         /* fill up the rest of the request with garbage! */
         _kernel_swi_regs r;
         r.r[0] = BM_InsertBlock;
         r.r[1] = (int) str->buffer_id;
-        r.r[2] = (int) zero;
-        r.r[3] = str->totalcount - str->count;
-        CallBufMan (&r);
+        while(remain > 0)
+        {
+            r.r[2] = (int) zero;
+            r.r[3] = min(remain,UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize));
+            CallBufMan (&r);
+            if(r.r[3])
+                break; /* Buffer was full - what do we do here? Try and insert the extra padding as more space becomes available? For now, just do what the old code did and give up */
+        }
     }
-    else if (str->count != str->totalcount && !xfer->pipe->repeat)
+    else if (!xfer->pipe->repeat)
     {
         dprintf (("", "Starting read from callback\n"));
         start_read (str);
@@ -2835,6 +2841,22 @@ _kernel_oserror* get_transfer_info
     return NULL;
 }
 
+_kernel_oserror* getset_options
+(
+    struct devstream*  str,
+    int*               eor,
+    int*               and
+)
+{
+    if (!str) {
+      return uerror (E_NoStream);
+      }
+    int new = ((str->flags & *and) ^ *eor) & FLAG_VALIDMASK;
+    *eor = str->flags;
+    str->flags = *and = new;
+    return NULL;
+}
+
 /*---------------------------------------------------------------------------*/
 
 _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
@@ -3001,7 +3023,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         return get_buffer_space (udev, r->r[2], r->r + 3, r->r + 4);
         break;
     case DeviceFSCallDevice_GetHandles:
-        return get_handles (udev, r->r[2], r->r + 3, r->r + 4, (struct devstream **) ((int *) r->r + 5), (devicefs_device**) ((int *) r->r + 6));
+        return get_handles (udev, r->r[2], r->r + 3, r->r + 4, NULL, NULL);
         break;
     case DeviceFSCallDevice_GetLocation:
         return get_location (udev, (char*) r->r[3]);
@@ -3011,6 +3033,12 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         break;
     case DeviceFSCallDevice_TransferInfo:
         return get_transfer_info (str, r->r + 0, r->r + 1, r->r + 3, r->r + 4);
+        break;
+    case DeviceFSCallDevice_GetHandles2:
+        return get_handles (udev, r->r[2], r->r + 3, r->r + 4, (struct devstream **) ((int *) r->r + 5), (devicefs_device**) ((int *) r->r + 6));
+        break;
+    case DeviceFSCallDevice_GetSetOptions:
+        return getset_options (str, r->r + 3, r->r + 4);
         break;
     }
 

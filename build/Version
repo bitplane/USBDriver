@@ -2,11 +2,11 @@
    VersionNum file really,as a work around define them here so the CMHG
    file remains unaltered */
 
-#define OHCIDriverModule_Module_Date_CMHG  02 Oct 2009
-#define OHCIDriverModule_MajorVersion_CMHG 0.30
+#define OHCIDriverModule_Module_Date_CMHG  18 Jul 2010
+#define OHCIDriverModule_MajorVersion_CMHG 0.31
 
-#define EHCIDriverModule_Module_Date_CMHG  02 Oct 2009
-#define EHCIDriverModule_MajorVersion_CMHG 0.15
+#define EHCIDriverModule_Module_Date_CMHG  18 Jul 2010
+#define EHCIDriverModule_MajorVersion_CMHG 0.16
         
-#define USBDriverModule_Module_Date_CMHG   28 Feb 2010
-#define USBDriverModule_MajorVersion_CMHG  0.48
+#define USBDriverModule_Module_Date_CMHG   18 Jul 2010
+#define USBDriverModule_MajorVersion_CMHG  0.49

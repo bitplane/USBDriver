@@ -8,4 +8,5 @@ ehci.o \
 port.o \
 call_veneer.o \
  \
-triggercbs.o
+triggercbs.o \
+usbroothub_subr.o

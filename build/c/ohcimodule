@@ -76,7 +76,7 @@ void* private_word;
 volatile int* ohci_base;
 
 ohci_softc_t ohci_soft;
-struct device * usb_soft;
+struct device * usb_soft=NULL;
 extern int * init_veneer (void);
 extern void* resource_files (void);
 #ifdef OHCI_DEBUG
@@ -275,17 +275,22 @@ int do_ohci_perror(int port)
 
 #endif        /* RHENIUM */
 
-//_kernel_oserror* bus_register (_kernel_swi_regs* r, void* pw, void* h)
-//{
-//    /* register with the usbdriver module if it's already resident */
-//    dprintf (("", "Registering with USB driver\n"));
-//    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-//            &ohci_soft, &usb_soft);
-//    dprintf (("", "Registering with USB driver-done\n"));
-//
-//    return NULL;
-//}
-//
+_kernel_oserror* register_bus(void *in,struct device **out)
+{
+    *out = NULL;
+    /* Check USBDriver is new enough */
+    int version;
+    _kernel_oserror *e = _swix(USBDriver_Version,_OUT(0),&version);
+    if(e)
+        return e;
+    if(version < RISCOS_USBDRIVER_API_VERSION)
+        return (_kernel_oserror*)"\0\0\0\0USBDriver too old";
+    /* Now attempt to register */
+    e = _swix(USBDriver_RegisterBus, _INR(0,1)|_OUT(0),in,RISCOS_USBDRIVER_API_VERSION,out);
+    if(e) *out = NULL;
+    return e;
+}
+
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
     _kernel_oserror * e;
@@ -315,9 +320,15 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 #endif  /* RHENIUM */
     /* now we know the root hub info, register it with USBDriver */
     dprintf (("", "Init-Registering with USB driver\n"));
-    _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-            &ohci_soft, &usb_soft);
-    dprintf (("", "Init-Registering with USB driver-done\n"));
+    e = register_bus(&ohci_soft, &usb_soft);
+    if (e)
+    {
+        dprintf (("", "Failed to register: %s\n", e->errmess));
+    }
+    else
+    {
+        dprintf (("", "Init-Registering with USB driver-done\n"));
+    }
 
     /* allow enough space for name, % and number, then space, and
        another number */
@@ -704,10 +715,16 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             {
                 if(ohci_soft.sc_vendor[0]!='\0') // (means svce_PCI has happened)
                 {   /* we're here in callback.. so foo we go */
-             dprintf (("", "Registering with USB driver from svcecall \n"));
-                   _swix (USBDriver_RegisterBus, _IN(0)|_OUT(0),
-                           &ohci_soft, &usb_soft);
-             dprintf (("", "Registering with USB driver from svcecall-done\n"));
+                    dprintf (("", "Registering with USB driver from svcecall\n"));
+                    _kernel_oserror *e = register_bus(&ohci_soft,&usb_soft);
+                    if(e)
+                    {
+                        dprintf (("", "Failed to register: %s\n", e->errmess));
+                    }
+                    else
+                    {
+                        dprintf (("", "Registering with USB driver from svcecall-done\n"));
+                    }
                 }
             }
             break;

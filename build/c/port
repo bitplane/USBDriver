@@ -179,8 +179,9 @@ extern int private_word;
 extern void callout_veneer (void);
 
 void
-callout_init (struct callout* c)
+callout_init (struct callout* c,int ignored)
 {
+    (void)ignored;
 #ifdef USB_DEBUG0
     if (usbdebug > 15) dprintf (("Port", "callout init %p\n", c));
 #endif

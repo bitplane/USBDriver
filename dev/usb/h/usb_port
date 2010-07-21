@@ -20,6 +20,7 @@
 #include "errno.h"
 #include <sys/ioccom.h>
 #include <string.h>
+#include <stdbool.h>
 
 #ifdef USB_DEBUG
 #define UHID_DEBUG 1
@@ -59,6 +60,17 @@
 #define lockinit(a,b,c,d,e)
 #define lockmgr(a,b,c)
 struct lock { int a; };
+/* XXX now we have to worry about our lack of support for mutexes too */
+#define mutex_init(a,b,c)
+#define mutex_destroy(a)
+#define mutex_enter(a)
+#define mutex_exit(a)
+typedef struct { int a; } kmutex_t;
+
+#define device_has_power(a) (true)
+
+/* Dummy macro should be all that we need for now */
+#define usb_syncmem(a,b,c,d) {}
 
 extern int hz;
 
@@ -70,7 +82,7 @@ extern void splx (int);
 extern int vtophys (void*);
 extern void delay (int);
 extern struct device* get_softc (int unit);
-extern int callout_init (void*);
+extern int callout_init (void*,int);
 extern int callout_stop (void*);
 extern void callout_reset (void*, int, void (*f)(void *), void *v);
 extern int min (int a, int b);
@@ -121,11 +133,9 @@ typedef struct device *device_ptr_t;
 #define USBDEVPTRNAME(bdevptr) ((bdevptr)->dv_xname)
 #define USBGETSOFTC(d) ((void *)(d))
 
-#define DECLARE_USB_DMA_T typedef void * usb_dma_t
-
 
 typedef struct callout usb_callout_t;
-#define usb_callout_init(h)	callout_init(&(h))
+#define usb_callout_init(h)	callout_init(&(h), 0)
 #define	usb_callout(h, t, f, d)	callout_reset(&(h), (t), (f), (d))
 #define	usb_uncallout(h, f, d)	callout_stop(&(h))
 
@@ -210,8 +220,9 @@ int __CONCAT(dname,_detach)(struct device *self, int flags)
 #endif
 
 
-
-
+#ifndef max
+#define max(a,b) ((a)>(b)?(a):(b))
+#endif
 
 
 //#define UMATCH_GENERIC 1

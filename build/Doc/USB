@@ -8,6 +8,8 @@ Versions
 --------
 
 Version  Date       Author   Change
+0.93     18/7/2010  JL       Updated for USBDriver 0.49
+0.92     06/3/2010  TM       Clear Stall/Transfer info added
 0.91     11/4/2003  JWB      Minor corrections.
 0.90     10/4/2003  JWB      Major modifications to reflect the capabilities
                              built into RISC OS 5 and the IYONIX pc. This
@@ -15,7 +17,6 @@ Version  Date       Author   Change
                              which the USB driver is called, but does lead to
                              a significant simplification of the whole
                              process.
-         06.03.2010 TM       Clear Stall/Transfer info added
 
 Where differences in the current implementations exist, these are noted.
 
@@ -83,7 +84,15 @@ feedback                                                                        
 implicit/S                                                                                           
 usbtimeout/N  Command timeout in milliseconds. Default is no timeout.        Yes      No             
 size/N        The preferred stream buffer size to use. Some devices may      Yes      Yes            
-              benefit from a larger buffer than the default.                                         
+              benefit from a larger buffer than the default.                                     
+nopad/S       Disable the code that adds padding bytes to received data if   0.49+    No
+              it is shorter than the requested read size.
+short/S       Force a 'short packet' to be sent at the end of each transfer. 0.49+    No
+              Ordinarily short packets are only sent if the data is not a
+              multiple of the max packet size; however by specifiying the
+              'short' flag this will force a short packet to be sent even if
+              the data is an exact multiple. This is equivalent to the
+              USBD_FORCE_SHORT_XFER flag used by the core NetBSD code.
 
 Numbers are converted using OS_ReadUnsigned so if the string starts with base_,
 this base is used or if the string starts with & then it is hexadecimal. If
@@ -171,8 +180,6 @@ R1                    Device name eg "usbd"                                     
 R2                    Stream handle as returned by fileswitch.                                    
 Returns:R3            Buffer handle                                                               
 Returns:R4            DeviceFS stream handle                                                      
-Returns:R5            USB Stream handle
-Returns:R6            Device drivers handle for usage with DeviceFS_CallDevice
 Get Location                                                                  Yes      No
 R0        1<<31 + 4   Get Device Location on bus.                                                 
 R1                    Device name eg "usbd"                                                       
@@ -185,20 +192,46 @@ Clear Stall                                                                   Ye
 R0        1<<31 + 5   Clears USB stall condition for requested pipe
 R1                    Device name eg "usbd"                                                       
 R2                    Stream handle as returned by fileswitch.                                    
-Transfer Info                                                                 Yes      ???
+
+The following calls were added with USBDriver 0.49:
+
+Transfer Info                                                                 Yes      No
 R0        1<<31 + 6   Returns some information about actual/last transfer
                       for the requested stream                                                      
 R1                    Device name eg "usbd"                                                       
-R2                    USB Stream handle as returned by Return handles in R5 ???
+R2                    USB Stream handle as returned by 'Return handles 2' in R5
 Returns:R0            Bytes received/sent up to now.
 Returns:R1            Total Bytes to transfer requested
 Returns:R3            Transfer Status:
                       -1 - Transfer terminated with error
                        0 - Transfer in progress
                        1 - Transfer successfully completed
-Returns:R4             After end of transfer number of Bytes with which
-                       Buffer has been padded up to requested length in case
-                       of receiving a short package.
+Returns:R4            After end of transfer number of Bytes with which
+                      Buffer has been padded up to requested length in case
+                      of receiving a short package.
+Return handles 2                                                              Yes      No      
+R0        1<<31 + 7   Return the buffer handle and DeviceFS stream                                
+                      handle for this stream                                                      
+R1                    Device name eg "usbd"                                                       
+R2                    Stream handle as returned by fileswitch.                                    
+Returns:R3            Buffer handle                                                               
+Returns:R4            DeviceFS stream handle                                                      
+Returns:R5            USB Stream handle
+Returns:R6            Device drivers handle for usage with DeviceFS_CallDevice
+Get/Set options                                                               Yes      No
+R0        1<<31 + 8   Get/set current options
+R1                    Device name eg "usbd"                                                       
+R2                    USB Stream handle as returned by 'Return handles 2' in R5
+R3                    EOR mask of bits to change (similar to OS_Byte)
+R4                    AND mask of bits to change (similar to OS_Byte)
+Returns:R3            Previous flags value
+Returns:R4            New flags value
+                      Flags in version 0.49 of USBDriver are:
+                      bit 0 - 'nopad' flag
+                      bit 1 - 'short' flag
+                      bits 2+ - reserved, reads return 0, writes ignored
+                      Note that modifying flags is only guaranteed to work
+                      correctly if no transfer is active for that stream
 
 Note: The Check Buffer Space call has been added to enable users to code simple drivers in higher level languages such as BASIC. On RISC OS 4 and earlier, commands such as BGET of BPUT will not return if there is no data or space in the stream's buffer. With this call the user can only make such blocking calls when they wont be blocked.
 
@@ -268,6 +301,18 @@ R0        2      Device has gone. (not used) R2 is a pointer to a
                  provide this information.
 R0        3      USB driver module starting.
 R0        4      USB driver module dying.                
+
+
+SWIs
+----
+
+The USBDriver module provides one SWI suitable for use by USB device drivers:
+
+SWI USBDriver_Version (0x54a45)
+    In:  N/A
+    Out: R0 = USBDriver module version number, *100
+
+    This SWI is only available in USBDriver version 0.49 and above.
 
 
 Aliases and Alias Matching

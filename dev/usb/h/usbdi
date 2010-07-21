@@ -38,6 +38,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef _USBDI_H_
+#define _USBDI_H_
+
 #ifdef __riscos
 #include <sys/cdefs.h>
 #endif
@@ -96,26 +99,26 @@ typedef void (*usbd_callback)(usbd_xfer_handle, usbd_private_handle,
 #endif
 
 usbd_status usbd_open_pipe(usbd_interface_handle, u_int8_t,
-                           u_int8_t, usbd_pipe_handle *);
+			   u_int8_t, usbd_pipe_handle *);
 usbd_status usbd_close_pipe(usbd_pipe_handle);
 usbd_status usbd_transfer(usbd_xfer_handle);
 usbd_xfer_handle usbd_alloc_xfer(usbd_device_handle);
 usbd_status usbd_free_xfer(usbd_xfer_handle);
 void usbd_setup_xfer(usbd_xfer_handle, usbd_pipe_handle,
-                     usbd_private_handle, void *,
-                     u_int32_t, u_int16_t, u_int32_t,
+		     usbd_private_handle, void *,
+		     u_int32_t, u_int16_t, u_int32_t,
 		     usbd_callback);
 void usbd_setup_default_xfer(usbd_xfer_handle, usbd_device_handle,
-                             usbd_private_handle, u_int32_t,
-                             usb_device_request_t *, void *,
-                             u_int32_t, u_int16_t, usbd_callback);
+			     usbd_private_handle, u_int32_t,
+			     usb_device_request_t *, void *,
+			     u_int32_t, u_int16_t, usbd_callback);
 void usbd_setup_isoc_xfer(usbd_xfer_handle, usbd_pipe_handle,
-                          usbd_private_handle, u_int16_t *,
-                          u_int32_t, u_int16_t, usbd_callback);
+			  usbd_private_handle, u_int16_t *,
+			  u_int32_t, u_int16_t, usbd_callback);
 void usbd_get_xfer_status(usbd_xfer_handle, usbd_private_handle *,
-                          void **, u_int32_t *, usbd_status *);
+			  void **, u_int32_t *, usbd_status *);
 usb_endpoint_descriptor_t *usbd_interface2endpoint_descriptor
-                        (usbd_interface_handle, u_int8_t);
+			(usbd_interface_handle, u_int8_t);
 usbd_status usbd_abort_pipe(usbd_pipe_handle);
 usbd_status usbd_clear_endpoint_stall(usbd_pipe_handle);
 usbd_status usbd_clear_endpoint_stall_async(usbd_pipe_handle);
@@ -123,9 +126,9 @@ void usbd_clear_endpoint_toggle(usbd_pipe_handle);
 usbd_status usbd_endpoint_count(usbd_interface_handle, u_int8_t *);
 usbd_status usbd_interface_count(usbd_device_handle, u_int8_t *);
 void usbd_interface2device_handle(usbd_interface_handle,
-                                         usbd_device_handle *);
+					 usbd_device_handle *);
 usbd_status usbd_device2interface_handle(usbd_device_handle,
-                              u_int8_t, usbd_interface_handle *);
+			      u_int8_t, usbd_interface_handle *);
 
 usbd_device_handle usbd_pipe2device_handle(usbd_pipe_handle);
 void *usbd_alloc_buffer(usbd_xfer_handle, u_int32_t);
@@ -133,18 +136,18 @@ void usbd_free_buffer(usbd_xfer_handle);
 void *usbd_get_buffer(usbd_xfer_handle);
 usbd_status usbd_sync_transfer(usbd_xfer_handle);
 usbd_status usbd_open_pipe_intr(usbd_interface_handle, u_int8_t,
-                                u_int8_t, usbd_pipe_handle *,
-                                usbd_private_handle, void *,
-                                u_int32_t, usbd_callback, int);
+				u_int8_t, usbd_pipe_handle *,
+				usbd_private_handle, void *,
+				u_int32_t, usbd_callback, int);
 usbd_status usbd_do_request(usbd_device_handle, usb_device_request_t *, void *);
 usbd_status usbd_do_request_async(usbd_device_handle,
-                                  usb_device_request_t *, void *);
+				  usb_device_request_t *, void *);
 usbd_status usbd_do_request_flags(usbd_device_handle, usb_device_request_t *,
-                                  void *, u_int16_t, int*, u_int32_t);
+				  void *, u_int16_t, int*, u_int32_t);
 usbd_status usbd_do_request_flags_pipe(usbd_device_handle, usbd_pipe_handle,
-        usb_device_request_t *, void *, u_int16_t, int *, u_int32_t);
+	usb_device_request_t *, void *, u_int16_t, int *, u_int32_t);
 usb_interface_descriptor_t *usbd_get_interface_descriptor
-                                (usbd_interface_handle);
+				(usbd_interface_handle);
 usb_config_descriptor_t *usbd_get_config_descriptor(usbd_device_handle);
 usb_device_descriptor_t *usbd_get_device_descriptor(usbd_device_handle);
 usbd_status usbd_set_interface(usbd_interface_handle, int);
@@ -154,9 +157,9 @@ void usbd_fill_deviceinfo(usbd_device_handle, struct usb_device_info *, int);
 int usbd_get_interface_altindex(usbd_interface_handle);
 
 usb_interface_descriptor_t *usbd_find_idesc(usb_config_descriptor_t *,
-                                            int, int);
+					    int, int);
 usb_endpoint_descriptor_t *usbd_find_edesc(usb_config_descriptor_t *,
-                                           int, int, int);
+					   int, int, int);
 
 void usbd_dopoll(usbd_interface_handle);
 void usbd_set_polling(usbd_device_handle, int);
@@ -169,11 +172,11 @@ void usbd_add_drv_event(int, usbd_device_handle, device_ptr_t);
 void usbd_devinfo(usbd_device_handle, int, char *, size_t);
 const struct usbd_quirks *usbd_get_quirks(usbd_device_handle);
 usb_endpoint_descriptor_t *usbd_get_endpoint_descriptor
-                        (usbd_interface_handle, u_int8_t);
+			(usbd_interface_handle, u_int8_t);
 
 usbd_status usbd_reload_device_desc(usbd_device_handle);
 
-int usbd_ratecheck(struct timeval *last);
+int usbd_ratecheck(struct timeval *);
 
 #ifndef __riscos
 usbd_status usbd_get_string(usbd_device_handle dev, int si, char *buf);
@@ -181,11 +184,11 @@ usbd_status usbd_get_string(usbd_device_handle dev, int si, char *buf);
 
 /* An iterator for descriptors. */
 typedef struct {
-        const uByte *cur;
-        const uByte *end;
+	const uByte *cur;
+	const uByte *end;
 } usbd_desc_iter_t;
-void usb_desc_iter_init(usbd_device_handle dev, usbd_desc_iter_t *iter);
-const usb_descriptor_t *usb_desc_iter_next(usbd_desc_iter_t *iter);
+void usb_desc_iter_init(usbd_device_handle, usbd_desc_iter_t *);
+const usb_descriptor_t *usb_desc_iter_next(usbd_desc_iter_t *);
 
 /*
  * The usb_task structs form a queue of things to run in the USB event
@@ -291,3 +294,5 @@ int usbd_driver_load(module_t mod, int what, void *arg);
 #endif /* USB_USE_SOFTINTR */
 #define splhardusb splbio
 #define IPL_USB IPL_BIO
+
+#endif /* _USBDI_H_ */
