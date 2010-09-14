@@ -527,6 +527,7 @@ vendor ARKMICROCHIPS	0x6547	ArkMicroChips
 vendor 3COM2		0x6891	3Com
 vendor INTEL		0x8086	Intel
 vendor MOSCHIP		0x9710	MosChip Semiconductor
+vendor ALWAYSINNOVATING	0xa110	Always Innovating
 vendor EMPIA		0xeb1a	eMPIA Technology
 vendor HP2		0xf003	Hewlett Packard
 vendor USRP		0xfffe	GNU Radio USRP
@@ -677,6 +678,9 @@ product ALCOR NEC_KBD_HUB	0x9472	NEC Kbd Hub
 /* Altec Lansing products */
 product ALTEC ADA70		0x0070	ADA70 Speakers
 product ALTEC ASC495		0xff05	ASC495 Speakers
+
+/* Always Innovating */
+product ALWAYSINNOVATING USBKBDTPAD	0x0002	Always Innovating USB Keyboard / Touchpad
 
 /* American Power Conversion products */
 product APC UPS			0x0002	Uninterruptible Power Supply
