@@ -12,7 +12,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* Changed 17.02.2010 TM DeviceFSCallDevice_TransferInfo and notation of padded bytes. */
+/* Changed 17.02.2010 TM DeviceFSCallDevice_TransferInfo and notation of padded bytes.
+   Changed 07.10.2010 TM launch_system_variable case 1 for known interface is config/interface and
+                         not interface/release */
 #include "usbmodhead.h"
 #include <stdio.h>
 #include <string.h>
@@ -1575,7 +1577,7 @@ static int launch_system_variable (struct usb_attach_arg* aux, int unit)
                     break;
                 case 1:
                     sprintf (str, "%s*_*_*_%04X_%04X_%02d_%02d_*_*",
-                        alias, vendor, product, interface, release);
+                        alias, vendor, product, config, interface);
                     break;
                 case 2:
                     sprintf (str, "%s%02X_%02X_%02X_%04X_*_*_*_*_*",
