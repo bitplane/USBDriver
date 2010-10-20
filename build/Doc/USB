@@ -8,10 +8,6 @@ Versions
 --------
 
 Version  Date       Author   Change
-0.94     07/10/2010 TM       Removed one of my older comments
-                             Alias Examples corrected. Right Start is Alias$@USBDevice_
-                             Actual is USB instead of USBD
-                             Remarks on USB_Attach service call and alias execution added
 0.93     18/7/2010  JL       Updated for USBDriver 0.49
 0.92     06/3/2010  TM       Clear Stall/Transfer info added
 0.91     11/4/2003  JWB      Minor corrections.
@@ -134,6 +130,14 @@ in% = OPENIN"devices#endpoint1:usbd3"
 
 DeviceFS_CallDevice
 -------------------
+
+Also: Fehler über Fehler in Dokumentation. Es gibt noch einen SWI der das Löschen eines
+Endpunkts erlaubt (Aus Castles Quellcode).
+
+R0       1<<31  + 5   Löscht die Stall Bedingung für einen Endpunkt sowohl per Request
+                      als auch intern auf Hostseite.
+R1                    Device name eg "usbd"                                                       
+R2                    Stream handle as returned by fileswitch.                                    
 
 There are 4 extension calls into the DeviceFS driver which are passed directly to the USB driver and are shown in the table below.
 
@@ -317,15 +321,12 @@ Aliases and Alias Matching
 A powerful Alias matching system is employed to provide a system for locating and launching specific applications and tools when relevant USB devices become available.
 Once a device is connected and "enumerated" several things happen:
  - A device is created for it within DeviceFS. 
- - The USB_Connected service call is issued.
+ - The USB_Connected service call is issued. 
  - An Alias is created for it with just vendor and product IDs in place. 
  - A check is made for a matching alias, and if found it is launched. 
  - If no alias was launched, a second Alias is created with additional
    configuration information. 
  - A new check is made for an alias match. 
- - The USB_Attach service call is launched.
-
-All matching alias are queued and launched from callback. So they might start an execution race with USB_Attach service call.
 
 The alias created is of the form USB$Device_LL_SS_TT_VVVV_PPPP_CC_II_RRRR_USBDnnn (or USBnnn)
 
@@ -347,29 +348,29 @@ When first created this is set to the number nnn. The second time around it has 
 
 Aliases are searched in accordance with the USB Common Class Specification (revision 1.0). This means that the following searches shall be done:
 
-Alias$@USBDevice_*_*_*_V_P___R
-Alias$@USBDevice_*_*_*_V_P___*
-Alias$@USBDevice_L_S_T_V_*___*
-Alias$@USBDevice_L_S_*_V_*___*
-Alias$@USBDevice_L_S_T_*_*___*
-Alias$@USBDevice_L_S_*_*_*___*
+Alias@USBD$Device_*_*_*_V_P___R
+Alias@USBD$Device_*_*_*_V_P___*
+Alias@USBD$Device_L_S_T_V_*___*
+Alias@USBD$Device_L_S_*_V_*___*
+Alias@USBD$Device_L_S_T_*_*___*
+Alias@USBD$Device_L_S_*_*_*___*
 
 If a driver is found at that stage then it can participate in choosing the configuration for the driver. Otherwise the system software chooses an appropriate configuration and the search is proceeded using the following, taking each interface in turn, taking the class and subclass data from the interface descriptor:
 
-Alias$@USBDevice_*_*_*_V_P_C_I_R
-Alias$@USBDevice_*_*_*_V_P_C_I_*
-Alias$@USBDevice_L_S_T_V_*_*_*_*
-Alias$@USBDevice_L_S_*_V_*_*_*_*
-Alias$@USBDevice_L_S_T_*_*_*_*_*
-Alias$@USBDevice_L_S_*_*_*_*_*_*
+Alias$@USBD$Device_*_*_*_V_P_C_I_R
+Alias$@USBD$Device_*_*_*_V_P_C_I_*
+Alias$@USBD$Device_L_S_T_V_*_*_*_*
+Alias$@USBD$Device_L_S_*_V_*_*_*_*
+Alias$@USBD$Device_L_S_T_*_*_*_*_*
+Alias$@USBD$Device_L_S_*_*_*_*_*_*
 
 If a match is made, the alias will be executed. This permits (e.g.) an obey file to be created containing lines such as:
    
-Alias @USBDevice____03F0_0417____ Do Path HPLJ1220
- USB%%0#usbtimeout10000;size16384:|mUSBSetInterface %%0 0 1|m||%%*0
+Alias @USBDDevice____03F0_0417____ Do Path HPLJ1220
+ USBD%%0#usbtimeout10000;size16384:|mUSBDSetInterface %%0 0 1|m||%%*0
 
-If "<USB$Device_*_*_*_03F0_0417_*_*_*_*>" <> "" Then Do
- @usbdevice____03F0_0417____ <USB$Device_*_*_*_03F0_0417_*_*_*_*>
+If "<USBD$Device_*_*_*_03F0_0417_*_*_*_*>" <> "" Then Do
+ @usbddevice____03F0_0417____ <USBD$Device_*_*_*_03F0_0417_*_*_*_*>
   
 Note that though each command appears to take 2 or more lines, each is one line only.
 The first line sets up an alias for a device (vendor)03F0 and (product)0417 (which is an HPLJ1220C printer) which will create a path variable "HPLJ1220:" and choose interface 0 alternate 1 as the desired interface to use. The second line will execute the alias if it is already set up when the obey file is run.
