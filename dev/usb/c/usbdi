@@ -612,7 +612,7 @@ usbd_clear_endpoint_stall(usbd_pipe_handle pipe)
 	usbd_device_handle dev = pipe->device;
 #endif
 	usb_device_request_t req;
-	usbd_status err;
+	usbd_status err = USBD_NORMAL_COMPLETION;
 
 	DPRINTFN(8, ("usbd_clear_endpoint_stall\n"));
 

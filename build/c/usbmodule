@@ -1730,6 +1730,8 @@ int detach_device (struct device* dev, int d)
         _swix (DeviceFS_Deregister, _IN(0), udev->sc_devfs);
     dprintf (("", "deregistered driver %p\n", udev->sc_devfs));
     }
+   /* Cancel any pending callbacks attached to this device */
+   callx_remove_callback(announce_device,udev);
    free (udev);
    return 0;
 }
@@ -2087,7 +2089,7 @@ static _kernel_oserror* device_initialise
     str->report = valid->report;
 
     /* usb timeout, used for transfers */
-    str->timeout = valid->timeout;
+    str->timeout = (valid->timeout==0xdeaddead?0:valid->timeout);
 
     /* New flags to work around deficencies in the DeviceFS interface */
     str->flags = (valid->nopad?0:FLAG_NOPAD)|(valid->shortflag?0:FLAG_SHORT);
@@ -2400,6 +2402,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
         {
             r.r[2] = (int) zero;
             r.r[3] = min(remain,UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize));
+            remain -= r.r[3];
             CallBufMan (&r);
             if(r.r[3])
                 break; /* Buffer was full - what do we do here? Try and insert the extra padding as more space becomes available? For now, just do what the old code did and give up */
