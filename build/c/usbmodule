@@ -345,9 +345,9 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 #else
     /* if standalone then this happens in the service call handler */
     e = messages_update (&mod_messages);
-    if (e) goto error0;
+    if (e) return e;
     e = messages_update (&usbdev_messages);
-    if (e) goto error1;
+    if (e) goto error;
 #endif
 
 #ifdef USB_DEBUG
@@ -368,12 +368,10 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 
     return 0;
 #ifndef STANDALONE
-error1:
+error:
     _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
-error0:
-    _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
-#endif
     return e;
+#endif
 }
 
 /*---------------------------------------------------------------------------*/

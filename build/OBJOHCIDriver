@@ -4,5 +4,6 @@ ohcimodule.o \
 ohci.o \
 port.o \
 call_veneer.o \
-triggercbs.o \
-ohcimsgs.o
+triggercbs.o
+
+RAM_OBJS = ${OBJS} ohcimsgs.o

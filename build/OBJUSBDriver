@@ -13,5 +13,6 @@ usbkboard.o \
 hid.o \
 bufman.o \
 triggercbs.o \
-call_veneer.o \
-usbmsgs.o
+call_veneer.o
+
+RAM_OBJS = ${OBJS} usbmsgs.o
