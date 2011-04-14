@@ -161,5 +161,7 @@ bbe-usb: bbe-generic
         ${CP} rom_link_v.${TARGET} ${VERBATIMROMLINK} ${CPFLAGS}
         BBE_Export_File ^.VersionNum
 
+# Static dependencies:
+o.makedevs o.usbmouse: ^.dev.usb.h.usbdevs
 
 # Dynamic dependencies:
