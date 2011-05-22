@@ -12,6 +12,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/* This is the module version of port.c
+   For the HAL version, see usbhal.c and porthal.s
+*/
+
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
@@ -120,14 +125,6 @@ delay (int d)
     }
 #endif
     _swix (OS_Hardware, _IN(0)|_INR(8,9), d, 0, EntryNo_HAL_CounterDelay);
-}
-
-void
-microtime(struct timeval *thetime)
-{
-    uint64_t t = gettime ();
-    thetime->tv_sec = (unsigned long) (t / 1000000000);
-    thetime->tv_usec = (unsigned long) ((t / 1000) % 1000000);
 }
 
 void
@@ -470,3 +467,8 @@ void softintr_disestablish (void* p)
     free (p);
 }
 #endif
+
+void riscos_irqclear(int devno)
+{
+    _swix(OS_Hardware, _IN(0)|_INR(8,9), devno, 0, EntryNo_HAL_IRQClear);
+}

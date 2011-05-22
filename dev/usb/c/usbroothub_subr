@@ -26,6 +26,9 @@
  *
  */
 
+#ifdef __riscos
+#include <dev/usb/usbhal.h>
+#endif
 #include <dev/usb/usb.h>
 #include <dev/usb/usbroothub_subr.h>
 

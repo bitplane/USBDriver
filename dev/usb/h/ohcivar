@@ -146,6 +146,10 @@ typedef struct ohci_softc {
 #ifdef __NetBSD__
         struct usb_dma_reserve sc_dma_reserve;
 #endif
+
+#ifdef __riscos
+	int sc_irqdevno; /* IRQ device number */
+#endif
 } ohci_softc_t;
 
 struct ohci_xfer {

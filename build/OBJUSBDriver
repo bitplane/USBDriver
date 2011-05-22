@@ -16,3 +16,14 @@ triggercbs.o \
 call_veneer.o
 
 RAM_OBJS = ${OBJS} usbmsgs.o
+
+OBJS_HAL = \
+o_hal.usb \
+o_hal.usbdi \
+o_hal.usb_subr \
+o_hal.usbdi_util \
+o_hal.usb_quirks \
+o_hal.uhub \
+o_hal.porthal \
+o_hal.halheap \
+o_hal.usbhal

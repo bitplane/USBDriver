@@ -82,9 +82,9 @@ extern void splx (int);
 extern int vtophys (void*);
 extern void delay (int);
 extern struct device* get_softc (int unit);
-extern int callout_init (void*,int);
-extern int callout_stop (void*);
-extern void callout_reset (void*, int, void (*f)(void *), void *v);
+extern void callout_init (struct callout* c,int ignored);
+extern void callout_stop (struct callout *c);
+extern void callout_reset (struct callout *c, int i, void (*f)(void *), void *v);
 extern int min (int a, int b);
 extern struct device* riscos_usb_attach(void*, struct device*, void*);
 extern void usb_needs_explore_callback (void*);
@@ -92,9 +92,11 @@ extern int config_detach (struct device*, int);
 extern void* (config_found) (struct device*, void*, int (*) (void*, const char*));
 extern void kill_system_variable (int unit);
 
+#ifndef USBHAL
 extern void riscos_abort_pipe (void*);
+extern void riscos_irqclear (int device);
+#endif
 extern void riscos_failed_device (void*);
-extern void riscos_irqclear (void);
 
 extern int kthread_create (void (*) (void*), void*);
 extern int kthread_create1 (void (*) (void*), void*, void*, char*, char*);
@@ -150,8 +152,18 @@ typedef int usb_malloc_type;
 #define Ether_ifattach ether_ifattach
 #define IF_INPUT(ifp, m) (*(ifp)->if_input)((ifp), (m))
 
+#ifdef USB_DEBUG
 #pragma -v1
 extern void logprintf(char* format, ...);
+#else
+#define logprintf(...) 0
+#endif
+
+#ifdef USBHAL
+#define halconst const
+#else
+#define halconst
+#endif
 
 #define USB_DECLARE_DRIVER(dname)  \
 int __CONCAT(dname,_match)(struct device *, struct cfdata *, void *); \
@@ -159,9 +171,9 @@ void __CONCAT(dname,_attach)(struct device *, struct device *, void *); \
 int __CONCAT(dname,_detach)(struct device *, int); \
 int __CONCAT(dname,_activate)(struct device *, enum devact); \
 \
-extern struct cfdriver __CONCAT(dname,_cd); \
+extern halconst struct cfdriver __CONCAT(dname,_cd); \
 \
-struct cfattach __CONCAT(dname,_ca) = { \
+halconst struct cfattach __CONCAT(dname,_ca) = { \
 	sizeof(struct __CONCAT(dname,_softc)), \
 	__CONCAT(dname,_match), \
 	__CONCAT(dname,_attach), \

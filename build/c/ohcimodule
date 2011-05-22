@@ -512,6 +512,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     memset (&ohci_soft, 0, sizeof ohci_soft);
 
     sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
+    ohci_soft.sc_irqdevno = device_number;
 
 
 #ifdef   RHENIUM
@@ -1051,9 +1052,4 @@ softintr (_kernel_swi_regs* r, void* pw)
 {
     ohci_softintr ((void*) r->r[0]);
     return 0;
-}
-
-void riscos_irqclear()
-{
-    _swix(OS_Hardware, _IN(0)|_INR(8,9), device_number, 0, EntryNo_HAL_IRQClear);
 }

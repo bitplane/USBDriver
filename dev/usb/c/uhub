@@ -42,6 +42,9 @@
  * USB spec: http://www.usb.org/developers/docs/usbspec.zip
  */
 
+#ifdef __riscos
+#include <dev/usb/usbhal.h>
+#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: uhub.c,v 1.74 2005/03/02 11:37:27 mycroft Exp $");
 
@@ -109,7 +112,7 @@ Static bus_child_detached_t uhub_child_detached;
 USB_DECLARE_DRIVER(uhub);
 #if defined __riscos
 /* Create the driver instance for the hub connected to hub case */
-struct cfattach uhub_uhub_ca = {
+halconst struct cfattach uhub_uhub_ca = {
         sizeof(struct uhub_softc), uhub_match, uhub_attach,
         uhub_detach, uhub_activate
 };
@@ -160,7 +163,9 @@ USB_ATTACH(uhub)
 {
 	USB_ATTACH_START(uhub, sc, uaa);
 	usbd_device_handle dev = uaa->device;
+#if !defined(__riscos) || defined(USB_DEBUG)
 	char devinfo[1024];
+#endif
 	usbd_status err;
         struct usbd_hub *hub = NULL;
 	usb_device_request_t req;
@@ -172,6 +177,7 @@ USB_ATTACH(uhub)
 
 	DPRINTFN(1,("uhub_attach\n"));
 	sc->sc_hub = dev;
+#if !defined(__riscos) || defined(USB_DEBUG)
         usbd_devinfo(dev, 1, devinfo, sizeof(devinfo));
 	USB_ATTACH_SETUP;
         printf("%s: %s\n", USBDEVNAME(sc->sc_dev), devinfo);
@@ -182,6 +188,7 @@ USB_ATTACH(uhub)
                     UHUB_IS_SINGLE_TT(sc) ? "single" : "multiple",
                        UHUB_IS_SINGLE_TT(sc) ? "" : "s");
         }
+#endif
 	err = usbd_set_config_index(dev, 0, 1);
 	if (err) {
 		DPRINTF(("%s: configuration failed, error=%s\n",

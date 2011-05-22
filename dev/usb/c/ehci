@@ -58,6 +58,9 @@
  * 3) Command failures are not recovered correctly.
  */
 
+#ifdef __riscos
+#include <dev/usb/usbhal.h>
+#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.91 2005/02/27 00:27:51 perry Exp $");
 
@@ -258,6 +261,10 @@ Static void		ehci_dump_exfer(struct ehci_xfer *);
 	} while (0)
 #define ehci_active_intr_list(ex) ((ex)->inext.tqe_prev != NULL)
 
+#ifdef USBHAL
+extern int usbhal_ehci_do_intr(struct usbd_bus *,int irqdevno);
+extern void usbhal_ehci_shutdown(struct usbd_bus *);
+#endif
 
 Static struct usbd_bus_methods ehci_bus_methods = {
 	ehci_open,
@@ -267,6 +274,10 @@ Static struct usbd_bus_methods ehci_bus_methods = {
 	ehci_freem,
 	ehci_allocx,
 	ehci_freex,
+#ifdef USBHAL
+	usbhal_ehci_do_intr,
+	usbhal_ehci_shutdown,
+#endif
 };
 
 Static struct usbd_pipe_methods ehci_root_ctrl_methods = {
@@ -323,6 +334,9 @@ Static struct usbd_pipe_methods ehci_device_isoc_methods = {
 	ehci_device_isoc_done,
 };
 
+#ifdef USBHAL
+static const uint8_t revbits[EHCI_MAX_POLLRATE] = {0x00,0x02,0x01,0x03};
+#else
 static const uint8_t revbits[EHCI_MAX_POLLRATE] = {
 0x00,0x40,0x20,0x60,0x10,0x50,0x30,0x70,0x08,0x48,0x28,0x68,0x18,0x58,0x38,0x78,
 0x04,0x44,0x24,0x64,0x14,0x54,0x34,0x74,0x0c,0x4c,0x2c,0x6c,0x1c,0x5c,0x3c,0x7c,
@@ -333,8 +347,23 @@ static const uint8_t revbits[EHCI_MAX_POLLRATE] = {
 0x03,0x43,0x23,0x63,0x13,0x53,0x33,0x73,0x0b,0x4b,0x2b,0x6b,0x1b,0x5b,0x3b,0x7b,
 0x07,0x47,0x27,0x67,0x17,0x57,0x37,0x77,0x0f,0x4f,0x2f,0x6f,0x1f,0x5f,0x3f,0x7f,
 };
+#endif
 
-#if defined (__riscos)
+#ifdef USBHAL
+/* TODO - Move elsewhere */
+static void abort_pipe(void *v)
+{
+	splbio(); /* Code in cmodule runs with interrupts enabled(!) */
+	ehci_abort_xfer((usbd_xfer_handle) v,USBD_TIMEOUT);
+}
+
+static void riscos_abort_pipe(void *v)
+{
+	USBHAL_AddCallback(abort_pipe,v);
+}
+#endif
+
+#if defined (__riscos) && !defined(USBHAL)
 static int veneers_built = 0;
 void build_veneer (void* vn, void* st, size_t sz);
 static struct {
@@ -369,7 +398,7 @@ ehci_init(ehci_softc_t *sc)
 	u_int ncomp;
 
 	DPRINTF(("ehci_init: start\n"));
-#if defined (__riscos)
+#if defined (__riscos) && !defined(USBHAL)
         if (!veneers_built)
         {
             build_veneer(&ehci_bus_methods_entry,
@@ -467,6 +496,12 @@ ehci_init(ehci_softc_t *sc)
 
 	/* XXX need proper intr scheduling */
 	sc->sc_rand = 96;
+
+#ifdef USBHAL
+	/* A full frame list takes up a lot of memory. Try shrinking it to minimum. */
+	if(EHCI_HCC_PFLF(cparams))
+		EOWRITE4(sc, EHCI_USBCMD, (EOREAD4(sc, EHCI_USBCMD) & ~EHCI_CMD_FLS_M) | (2<<2));
+#endif
 
 	/* frame list size at default, read back what we got and use that */
 	switch (EHCI_CMD_FLS(EOREAD4(sc, EHCI_USBCMD))) {
@@ -642,7 +677,7 @@ ehci_intr(void *v)
 #endif
 #ifdef __riscos
 			EOREAD4(sc, EHCI_USBINTR);
-			riscos_irqclear();
+			riscos_irqclear(sc->sc_irqdevno);
 #endif
 		return (0);
 	}
@@ -680,7 +715,7 @@ ehci_intr1(ehci_softc_t *sc)
 #ifdef __riscos
         /* make sure it gets there */
         EOREAD4(sc, EHCI_USBSTS);
-        riscos_irqclear();
+        riscos_irqclear(sc->sc_irqdevno);
 #endif
 	sc->sc_bus.intr_context++;
 	sc->sc_bus.no_intrs++;
@@ -2671,7 +2706,7 @@ ehci_alloc_sqh(ehci_softc_t *sc)
 	if (sc->sc_freeqhs == NULL) {
 		DPRINTFN(2, ("ehci_alloc_sqh: allocating chunk\n"));
 		err = usb_allocmem(&sc->sc_bus, EHCI_SQH_SIZE * EHCI_SQH_CHUNK,
-			  EHCI_PAGE_SIZE, &dma);
+			  EHCI_SMALL_PAGE_SIZE, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqh: usb_allocmem()=%d\n", err);
@@ -2714,7 +2749,7 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 	if (sc->sc_freeqtds == NULL) {
 		DPRINTFN(2, ("ehci_alloc_sqtd: allocating chunk\n"));
 		err = usb_allocmem(&sc->sc_bus, EHCI_SQTD_SIZE*EHCI_SQTD_CHUNK,
-			  EHCI_PAGE_SIZE, &dma);
+			  EHCI_SMALL_PAGE_SIZE, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqtd: usb_allocmem()=%d\n", err);
@@ -2945,7 +2980,7 @@ ehci_alloc_itd(ehci_softc_t *sc)
 	if (freeitd == NULL) {
 		DPRINTFN(2, ("ehci_alloc_itd allocating chunk\n"));
 		err = usb_allocmem(&sc->sc_bus, EHCI_ITD_SIZE * EHCI_ITD_CHUNK,
-				EHCI_PAGE_SIZE, &dma);
+				EHCI_SMALL_PAGE_SIZE, &dma);
 
 		if (err) {
 			DPRINTF(("ehci_alloc_itd, alloc returned %d\n", err));

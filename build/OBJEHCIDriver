@@ -10,3 +10,8 @@ call_veneer.o \
  \
 triggercbs.o \
 usbroothub_subr.o
+
+OBJS_HAL = \
+o_hal.ehci \
+o_hal.usbroothub_subr \
+o_hal.ehcihal

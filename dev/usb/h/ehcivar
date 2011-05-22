@@ -36,6 +36,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef USBHAL
+/* We have little memory available in the HAL, so allocate in smaller chunks */
+#define EHCI_SMALL_PAGE_SIZE 512
+#else
+#define EHCI_SMALL_PAGE_SIZE EHCI_PAGE_SIZE
+#endif
+
 typedef struct ehci_soft_qtd {
 	ehci_qtd_t qtd;
 	struct ehci_soft_qtd *nextqtd; /* mirrors nextqtd in TD */
@@ -47,7 +54,7 @@ typedef struct ehci_soft_qtd {
 	u_int16_t len;
 } ehci_soft_qtd_t;
 #define EHCI_SQTD_SIZE ((sizeof (struct ehci_soft_qtd) + EHCI_QTD_ALIGN - 1) / EHCI_QTD_ALIGN * EHCI_QTD_ALIGN)
-#define EHCI_SQTD_CHUNK (EHCI_PAGE_SIZE / EHCI_SQTD_SIZE)
+#define EHCI_SQTD_CHUNK (EHCI_SMALL_PAGE_SIZE / EHCI_SQTD_SIZE)
 
 typedef struct ehci_soft_qh {
 	ehci_qh_t qh;
@@ -59,7 +66,7 @@ typedef struct ehci_soft_qh {
 	int islot;
 } ehci_soft_qh_t;
 #define EHCI_SQH_SIZE ((sizeof (struct ehci_soft_qh) + EHCI_QH_ALIGN - 1) / EHCI_QH_ALIGN * EHCI_QH_ALIGN)
-#define EHCI_SQH_CHUNK (EHCI_PAGE_SIZE / EHCI_SQH_SIZE)
+#define EHCI_SQH_CHUNK (EHCI_SMALL_PAGE_SIZE / EHCI_SQH_SIZE)
 
 typedef struct ehci_soft_itd {
 	ehci_itd_t itd;
@@ -80,7 +87,7 @@ typedef struct ehci_soft_itd {
 	struct timeval t; /* store free time */
 } ehci_soft_itd_t;
 #define EHCI_ITD_SIZE ((sizeof(struct ehci_soft_itd) + EHCI_QH_ALIGN - 1) / EHCI_ITD_ALIGN * EHCI_ITD_ALIGN)
-#define EHCI_ITD_CHUNK (EHCI_PAGE_SIZE / EHCI_ITD_SIZE)
+#define EHCI_ITD_CHUNK (EHCI_SMALL_PAGE_SIZE / EHCI_ITD_SIZE)
 
 struct ehci_xfer {
 	struct usbd_xfer xfer;
@@ -101,7 +108,11 @@ struct ehci_soft_islot {
 };
 
 #define EHCI_FRAMELIST_MAXCOUNT	1024
+#ifdef USBHAL
+#define EHCI_IPOLLRATES		3 /* Full poll list uses too much memory for HAL. See if this works. */
+#else
 #define EHCI_IPOLLRATES		8 /* Poll rates (1ms, 2, 4, 8 .. 128) */
+#endif
 #define EHCI_INTRQHS		((1 << EHCI_IPOLLRATES) - 1)
 #define EHCI_MAX_POLLRATE	(1 << (EHCI_IPOLLRATES - 1))
 #define EHCI_IQHIDX(lev, pos) \
@@ -174,6 +185,10 @@ typedef struct ehci_softc {
 	char sc_dying;
 #ifdef __NetBSD__
 	struct usb_dma_reserve sc_dma_reserve;
+#endif
+
+#ifdef __riscos
+	int sc_irqdevno; /* IRQ device number */
 #endif
 } ehci_softc_t;
 

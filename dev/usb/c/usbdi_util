@@ -37,6 +37,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __riscos
+#include <dev/usb/usbhal.h>
+#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: usbdi_util.c,v 1.43 2005/04/12 13:10:14 itohy Exp $");
 

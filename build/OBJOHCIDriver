@@ -7,3 +7,6 @@ call_veneer.o \
 triggercbs.o
 
 RAM_OBJS = ${OBJS} ohcimsgs.o
+
+OBJS_HAL = \
+o_hal.ohci

@@ -51,6 +51,9 @@
  * USB spec: http://www.usb.org/developers/docs/usbspec.zip
  */
 
+#ifdef __riscos
+#include <dev/usb/usbhal.h>
+#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.154 2004/12/22 19:36:13 joff Exp $");
 
@@ -292,6 +295,11 @@ struct ohci_pipe {
 
 #define OHCI_INTR_ENDPT 1
 
+#ifdef USBHAL
+extern int usbhal_ohci_do_intr(struct usbd_bus *,int irqdevno);
+extern void usbhal_ohci_shutdown(struct usbd_bus *);
+#endif
+
 Static struct usbd_bus_methods ohci_bus_methods = {
 	ohci_open,
 	ohci_softintr,
@@ -300,6 +308,10 @@ Static struct usbd_bus_methods ohci_bus_methods = {
 	ohci_freem,
 	ohci_allocx,
 	ohci_freex,
+#ifdef USBHAL
+	usbhal_ohci_do_intr,
+	usbhal_ohci_shutdown,
+#endif
 };
 
 Static struct usbd_pipe_methods ohci_root_ctrl_methods = {
@@ -356,7 +368,21 @@ Static struct usbd_pipe_methods ohci_device_isoc_methods = {
 	ohci_device_isoc_done,
 };
 
-#if defined (__riscos)
+#ifdef USBHAL
+/* TODO - Move elsewhere */
+static void abort_pipe(void *v)
+{
+	splbio(); /* Code in cmodule runs with interrupts enabled(!) */
+	ohci_abort_xfer((usbd_xfer_handle) v,USBD_TIMEOUT);
+}
+
+static void riscos_abort_pipe(void *v)
+{
+	USBHAL_AddCallback(abort_pipe,v);
+}
+#endif
+
+#if defined (__riscos) && !defined(USBHAL)
 static int veneers_built = 0;
 void build_veneer (void* vn, void* st, size_t sz);
 static struct {
@@ -693,7 +719,7 @@ ohci_init(ohci_softc_t *sc)
 	int i;
 	u_int32_t s, ctl, ival, hcr, fm, per, rev, desca;
 
-#if defined (__riscos)
+#if defined (__riscos) && !defined(USBHAL)
         if (!veneers_built)
         {
             build_veneer(&ohci_bus_methods_entry,
@@ -1189,7 +1215,7 @@ ohci_intr(void *p)
                 OWRITE4(sc, OHCI_INTERRUPT_STATUS,
                 OREAD4(sc, OHCI_INTERRUPT_STATUS));
 #ifdef __riscos
-                riscos_irqclear();
+                riscos_irqclear(sc->sc_irqdevno);
 #endif
 
 		return (0);

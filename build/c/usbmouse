@@ -222,7 +222,9 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 	int size;
 	void *desc;
 	usbd_status err;
+#ifdef USB_DEBUG
 	char devinfo[1024];
+#endif
 	u_int32_t flags, quirks;
 	int i, repid, nrepid;
 	int hl;
@@ -232,10 +234,12 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 	sc->sc_udev = uaa->device;
 	sc->sc_iface = iface;
 	id = usbd_get_interface_descriptor(iface);
+#ifdef USB_DEBUG
 	usbd_devinfo(uaa->device, 0, devinfo, sizeof devinfo);
 	USB_ATTACH_SETUP;
 	dprintf(("%s: %s, iclass %d/%d\n", USBDEVNAME(sc->sc_dev),
 	       devinfo, id->bInterfaceClass, id->bInterfaceSubClass));
+#endif
 	ed = usbd_interface2endpoint_descriptor(iface, 0);
 	if (ed == NULL) {
 		logprintf("%s: could not read endpoint descriptor\n",

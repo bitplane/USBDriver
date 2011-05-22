@@ -50,6 +50,7 @@ UNAME=	"RISC_OS"
 
 clean:
         ${WIPE} o      ${WFLAGS}
+        ${WIPE} o_hal  ${WFLAGS}
         ${WIPE} aif    ${WFLAGS}
         ${WIPE} aof    ${WFLAGS}
         ${WIPE} rm     ${WFLAGS}
@@ -69,13 +70,14 @@ all: o._dirs
 
 export: export_${PHASE}
 
-export_libs:
+export_libs: ${USBDIR}.o.${COMPONENT}
         @echo ${COMPONENT}: export complete (libs)
 
 export_hdrs:   ^.dev.usb.h.usbdevs
         ${MKDIR} ${USBDIR}.dev.usb.h
         ${MKDIR} ${USBDIR}.h
         ${MKDIR} ${USBDIR}.sys.h
+        ${MKDIR} ${USBDIR}.Hdr
         ${CP} ^.dev.usb.h.usb      ${USBDIR}.dev.usb.h.usb      ${CPFLAGS}
         ${CP} ^.dev.usb.h.usbdevs  ${USBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
         ${CP} ^.dev.usb.h.usbdi    ${USBDIR}.dev.usb.h.usbdi    ${CPFLAGS}
@@ -83,6 +85,7 @@ export_hdrs:   ^.dev.usb.h.usbdevs
         ${CP} h.USBDevFS           ${USBDIR}.h.USBDevFS         ${CPFLAGS}
         ${CP} ^.sys.h.device       ${USBDIR}.sys.h.device       ${CPFLAGS}
         ${CP} ^.VersionNum         ${USBDIR}.NetBSDVersion      ${CPFLAGS}
+        ${CP} Hdr.usbhal           ${USBDIR}.Hdr.usbhal         ${CPFLAGS}
         @echo ${COMPONENT}: export complete (hdrs)
 
 resources: resources_${COMPONENT}
@@ -105,6 +108,7 @@ resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
 
 o._dirs:
         ${MKDIR} o
+        ${MKDIR} o_hal
         ${MKDIR} aif
         ${MKDIR} aof
         ${MKDIR} rm
@@ -138,6 +142,15 @@ ohcimsgs.o: Resources.<Locale>.OHCIMessages
 
 ehcimsgs.o: Resources.<Locale>.EHCIMessages
         resgen resource_files o.ehcimsgs Resources.<Locale>.EHCIMessages ${MSGLOC}
+
+# HAL libraries:
+.SUFFIXES: .o_hal
+.c.o_hal:; ${CC} -APCS 3/nofp/noswst -wp -ff -DUSBHAL -c -depend !Depend -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED ${CINCLUDES} ${THROWBACK} -o $@ $<
+.s.o_hal:; ${AS} ${ASFLAGS} -APCS 3/nofp/noswst -o $@ $<
+
+${USBDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
+        ${MKDIR} ${USBDIR}.o
+        ${AR} ${ARFLAGS} ${USBDIR}.o.${COMPONENT} ${OBJS_HAL}
 
 # RISC OS debug:
 aif.${COMPONENT}: ${RAM_OBJS} ${RAM_LIBS} ${CLIB} ${DIRS}

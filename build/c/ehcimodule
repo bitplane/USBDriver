@@ -348,6 +348,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     memset (&ehci_soft, 0, sizeof ehci_soft);
 
     sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+    ehci_soft.sc_irqdevno = device_number;
 
     /* fix n companions */
     ehci_soft.sc_ncomp = 2;
@@ -801,11 +802,6 @@ softintr (_kernel_swi_regs* r, void* pw)
 {
     ehci_softintr ((void*) r->r[0]);
     return 1;
-}
-
-void riscos_irqclear()
-{
-    _swix(OS_Hardware, _IN(0)|_INR(8,9), device_number, 0, EntryNo_HAL_IRQClear);
 }
 
 /*---------------------------------------------------------------------------*/

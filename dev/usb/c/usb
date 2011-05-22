@@ -43,6 +43,9 @@
  * http://www.usb.org/developers/devclass_docs/
  */
 
+#ifdef __riscos
+#include <dev/usb/usbhal.h>
+#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.81 2005/01/24 01:30:38 joff Exp $");
 //#include "ohci.h"
@@ -112,9 +115,9 @@ struct usb_softc {
 	char		sc_dying;
 };
 
+#ifndef __riscos
 TAILQ_HEAD(, usb_task) usb_all_tasks;
 
-#ifndef __riscos
 dev_type_open(usbopen);
 dev_type_close(usbclose);
 dev_type_read(usbread);
@@ -129,6 +132,7 @@ const struct cdevsw usb_cdevsw = {
 #endif
 
 Static void	usb_discover(void *);
+#ifndef __riscos
 Static void	usb_create_event_thread(void *);
 Static void	usb_event_thread(void *);
 Static void	usb_task_thread(void *);
@@ -145,6 +149,7 @@ Static int usb_nevents = 0;
 Static struct selinfo usb_selevent;
 Static usb_proc_ptr usb_async_proc;  /* process that wants USB SIGIO */
 Static int usb_dev_open = 0;
+#endif
 Static void usb_add_event(int, struct usb_event *);
 
 Static int usb_get_next_event(struct usb_event *);
@@ -246,20 +251,19 @@ USB_ATTACH(usb)
 #ifdef __riscos
         /* set the explore flag here since threads don't do anything */
 	sc->sc_bus->needs_explore = 1;
-#endif
+#else
 	usb_kthread_create(usb_create_event_thread, sc);
+#endif
 
 	USB_ATTACH_SUCCESS_RETURN;
 }
 
-#if defined(__NetBSD__) || defined(__OpenBSD__) || defined(__riscos)
+#if defined(__NetBSD__) || defined(__OpenBSD__)
 void
 usb_create_event_thread(void *arg)
 {
 	struct usb_softc *sc = arg;
-#ifndef __riscos
-        static int created = 0;
-#endif
+	static int created = 0;
 
 	if (usb_kthread_create1(usb_event_thread, sc, &sc->sc_event_thread,
 			   "%s", sc->sc_dev.dv_xname)) {
@@ -267,7 +271,6 @@ usb_create_event_thread(void *arg)
 		       sc->sc_dev.dv_xname);
 		panic("usb_create_event_thread");
 	}
-#ifndef __riscos
 	if (!created) {
 		created = 1;
 		TAILQ_INIT(&usb_all_tasks);
@@ -277,7 +280,6 @@ usb_create_event_thread(void *arg)
 			panic("usb_create_event_thread task");
 		}
 	}
-#endif
 }
 
 /*
@@ -343,22 +345,11 @@ usb_event_thread(void *arg)
 #endif
 		usb_discover(sc);
 #ifdef USB_DEBUG
-#ifdef __riscos
 		(void)tsleep(&sc->sc_bus->needs_explore, PWAIT, "usbevt",
-		    usb_noexplore ? 0 : hz * 60, 1);
-#else
-
-                (void)tsleep(&sc->sc_bus->needs_explore, PWAIT, "usbevt",
 		    usb_noexplore ? 0 : hz * 60);
-#endif
-#else
-#ifdef __riscos
-		(void)tsleep(&sc->sc_bus->needs_explore, PWAIT, "usbevt",
-		    hz * 60, 1);
 #else
 		(void)tsleep(&sc->sc_bus->needs_explore, PWAIT, "usbevt",
 		    hz * 60);
-#endif
 #endif
 		DPRINTFN(2,("usb_event_thread: woke up\n"));
 	}
@@ -383,11 +374,7 @@ usb_task_thread(void *arg)
 	for (;;) {
 		task = TAILQ_FIRST(&usb_all_tasks);
 		if (task == NULL) {
-#ifdef __riscos
-			tsleep(&usb_all_tasks, PWAIT, "usbtsk", 0, 1);
-#else
 			tsleep(&usb_all_tasks, PWAIT, "usbtsk", 0);
-#endif
 			task = TAILQ_FIRST(&usb_all_tasks);
 		}
 		DPRINTFN(2,("usb_task_thread: woke up task=%p\n", task));
@@ -410,8 +397,33 @@ usbctlprint(void *aux, const char *pnp)
 
 	return (UNCONF);
 }
-#endif /* defined(__NetBSD__) || defined(__OpenBSD__) */
+#elif defined(__riscos)
+/* Dummy versions for RISC OS
+   TODO - Check that nothing relies on the task/event code working */
+void usb_create_event_thread(void *arg)
+{
+}
 
+void usb_add_task(usbd_device_handle dev, struct usb_task *task)
+{
+}
+
+void usb_rem_task(usbd_device_handle dev, struct usb_task *task)
+{
+}
+
+int
+usbctlprint(void *aux, const char *pnp)
+{
+	/* only "usb"es can attach to host controllers */
+	if (pnp)
+		logprintf("usb at %s", pnp);
+
+	return (UNCONF);
+}
+#endif
+
+#ifndef __riscos
 int
 usbopen(dev_t dev, int flag, int mode, usb_proc_ptr p)
 {
@@ -483,6 +495,7 @@ usbclose(dev_t dev, int flag, int mode, usb_proc_ptr p)
 
 	return (0);
 }
+#endif
 
 int
 usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
@@ -497,10 +510,12 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 			return (0);
 
 		case FIOASYNC:
+#ifndef __riscos
 			if (*(int *)data)
 				usb_async_proc = p;
 			else
 				usb_async_proc = 0;
+#endif
 			return (0);
 
 		default:
@@ -618,6 +633,7 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 	return (0);
 }
 
+#ifndef __riscos
 int
 usbpoll(dev_t dev, int events, usb_proc_ptr p)
 {
@@ -640,7 +656,6 @@ usbpoll(dev_t dev, int events, usb_proc_ptr p)
 	}
 }
 
-#ifndef __riscos
 static void
 filt_usbrdetach(struct knote *kn)
 {
@@ -743,6 +758,7 @@ usb_needs_reattach(usbd_device_handle dev)
         wakeup(&dev->bus->needs_explore);
 }
 
+#ifndef __riscos
 /* Called at splusb() */
 int
 usb_get_next_event(struct usb_event *ue)
@@ -816,6 +832,23 @@ usb_add_event(int type, struct usb_event *uep)
 		psignal(usb_async_proc, SIGIO);
 	splx(s);
 }
+#else
+/* The event stuff has never done anything (useful) under RISC OS */
+void
+usbd_add_dev_event(int type, usbd_device_handle udev)
+{
+}
+
+void
+usbd_add_drv_event(int type, usbd_device_handle udev, device_ptr_t dev)
+{
+}
+
+void
+usb_add_event(int type, struct usb_event *uep)
+{
+}
+#endif
 
 void
 usb_schedsoftintr(usbd_bus_handle bus)
@@ -905,3 +938,11 @@ usb_detach(device_ptr_t self, int flags)
 
 	return (0);
 }
+
+#ifdef USBHAL
+struct usbd_bus *usb_getbus(device_ptr_t self)
+{
+	struct usb_softc *sc = (struct usb_softc *)self;
+	return sc->sc_bus;
+}
+#endif
