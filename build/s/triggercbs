@@ -16,32 +16,43 @@
 ; trigger callbacks by calling OS_LeaveOS and OS_EnterOS
 
         GET     Hdr:ListOpts
-	OPT	OptNoList
+        OPT     OptNoList
         GET     Hdr:PublicWS
+        GET     Hdr:Macros
+        GET     Hdr:System
+        GET     Hdr:OSRSI6
 
-	AREA	|C$$code|, CODE, READONLY
+        AREA    |C$$data|, DATA
+ptr_IRQsema
+        DCD     0   ; Cached IRQsema ptr
 
-	EXPORT	triggercbs
+        AREA    |C$$code|, CODE, READONLY
+
+        EXPORT  triggercbs
 triggercbs
-;	MOV	ip, lr               ; seen cases of ip corrupted
-	stmfd   r13!, {lr}
-	MOV     lr, #0            
-;	LDR     lr, [lr,#&420]       ; kernel's CDA semaphore
-;	MOVS    lr, lr
-;	BNE     %ft2
-	LDR     lr, [lr,#IRQsema]    ; kernel's IRQ semaphore
-	MOVS    lr, lr
-;	BNE     %ft1
-	LDMNEFD r13!,{pc}            ; NZ is within IRQ.. so no CB allowed
-	SWI	&7c
-	SWI	&16
-	ldmfd   r13!,{pc}
-;	MOV	pc, ip
-;2
-;        DCD     &ff000000             ;illegal instr to abort to indicate
-                                      ; attempt to trigger cb whilst cda threaded
-;1
-;        DCD     &ff000000             ;illegal instr to abort to indicate
-                                       ; attempt to trigger CB in IRQ
+        stmfd   r13!, {lr}
+        LDR     r3, =ptr_IRQsema
+        LDR     r1, [sl,#-536]       ; Get relocation
+        ADD     r3, r3, r1
+        LDR     r2, [r3]
+        CMP     r2, #0
+        BNE     %FT10
+        MOV     r0, #6
+        MOV     r1, #0
+        MOV     r2, #OSRSI6_IRQsema
+        SWI     XOS_ReadSysInfo
+        MOVVS   r2, #0
+        CMP     r2, #0
+        MOVEQ   r2, #Legacy_IRQsema
+        STR     r2, [r3]
+10
+        LDR     lr, [r2]
+        MOVS    lr, lr
+        LDMNEFD r13!,{pc}            ; NZ is within IRQ.. so no CB allowed
+        SWI     OS_LeaveOS
+        SWI     OS_EnterOS
+        ldmfd   r13!,{pc}
 
-	END
+        LTORG
+
+        END

@@ -285,37 +285,26 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
     t_locks[i] = 0;
 
     /* wait until the lock is free */
-    int flags = 0;
-
     _kernel_irqs_on ();
+
     if (timo) {
         do {
             triggercbs ();
             t2 = gettime ();
-            _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
-        while ((t_locks[i] == 0) && (t2 < t1) && ((flags & _C) == 0));
+        while ((t_locks[i] == 0) && (t2 < t1));
     }
     else
     {
-        while (t_locks[i] == 0 && (flags & _C) == 0)
+        while (t_locks[i] == 0)
         {
-            /* allow foreground process to function while we're waiting */
-/*            if (noblock) _swix (OS_UpCall, _INR(0,1), 6, &t_locks[i]);*/
-/*//            _swix (OS_UpCall, _INR(0,1), 6, &t_locks[i]);*/
             triggercbs ();
-            _swix (OS_ReadEscapeState, _OUT(_FLAGS), &flags);
         }
 #ifdef USB_DEBUG0
         t2 = gettime ();
 #endif
     }
     _kernel_irqs_off ();
-
-    if (flags & _C)
-    {
-        _kernel_osbyte (126, 0, 0);
-    }
 
     t_handles[i] = 0;
 
