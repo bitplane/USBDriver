@@ -294,7 +294,7 @@ _kernel_oserror* register_bus(void *in,struct device **out)
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
     _kernel_oserror * e;
-    char* v;
+    char* v=NULL;
 
     (void) r;
     (void) pw;
@@ -522,6 +522,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     {
 #endif  /* RHENIUM */
         _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
+        if (v == 0) v = (char *)" ";
         strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
 //            [sizeof ohci_soft.sc_vendor - 1] = '\0';
 #ifdef   RHENIUM
@@ -743,6 +744,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             {
 #endif  /* RHENIUM */
                 _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
+                if (v == 0) v = (char *)" ";
                 strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
 //                    [sizeof ohci_soft.sc_vendor - 1] = '\0';
 #ifdef   RHENIUM
