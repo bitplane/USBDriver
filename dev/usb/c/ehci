@@ -2052,7 +2052,7 @@ ehci_rem_free_itd_chain(ehci_softc_t *sc, struct ehci_xfer *exfer)
 /*
  * Data structures and routines to emulate the root hub.
  */
-Static usb_device_descriptor_t ehci_devd = {
+Static const usb_device_descriptor_t ehci_devd = {
 	USB_DEVICE_DESCRIPTOR_SIZE,
 	UDESC_DEVICE,		/* type */
 	{0x00, 0x02},		/* USB version */
@@ -2199,12 +2199,12 @@ ehci_root_ctrl_start(usbd_xfer_handle xfer)
 				goto ret;
 			}
 			totlen = l = min(len, USB_DEVICE_DESCRIPTOR_SIZE);
-			USETW(ehci_devd.idVendor, sc->sc_id_vendor);
 #if defined(__CC_NORCROFT) && !defined(DISABLE_PACKED)
 			memcpy(buf, (void*) &ehci_devd, l);
 #else
 			memcpy(buf, &ehci_devd, l);
 #endif
+			USETW(((usb_device_descriptor_t *) buf)->idVendor, sc->sc_id_vendor);
 			break;
 		/*
 		 * We can't really operate at another speed, but the spec says

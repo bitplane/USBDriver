@@ -75,8 +75,8 @@ extern void USBHAL_Init(void *heapbase,uint32_t heapsize,void *ncnbbase,uint32_t
 /* Process keyboard scan */
 extern uint32_t USBHAL_KbdScan(void);
 
-/* Process keyboard scan interrupt */
-extern void USBHAL_KbdScanInterrupt(void);
+/* Process keyboard scan interrupt. Returns -1 if IRQ handled, or 'irq' if not. */
+extern int USBHAL_KbdScanInterrupt(int irq);
 
 /* Finish keyboard scan and shut everything down */
 extern void USBHAL_Shutdown(void);

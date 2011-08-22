@@ -2615,7 +2615,7 @@ ohci_abort_xfer(usbd_xfer_handle xfer, usbd_status status)
 /*
  * Data structures and routines to emulate the root hub.
  */
-Static usb_device_descriptor_t ohci_devd = {
+Static const usb_device_descriptor_t ohci_devd = {
 	USB_DEVICE_DESCRIPTOR_SIZE,
 	UDESC_DEVICE,		/* type */
 	{0x00, 0x01},		/* USB version */
@@ -2628,7 +2628,7 @@ Static usb_device_descriptor_t ohci_devd = {
 	1			/* # of configurations */
 };
 
-Static usb_config_descriptor_t ohci_confd = {
+Static const usb_config_descriptor_t ohci_confd = {
 	USB_CONFIG_DESCRIPTOR_SIZE,
 	UDESC_CONFIG,
 	{USB_CONFIG_DESCRIPTOR_SIZE +
@@ -2641,7 +2641,7 @@ Static usb_config_descriptor_t ohci_confd = {
 	0			/* max power */
 };
 
-Static usb_interface_descriptor_t ohci_ifcd = {
+Static const usb_interface_descriptor_t ohci_ifcd = {
 	USB_INTERFACE_DESCRIPTOR_SIZE,
 	UDESC_INTERFACE,
 	0,
@@ -2653,7 +2653,7 @@ Static usb_interface_descriptor_t ohci_ifcd = {
 	0
 };
 
-Static usb_endpoint_descriptor_t ohci_endpd = {
+Static const usb_endpoint_descriptor_t ohci_endpd = {
 	USB_ENDPOINT_DESCRIPTOR_SIZE,
 	UDESC_ENDPOINT,
 	UE_DIR_IN | OHCI_INTR_ENDPT,
@@ -2662,7 +2662,7 @@ Static usb_endpoint_descriptor_t ohci_endpd = {
 	255
 };
 
-Static usb_hub_descriptor_t ohci_hubd = {
+Static const usb_hub_descriptor_t ohci_hubd = {
 	USB_HUB_DESCRIPTOR_SIZE,
 	UDESC_HUB,
 	0,
@@ -2765,8 +2765,8 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 				goto ret;
 			}
 			totlen = l = min(len, USB_DEVICE_DESCRIPTOR_SIZE);
-			USETW(ohci_devd.idVendor, sc->sc_id_vendor);
 			memcpy(buf, (void *)&ohci_devd, l);
+			USETW(((usb_device_descriptor_t *) buf)->idVendor, sc->sc_id_vendor);
 			break;
 		case UDESC_CONFIG:
 			if ((value & 0xff) != 0) {
