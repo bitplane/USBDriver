@@ -2149,6 +2149,8 @@ ehci_root_ctrl_start(usbd_xfer_handle xfer)
 	int s, len, value, index, l, totlen = 0;
 	usb_port_status_t ps;
 	usb_hub_descriptor_t hubd;
+	usb_device_descriptor_t devd;
+	usb_config_descriptor_t confd;
 	usbd_status err;
 	u_int32_t v;
 
@@ -2198,13 +2200,14 @@ ehci_root_ctrl_start(usbd_xfer_handle xfer)
 				err = USBD_IOERROR;
 				goto ret;
 			}
+			devd = ehci_devd;
+			USETW(devd.idVendor, sc->sc_id_vendor);
 			totlen = l = min(len, USB_DEVICE_DESCRIPTOR_SIZE);
 #if defined(__CC_NORCROFT) && !defined(DISABLE_PACKED)
-			memcpy(buf, (void*) &ehci_devd, l);
+			memcpy(buf, (void*) &devd, l);
 #else
-			memcpy(buf, &ehci_devd, l);
+			memcpy(buf, &devd, l);
 #endif
-			USETW(((usb_device_descriptor_t *) buf)->idVendor, sc->sc_id_vendor);
 			break;
 		/*
 		 * We can't really operate at another speed, but the spec says
@@ -2232,14 +2235,14 @@ ehci_root_ctrl_start(usbd_xfer_handle xfer)
 				err = USBD_IOERROR;
 				goto ret;
 			}
+			confd = ehci_confd;
+			confd.bDescriptorType = value >> 8;
 			totlen = l = min(len, USB_CONFIG_DESCRIPTOR_SIZE);
 #if defined(__CC_NORCROFT) && !defined(DISABLE_PACKED)
-			memcpy(buf, (void*) &ehci_confd, l);
+			memcpy(buf, (void*) &confd, l);
 #else
-			memcpy(buf, &ehci_confd, l);
+			memcpy(buf, &confd, l);
 #endif
-			((usb_config_descriptor_t *)buf)->bDescriptorType =
-				value >> 8;
 			buf = (char *)buf + l;
 			len -= l;
 			l = min(len, USB_INTERFACE_DESCRIPTOR_SIZE);

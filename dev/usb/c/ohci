@@ -2716,6 +2716,7 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 	int s, len, value, index, l, totlen = 0;
 	usb_port_status_t ps;
 	usb_hub_descriptor_t hubd;
+	usb_device_descriptor_t devd;
 	usbd_status err;
 	u_int32_t v;
 
@@ -2764,9 +2765,10 @@ ohci_root_ctrl_start(usbd_xfer_handle xfer)
 				err = USBD_IOERROR;
 				goto ret;
 			}
+			devd = ohci_devd;
+			USETW(devd.idVendor, sc->sc_id_vendor);
 			totlen = l = min(len, USB_DEVICE_DESCRIPTOR_SIZE);
-			memcpy(buf, (void *)&ohci_devd, l);
-			USETW(((usb_device_descriptor_t *) buf)->idVendor, sc->sc_id_vendor);
+			memcpy(buf, (void *)&devd, l);
 			break;
 		case UDESC_CONFIG:
 			if ((value & 0xff) != 0) {
