@@ -636,7 +636,7 @@ int pointerv (_kernel_swi_regs* r, void* pw)
 
 static _kernel_oserror *zscroll_handler(_kernel_swi_regs *r, void *pw, void *h)
 {
-	int b[64];
+	int b[10];
 
 	(void) r;
 	(void) pw;
@@ -644,11 +644,28 @@ static _kernel_oserror *zscroll_handler(_kernel_swi_regs *r, void *pw, void *h)
 
 	_swix (Wimp_GetPointerInfo, _IN(1), b);
 	b[0] = b[3];
-	if((relz || relw) && !_swix (Wimp_GetWindowState, _IN(1), b)) // valid window handle
+	if((relz || relw) && (b[0] != -1) && !_swix (Wimp_GetWindowState, _IN(1), b)) // valid window handle
 	{
 		/* does it do scroll requests? */
 		if (b[8] & ((1<<8)|(1<<9)))
 		{
+			/* Only scroll if scrollbars are present */
+			if(b[8] & (1<<31))
+			{
+				/* New format window flags word */
+				if(!(b[8] & (1<<28)))
+					relz = 0;
+				if(!(b[8] & (1<<30)))
+					relw = 0;
+			}
+			else
+			{
+				/* Old format window flags word */
+				if(!(b[8] & (1<<2)))
+					relz = 0;
+				if(!(b[8] & (1<<3)))
+					relw = 0;
+			}
 			relz*=5; // a bit more movement...
 			relw*=5;
 			while(relz || relw)
