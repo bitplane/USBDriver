@@ -1398,7 +1398,10 @@ ehci_allocm(struct usbd_bus *bus, usb_dma_t *dma, u_int32_t size)
 	struct ehci_softc *sc = (struct ehci_softc *)bus;
 	usbd_status err;
 
-	err = usb_allocmem(&sc->sc_bus, size, 0, dma);
+	/* The EHCI controller in the DM37x seems to have difficulty if the last packet of a bulk transfer is a short packet that crosses a page boundary. It looks like the second half of the packet doesn't get written to memory, or gets written to completely the wrong place.
+	   This problem is easiest to reproduce using the USB ethernet on the BB-xM
+	   As a simple workaround, force all EHCI buffers to be 512 byte aligned */
+	err = usb_allocmem(&sc->sc_bus, size, 512, dma);
 #ifndef __riscos
 	if (err == USBD_NOMEM)
 		err = usb_reserve_allocm(&sc->sc_dma_reserve, dma, size);
