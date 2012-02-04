@@ -1,4 +1,4 @@
-| Copyright 2005 Castle Technology Ltd
+| Copyright 2012 Castle Technology Ltd
 |
 | Licensed under the Apache License, Version 2.0 (the "License");
 | you may not use this file except in compliance with the License.
@@ -13,9 +13,7 @@
 | limitations under the License.
 |
 dir <obey$dir>
-echo starting build
-amu_machine all rom COMPONENT=USBDriver CDEBUG="-DDEBUGLIB -DUSB_DEBUG -DOHCI_DEBUG" CFLAGS="-ff -DSTANDALONE -DRHENIUM " THROWBACK=-throwback 
-amu_machine all rom COMPONENT=OHCIDriver CDEBUG="-DDEBUGLIB -DUSB_DEBUG -DOHCI_DEBUG" CFLAGS="-ff -DSTANDALONE -DRHENIUM " CMHGFLAGS="-DRHENIUM " THROWBACK=-throwback  -DRHENIUM 
-|amu_machine all rom COMPONENT=EHCIDriver CFLAGS="-ff -DSTANDALONE -DRHENIUM -DRHENIUM_NO_ISOC -DRHENIUM_NO_BULK " THROWBACK=-throwback
+amu_machine resources RESDIR=null:$ COMPONENT=OHCIdriver
+amu_machine resources RESDIR=null:$ COMPONENT=USBDriver
+amu_machine resources RESDIR=null:$ COMPONENT=EHCIDriver
 
-                

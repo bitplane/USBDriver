@@ -13,7 +13,6 @@
 | limitations under the License.
 |
 dir <obey$dir>
-echo starting build
-amu_machine all rom COMPONENT=USBDriver CFLAGS="-ff -DSTANDALONE" THROWBACK=-throwback
-amu_machine all rom COMPONENT=OHCIDriver CFLAGS="-ff -DSTANDALONE" THROWBACK=-throwback
-amu_machine all rom COMPONENT=EHCIDriver CFLAGS="-ff -DSTANDALONE" THROWBACK=-throwback
+amu_machine standalone COMPONENT=USBDriver  CDEFINES="-DSTANDALONE" THROWBACK=-throwback
+amu_machine standalone COMPONENT=OHCIDriver CDEFINES="-DSTANDALONE" THROWBACK=-throwback
+amu_machine standalone COMPONENT=EHCIDriver CDEFINES="-DSTANDALONE" THROWBACK=-throwback

@@ -14,99 +14,155 @@
 #
 # Make file for RISC OS port of NetBSD USB code
 # 
-# This makefile generates the main USBDriver and the controller drivers
-# by including the relevant object file.
 
-TARGET          = ${COMPONENT}
-DIRS            = o._dirs
-MSGLOC          = Resources.${COMPONENT}.Messages
+UNAME           = "RISC_OS"
+VPATH           = ^.build ^.dev.usb
 DEVICELIST      = Resources.<Locale>.USBDevs
-#LIBS		= ${DEBUGLIB} ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
-LIBS            = ${DEBUGLIB} ${MODMALLOCLIB} ${WILDLIB} ${DDTLIB} ${DESKLIB}  ${NET5LIBS} ${CALLXLIB} ${ASMUTILS} ${TBOXLIBS}
-RDIR            = ${RESDIR}.${COMPONENT}
-USBDIR          = <Lib$Dir>.USB
+CLEAN_DEPEND    = clean-extras
+CUSTOMRES       = custom
+CUSTOMEXP       = custom
+COMPONENT      ?= NetBSD
+CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:,C:USB
+CDEFINES       += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
+RES_OBJ         =
+RES_AREA        = resource_files
+LIBS            = ${CALLXLIB} ${ASMUTILS}
 
-CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:
-CDEFINES        += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
-CMHGINCLUDES    = ${CINCLUDES}
-CMHGDEFINES     = ${CDEBUG}
-CFLAGS          += -ff -wp -wc -zm -zps1
-LDFLAGS         = -LIST maps.${TARGET} -MAP -Xref -Symbols rm.sym${TARGET}
+#
+# Generate USBDriver and the controller drivers by choosing the list of objects
+#
+ifeq ("${COMPONENT}","EHCIDriver")
+CMHGFILE        = ehcimodhead
+CMHGDEPENDS     = ehcimodule
+MSGS_ORIGIN     = LocalRes:EHCIMessages
+OBJS            = ehcimodule ehci port call_veneer \
+                  triggercbs usbroothub_subr
+OBJS_HAL        = o_hal.ehci o_hal.usbroothub_subr o_hal.ehcihal
+endif
 
-VPATH = ^.build ^.dev.usb
+ifeq ("${COMPONENT}","OHCIDriver")
+CMHGFILE        = ohcimodhead
+CMHGDEPENDS     = ohcimodule
+MSGS_ORIGIN     = LocalRes:OHCIMessages
+OBJS            = ohcimodule ohci port call_veneer \
+                  triggercbs
+OBJS_HAL        = o_hal.ohci
+endif
 
-include OBJ${COMPONENT}
+ifeq ("${COMPONENT}","USBDriver")
+CMHGFILE        = usbmodhead
+CMHGDEPENDS     = usbmouse usbmodule usbkboard
+MSGS_ORIGIN     = LocalRes:USBMessages
+OBJS            = usbmodule port usb usbdi usb_subr \
+                  usbdi_util usb_quirks uhub usbmouse usbkboard \
+                  hid bufman triggercbs call_veneer
+OBJS_HAL        = o_hal.usb o_hal.usbdi o_hal.usb_subr o_hal.usbdi_util \
+                  o_hal.usb_quirks o_hal.uhub o_hal.porthal o_hal.halheap \
+                  o_hal.usbhal
+endif
 
-include StdTools
-include ModStdRule
-#MODSQZ = echo not squeezing... 
-include ModuleLibs
-include RAMCModule
-include ROMCModule
+SA_OBJS         = ${OBJS} ${COMPONENT}Res
+DBG_OBJS        = ${OBJS} ${COMPONENT}Res
 
-UNAME=	"RISC_OS"
+include CModule
 
+CFLAGS         += -wp -wc
+LDFLAGS        += -LIST maps.${TARGET} -MAP -Xref -Symbols rm.sym${TARGET}
+DBG_LIBS       += ${NET5LIBS}
+DIRS            = o.dirs
+EXPDIR          = <Lib$Dir>.USB
 
+#
+# HAL library rules
+#
+.SUFFIXES: .o_hal
+.c.o_hal:; ${CC} -APCS 3/nofp/noswst -wp -ff -DUSBHAL -c -depend !Depend -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED ${CINCLUDES} ${THROWBACK} -o $@ $<
+.s.o_hal:; ${AS} ${ASFLAGS} -APCS 3/nofp/noswst -o $@ $<
 
-clean:
-        ${WIPE} o      ${WFLAGS}
-        ${WIPE} o_hal  ${WFLAGS}
-        ${WIPE} aif    ${WFLAGS}
-        ${WIPE} aof    ${WFLAGS}
-        ${WIPE} rm     ${WFLAGS}
-        ${WIPE} i      ${WFLAGS}
-        ${WIPE} maps   ${WFLAGS}
-        ${WIPE} gpa    ${WFLAGS}
-        ${WIPE} bin    ${WFLAGS}
-        ${WIPE} linked ${WFLAGS}
-        ${RM}   h.ehcimodhead
-        ${RM}   h.ohcimodhead
-        ${RM}   h.usbmodhead
-        ${RM}   Resources.<Locale>.USBDevs
-        ${RM}   ^.dev.usb.h.usbdevs
-        ${RM}   ^.dev.usb.h.usbdevs_data
-        
-all: o._dirs
+#
+# Produce the devices list
+#
+bin.makedevs: c.makedevs ${DIRS}
+        ${MAKE} -f makedevs/mk COMPONENT=makedevs THROWBACK=${THROWBACK}
+
+${DEVICELIST}: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
+        ${RUN}bin.makedevs > $@
+
+#
+# Overridden targets
+#
+clean-extras:
+        ${XWIPE} o_hal ${WFLAGS}
+        ${XWIPE} maps  ${WFLAGS}
+        ${XWIPE} bin   ${WFLAGS}
+        ${RM}    h.ehcimodhead
+        ${RM}    h.ohcimodhead
+        ${RM}    h.usbmodhead
+        ${RM}    ${DEVICELIST}
+        ${RM}    ^.dev.usb.h.usbdevs
+        ${RM}    ^.dev.usb.h.usbdevs_data
 
 export: export_${PHASE}
+        @${NOP}
 
-export_libs: ${USBDIR}.o.${COMPONENT}
-        @echo ${COMPONENT}: export complete (libs)
+export_libs: ${EXPDIR}.o.${COMPONENT}
+        @echo ${COMPONENT}: library export complete
 
 export_hdrs:   ^.dev.usb.h.usbdevs
-        ${MKDIR} ${USBDIR}.dev.usb.h
-        ${MKDIR} ${USBDIR}.h
-        ${MKDIR} ${USBDIR}.sys.h
-        ${MKDIR} ${USBDIR}.Hdr
-        ${CP} ^.dev.usb.h.usb      ${USBDIR}.dev.usb.h.usb      ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbdevs  ${USBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbdi    ${USBDIR}.dev.usb.h.usbdi    ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usb_port ${USBDIR}.dev.usb.h.usb_port ${CPFLAGS}
-        ${CP} h.USBDevFS           ${USBDIR}.h.USBDevFS         ${CPFLAGS}
-        ${CP} ^.sys.h.device       ${USBDIR}.sys.h.device       ${CPFLAGS}
-        ${CP} ^.VersionNum         ${USBDIR}.NetBSDVersion      ${CPFLAGS}
-        ${CP} Hdr.usbhal           ${USBDIR}.Hdr.usbhal         ${CPFLAGS}
-        @echo ${COMPONENT}: export complete (hdrs)
+        ${MKDIR} ${EXPDIR}.dev.usb.h
+        ${MKDIR} ${EXPDIR}.h
+        ${MKDIR} ${EXPDIR}.sys.h
+        ${MKDIR} ${EXPDIR}.Hdr
+        ${CP} ^.dev.usb.h.usb      ${EXPDIR}.dev.usb.h.usb      ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdevs  ${EXPDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdi    ${EXPDIR}.dev.usb.h.usbdi    ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usb_port ${EXPDIR}.dev.usb.h.usb_port ${CPFLAGS}
+        ${CP} h.USBDevFS           ${EXPDIR}.h.USBDevFS         ${CPFLAGS}
+        ${CP} ^.sys.h.device       ${EXPDIR}.sys.h.device       ${CPFLAGS}
+        ${CP} ^.VersionNum         ${EXPDIR}.LibVersion         ${CPFLAGS}
+        ${CP} Hdr.usbhal           ${EXPDIR}.Hdr.usbhal         ${CPFLAGS}
+        @echo ${COMPONENT}: header export complete
 
 resources: resources_${COMPONENT}
 
 resources_OHCIDriver: LocalRes:OHCIMessages
-        ${MKDIR} ${RDIR}
-        ${CP} LocalRes:OHCIMessages ${RDIR}.Messages ${CPFLAGS}
-        @echo ${COMPONENT}: resource files copied
+        ${MKDIR} ${RESFSDIR}
+        ${TOKENCHECK} LocalRes:OHCIMessages
+        ${CP} LocalRes:OHCIMessages ${RESFSDIR}.Messages ${CPFLAGS}
+        @echo ${COMPONENT}: resources copied to Messages module
 
 resources_EHCIDriver: LocalRes:EHCIMessages
-        ${MKDIR} ${RDIR}
-        ${CP} LocalRes:EHCIMessages ${RDIR}.Messages ${CPFLAGS}
-        @echo ${COMPONENT}: resource files copied
+        ${MKDIR} ${RESFSDIR}
+        ${TOKENCHECK} LocalRes:EHCIMessages
+        ${CP} LocalRes:EHCIMessages ${RESFSDIR}.Messages ${CPFLAGS}
+        @echo ${COMPONENT}: resources copied to Messages module
 
 resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
-        ${MKDIR} ${RDIR}
-        ${CP} LocalRes:USBMessages ${RDIR}.Messages ${CPFLAGS}
-        ${CP} ${DEVICELIST} ${RDIR}.USBDevs ${CPFLAGS}
-        @echo ${COMPONENT}: resource files copied
+        ${MKDIR} ${RESFSDIR}
+        ${TOKENCHECK} LocalRes:USBMessages
+        ${CP} LocalRes:USBMessages ${RESFSDIR}.Messages ${CPFLAGS}
+        ${CP} ${DEVICELIST} ${RESFSDIR}.USBDevs ${CPFLAGS}
+        @echo ${COMPONENT}: resources copied to Messages module
 
-o._dirs:
+#
+# Static dependencies
+#
+^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data: ^.dev.usb.usbdevs ^.dev.usb.devlist2h/awk
+        ${GAWK} -v os="${UNAME} -s" -f ^.dev.usb.devlist2h/awk ^.dev.usb.usbdevs
+
+${EXPDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
+        ${MKDIR} ${EXPDIR}.o
+        ${AR} ${ARFLAGS} $@ ${OBJS_HAL}
+
+${MERGEDMDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
+        ${MKDIR} ${MERGEDMDIR}
+        ${TOKENCHECK} ${MSGS_ORIGIN}
+        ${CP} ${MSGS_ORIGIN} $@ ${CPFLAGS}
+
+o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDMDIR}.${COMPONENT}Msgs ${DIRS}
+        ${RESGEN} ${RES_AREA} $@ ${MERGEDMDIR}.${COMPONENT}Msgs ${RES_PATH}
+
+o.dirs:
         ${MKDIR} o
         ${MKDIR} o_hal
         ${MKDIR} aif
@@ -116,65 +172,6 @@ o._dirs:
         ${MKDIR} maps
         ${MKDIR} gpa
         ${MKDIR} bin
-        ${TOUCH} o._dirs
-
-ehcimodule.o:   ehcimodhead.h
-ohcimodule.o:   ohcimodhead.h USBDriver.h
-usbmodule.o usbkboard.o:        usbmodhead.h
-
-^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data: ^.dev.usb.usbdevs ^.dev.usb.devlist2h/awk
-	${GAWK} -v os="${UNAME} -s" -f ^.dev.usb.devlist2h/awk ^.dev.usb.usbdevs
-
-Resources.<Locale>.USBDevs: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
-        ${RUN}bin.makedevs > Resources.<Locale>.USBDevs
-
-USBDriver.h: usbmodhead.h
-        ${SED} -n "/define USBDriver_/p" h.usbmodhead > h.USBDriver
-
-bin.makedevs: c.makedevs ${CLIB} ${DIRS}
-        ${MAKE} -f makedevs/mk COMPONENT=makedevs THROWBACK=${THROWBACK}
-
-usbmsgs.o: Resources.<Locale>.USBMessages Resources.<Locale>.USBDevs
-        resgen resource_files o.usbmsgs Resources.<Locale>.USBMessages ${MSGLOC} Resources.<Locale>.USBDevs Resources.USBDriver.USBDevs
-
-ohcimsgs.o: Resources.<Locale>.OHCIMessages
-        resgen resource_files o.ohcimsgs Resources.<Locale>.OHCIMessages ${MSGLOC}
-
-ehcimsgs.o: Resources.<Locale>.EHCIMessages
-        resgen resource_files o.ehcimsgs Resources.<Locale>.EHCIMessages ${MSGLOC}
-
-# HAL libraries:
-.SUFFIXES: .o_hal
-.c.o_hal:; ${CC} -APCS 3/nofp/noswst -wp -ff -DUSBHAL -c -depend !Depend -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED ${CINCLUDES} ${THROWBACK} -o $@ $<
-.s.o_hal:; ${AS} ${ASFLAGS} -APCS 3/nofp/noswst -o $@ $<
-
-${USBDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
-        ${MKDIR} ${USBDIR}.o
-        ${AR} ${ARFLAGS} ${USBDIR}.o.${COMPONENT} ${OBJS_HAL}
-
-# RISC OS debug:
-aif.${COMPONENT}: ${RAM_OBJS} ${RAM_LIBS} ${CLIB} ${DIRS}
-        link -base 0 -aif -bin -d -o $@ ${RAM_OBJS} ${RAM_LIBS} ${CLIB}
-
-gpa.${COMPONENT}: aif.${COMPONENT}
-        togpa -s aif.${COMPONENT} $@
-
-debug: gpa.${COMPONENT} ${DIRS}
-
-.SUFFIXES: .i
-
-.c.i:;  ${CC} -E ${CFLAGS} $< > $@
-
-listing: i.ohci i.ohcimodule i.usb i.usbdi i.usbdi_util i.usb_subr i.ugen i.usbmodule i.ehcimodule
-
-BBETYPE = usb
-bbe-usb: bbe-generic
-        ${MKDIR} ${BBEDIR}.aof
-        BBE_Export_File aof.${TARGET}
-        ${CP} rom_link_v.${TARGET} ${VERBATIMROMLINK} ${CPFLAGS}
-        BBE_Export_File ^.VersionNum
-
-# Static dependencies:
-o.makedevs o.usbmouse: ^.dev.usb.h.usbdevs
+        ${TOUCH} $@
 
 # Dynamic dependencies:

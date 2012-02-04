@@ -19,7 +19,6 @@ OBJS      = makedevs
 CINCLUDES = -I^.
 
 include HostTools
-include StdRules
 include AppLibs
 include CApp
 
