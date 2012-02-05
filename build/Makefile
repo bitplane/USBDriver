@@ -18,7 +18,6 @@
 UNAME           = "RISC_OS"
 VPATH           = ^.build ^.dev.usb
 DEVICELIST      = Resources.<Locale>.USBDevs
-CLEAN_DEPEND    = clean-extras
 CUSTOMRES       = custom
 CUSTOMEXP       = custom
 COMPONENT      ?= NetBSD
@@ -69,7 +68,6 @@ include CModule
 CFLAGS         += -wp -wc
 LDFLAGS        += -LIST maps.${TARGET} -MAP -Xref -Symbols rm.sym${TARGET}
 DBG_LIBS       += ${NET5LIBS}
-DIRS            = o.dirs
 EXPDIR          = <Lib$Dir>.USB
 
 #
@@ -89,9 +87,9 @@ ${DEVICELIST}: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
         ${RUN}bin.makedevs > $@
 
 #
-# Overridden targets
+# Supplemented or overridden targets
 #
-clean-extras:
+clean::
         ${XWIPE} o_hal ${WFLAGS}
         ${XWIPE} maps  ${WFLAGS}
         ${XWIPE} bin   ${WFLAGS}
@@ -101,6 +99,11 @@ clean-extras:
         ${RM}    ${DEVICELIST}
         ${RM}    ^.dev.usb.h.usbdevs
         ${RM}    ^.dev.usb.h.usbdevs_data
+
+${DIRS}::
+        ${MKDIR} o_hal
+        ${MKDIR} maps
+        ${MKDIR} bin
 
 export: export_${PHASE}
         @${NOP}
@@ -162,16 +165,5 @@ ${MERGEDMDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
 o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDMDIR}.${COMPONENT}Msgs ${DIRS}
         ${RESGEN} ${RES_AREA} $@ ${MERGEDMDIR}.${COMPONENT}Msgs ${RES_PATH}
 
-o.dirs:
-        ${MKDIR} o
-        ${MKDIR} o_hal
-        ${MKDIR} aif
-        ${MKDIR} aof
-        ${MKDIR} rm
-        ${MKDIR} i
-        ${MKDIR} maps
-        ${MKDIR} gpa
-        ${MKDIR} bin
-        ${TOUCH} $@
 
 # Dynamic dependencies:
