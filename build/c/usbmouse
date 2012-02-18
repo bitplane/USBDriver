@@ -487,7 +487,7 @@ struct device* attach_mouse (struct device* parent, void* aux)
 
 	/* If so, allocate memory for the device and attach ourselves. */
 	softc = malloc (sizeof *sc);
-	if (softc == 0) {
+	if (softc == NULL) {
 		dprintf (("", "Couldn't allocate memory for mouse device\n"));
 		return NULL;
 	}

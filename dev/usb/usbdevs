@@ -395,6 +395,7 @@ vendor PROLIFIC2	0x0b8c	Prolific Technology Inc
 vendor O2MICRO		0x0b97	O2 Micro
 vendor USR		0x0baf	U.S. Robotics
 vendor AMBIT		0x0bb2	Ambit Microsystems
+vendor HTC		0x0bb4	HTC
 vendor REALTEK		0x0bda	Realtek
 vendor ADDONICS2	0x0bf6	Addonics Technology
 vendor FSC		0x0bf8	Fujitsu Siemens Computers
@@ -430,6 +431,7 @@ vendor RIM		0x0fca	Research In Motion
 vendor DYNASTREAM	0x0fcf	Dynastream Innovations
 vendor SUNRISING	0x0fe6	SUNRISING
 vendor QUALCOMM		0x1004	Qualcomm
+vendor HP3		0x103c	Hewlett Packard
 vendor GIGABYTE		0x1044	GIGABYTE
 vendor MOTOROLA		0x1063	Motorola
 vendor CCYU		0x1065	CCYU Technology
@@ -460,6 +462,7 @@ vendor HUAWEI		0x12d1	Huawei Technologies
 vendor AINCOMM		0x12fd	Aincomm
 vendor MOBILITY		0x1342	Mobility
 vendor DICKSMITH	0x1371	Dick Smith Electronics
+vendor NETGEAR3		0x1385	Netgear
 vendor BALTECH		0x13ad	Baltech
 vendor CISCOLINKSYS	0x13b1	Cisco-Linksys
 vendor SHARK		0x13d2	Shark
@@ -500,6 +503,7 @@ vendor QUALCOMMINC	0x19d2	Qualcomm, Incorporated
 vendor WINCHIPHEAD2	0x1a86	QinHeng Electronics
 vendor DLINK		0x2001	D-Link
 vendor PLANEX2		0x2019	Planex Communications
+vendor DLINK3		0x2101  D-Link
 vendor ERICSSON		0x2282	Ericsson
 vendor MOTOROLA2	0x22b8	Motorola
 vendor PINNACLE		0x2304	Pinnacle Systems
@@ -711,12 +715,14 @@ product APPLE EXT_KBD		0x020c	Apple Extended USB Keyboard
 product APPLE OPTMOUSE		0x0302	Optical mouse
 product APPLE MIGHTYMOUSE	0x0304	Mighty Mouse
 product APPLE MAGICMOUSE	0x030d	Magic Mouse
+product APPLE BLUETOOTH_HIDMODE	0x1000	Bluetooth HCI (HID-proxy mode)
 product APPLE EXT_KBD_HUB	0x1003	Hub in Apple Extended USB Keyboard
 product APPLE SPEAKERS		0x1101	Speakers
 product APPLE IPHONE		0x1290	iPhone
 product APPLE IPOD_TOUCH	0x1291	iPod Touch
 product APPLE IPHONE_3G		0x1292	iPhone 3G
-product	APPLE IPHONE_3GS	0x1294	iPhone 3GS
+product APPLE IPHONE_3GS	0x1294	iPhone 3GS
+product APPLE IPAD		0x129a	Apple iPad
 product APPLE ETHERNET		0x1402	Apple USB to Ethernet
 
 /* ArkMicroChips products */
@@ -1291,11 +1297,16 @@ product HP RNDIS		0x1c1d	Generic RNDIS
 product HP 640C			0x2004	DeskJet 640c
 product HP 4670V		0x3005	ScanJet 4670v
 product HP P1100		0x3102	Photosmart P1100
+product HP V125W		0x3307	v125w
 product HP 6127			0x3504	Deskjet 6127
 product HP HN210E		0x811c	Ethernet HN210E
 
 /* HP products */
+product HP3 RTL8188CU		0x1629	RTL8188CU
 product HP2 C500		0x6002	PhotoSmart C500
+
+/* HTC products */
+product HTC ANDROID		0x0ffe	Android
 
 /* Huawei Technologies products */
 product HUAWEI MOBILE		0x1001	Huawei Mobile
@@ -1380,6 +1391,8 @@ product IODATA USBWNB11		0x0922	USB Airport WN-B11
 product IODATA ETGUS2		0x0930	ETG-US2
 product IODATA USBRSAQ		0x0a03	USB serial adapter USB-RSAQ1
 product IODATA USBRSAQ5		0x0a0e	USB serial adapter USB-RSAQ5
+
+/* I-O DATA(2) products */
 product IODATA2 USB2SC		0x0a09	USB2.0-SCSI Bridge USB2-SC
 
 /* Iomega products */
@@ -1517,6 +1530,9 @@ product LOGITEC LDR_H443U2	0x00b3	DVD Multi-plus unit LDR-H443U2
 product LOGITEC LAN_GTJU2	0x0102	LAN-GTJ/U2
 product LOGITEC LANTX		0x0105	LAN-TX
 product LOGITEC RTL8187		0x010c	RTL8187
+product LOGITEC RT2870_1	0x0162	RT2870
+product LOGITEC RT2870_2	0x0163	RT2870
+product LOGITEC RT2870_3	0x0164	RT2870
 
 /* Logitech products */
 product LOGITECH M2452		0x0203	M2452 keyboard
@@ -1921,6 +1937,7 @@ product PHILIPS DSS150		0x0471	DSS 150 Digital Speaker System
 product PHILIPS CPWUA054	0x1230	CPWUA054
 product PHILIPS SNU5600		0x1236	SNU5600
 product PHILIPS DIVAUSB		0x1801	DIVA USB mp3 player
+product PHILIPS RT2870		0x200f	RT2870
 
 /* Philips Semiconductor products */
 product PHILIPSSEMI HUB1122	0x1122	hub
@@ -2008,6 +2025,7 @@ product PUTERCOM UPA100		0x047e	USB-1284 BRIDGE
 product QCOM RT2573		0x6196	RT2573
 product QCOM RT2573_2		0x6229	RT2573
 product QCOM RT2573_3		0x6238	RT2573
+product QCOM RT2870		0x6259	RT2870
 
 /* Qtronix products */
 product QTRONIX 980N		0x2011	Scorpion-980N keyboard
@@ -2102,8 +2120,11 @@ product SAITEK CYBORG_3D_GOLD	0x0006	Cyborg 3D Gold Joystick
 
 /* Samsung products */
 product SAMSUNG MIGHTYDRIVE	0x1623	Mighty Drive
+product SAMSUNG RT2870_1	0x2018	RT2870
 product SAMSUNG ML6060		0x3008	ML-6060 laser printer
+product SAMSUNG ANDROID		0x6863	Android
 product SAMSUNG GTB3710		0x6876	GT-B3710 LTE/4G datacard
+product SAMSUNG ANDROID2	0x6881	Android
 product SAMSUNG GTB3730		0x689a	GT-B3730 LTE/4G datacard
 
 /* SanDisk products */
@@ -2114,6 +2135,7 @@ product SANDISK SDDR12		0x0100	ImageMate SDDR-12
 product SANDISK SDDR09		0x0200	ImageMate SDDR-09
 product SANDISK SDDR86		0x0621	ImageMate SDDR-86
 product SANDISK SDDR75		0x0810	ImageMate SDDR-75
+product SANDISK SANSA_CLIP	0x7433	Sansa Clip
 
 /* Sanwa Supply products */
 product SANWASUPPLY JYDV9USB	0x9806	JY-DV9USB gamepad
@@ -2275,6 +2297,25 @@ product SMC 2202USB		0x0200	10/100 ethernet adapter
 product SMC 2206USB		0x0201	EZ Connect USB Ethernet Adapter
 product SMC 2862WG		0xee13	EZ Connect g Wireless USB Adapter
 product SMC2 2020HUB		0x2020	USB Hub
+product SMC2 SMSC9500		0x9500	SMSC9500 Ethernet device
+product SMC2 SMSC9505		0x9505	SMSC9505 Ethernet device
+product SMC2 SMSC9500A		0x9e00	SMSC9500A Ethernet device
+product SMC2 SMSC9505A		0x9e01	SMSC9505A Ethernet device
+product SMC2 SMSC9514		0x9514	SMSC9514 USB 4 port hub
+product SMC2 SMSC9512_14	0xec00	SMSC9512/9514 Ethernet device
+product SMC2 SMSC9500_SAL10	0x9900	SMSC9500 Ethernet device (SAL10)
+product SMC2 SMSC9505_SAL10	0x9901	SMSC9505 Ethernet device (SAL10)
+product SMC2 SMSC9500A_SAL10	0x9902	SMSC9500A Ethernet device (SAL10)
+product SMC2 SMSC9505A_SAL10	0x9903	SMSC9505A Ethernet device (SAL10)
+product SMC2 SMSC9512_14_SAL10	0x9904	SMSC9512/14 Hub & Ethernet Device (SAL10)
+product SMC2 SMSC9500A_HAL	0x9905	SMSC9500A Ethernet Device (HAL)
+product SMC2 SMSC9505A_HAL	0x9906	SMSC9505A Ethernet Device (HAL)
+product SMC2 SMSC9500_ALT	0x9907	SMSC9500 Ethernet Device
+product SMC2 SMSC9500A_ALT	0x9908	SMSC9500A Ethernet Device
+product SMC2 SMSC9512_14_ALT	0x9909	SMSC9512 Hub & Ethernet Device
+product SMC2 LAN9530		0x9530	LAN9530 Ethernet Device
+product SMC2 LAN9730		0x9730	LAN9730 Ethernet Device
+product SMC2 LAN89530		0x9e08	LAN89530
 product SMC3 2662WV1		0xa001	EZ Connect 11Mbps
 product SMC3 2662WUSB		0xa002	2662W-AR Wireless Adapter
 
@@ -2306,6 +2347,7 @@ product SONY CLIE_NX60		0x00da	Sony Clie nx60
 product SONY PS2EYETOY4		0x0154	PlayStation2 EyeToy v154
 product SONY PS2EYETOY5		0x0155	PlayStation2 EyeToy v155
 product SONY CLIE_TJ25		0x0169	Sony Clie tj25
+product SONY PS3CONTROLLER	0x0268	Sony PLAYSTATION(R)3 Controller
 product SONY GPS_CS1		0x0298	Sony GPS GPS-CS1
 
 /* SOURCENEXT products */

@@ -425,8 +425,19 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
 /*---------------------------------------------------------------------------*/
 
+static const char *ltrim(const char *string)
+{
+    if (string == NULL) return "";
+    while (*string == ' ')
+    {
+        string++;
+    }
+    return string;
+}
 
-_kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
+/*---------------------------------------------------------------------------*/
+
+static _kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
 {
     struct dev_struct * dev = &softc->mydev;
     sprintf (dev->name, "USB%d", no);
@@ -459,6 +470,7 @@ _kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
     return e;
 }
 
+/*---------------------------------------------------------------------------*/
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
@@ -486,7 +498,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
               {
                   dev->dv_unit = maxdev_no = usbdev_no++;
 
-dprintf(("","registering %d \n",dev->dv_unit));
+                  dprintf(("","registering %d \n",dev->dv_unit));
                   RegisterNewDevice( ((struct ugen_softc*) dev),dev->dv_unit);
                }
            }
@@ -501,7 +513,7 @@ dprintf(("","registering %d \n",dev->dv_unit));
           {
               if (dev)
               {
-dprintf(("","forgetting %d \n",dev->dv_unit));
+                  dprintf(("","forgetting %d \n",dev->dv_unit));
                   dev->dv_unit = 0;
               }
           }
@@ -669,8 +681,9 @@ _kernel_oserror* command_reset (int n)
 
 _kernel_oserror* command_dev_info (int n)
 {
-    char string[127];
-    struct device* dev = get_usbdev (n);
+    char   string[USB_MAX_STRING_LEN];
+    struct device *dev = get_usbdev (n);
+
     if (dev == NULL)
     {
         return uerror (E_NoDevice);
@@ -688,13 +701,10 @@ _kernel_oserror* command_dev_info (int n)
     printf ("Vendor ID       : %04X\n", UGETW(ddesc->idVendor));
     printf ("Product ID      : %04X\n", UGETW(ddesc->idProduct));
     printf ("Device ID       : %04X\n", UGETW(ddesc->bcdDevice));
-    printf ("Manufacturer    : '%s'\n",
-        usbd_get_string (udev, ddesc->iManufacturer, string)? string: "");
-    printf ("Product         : '%s'\n",
-        usbd_get_string (udev, ddesc->iProduct, string)? string: "");
-    printf ("Serial number   : '%s'\n",
-        usbd_get_string (udev, ddesc->iSerialNumber, string)? string: "");
     printf ("# of configs    : %d\n", ddesc->bNumConfigurations);
+    printf ("Manufacturer    : '%s'\n", ltrim (usbd_get_string (udev, ddesc->iManufacturer, string)));
+    printf ("Product         : '%s'\n", ltrim (usbd_get_string (udev, ddesc->iProduct, string)));
+    printf ("Serial number   : '%s'\n", ltrim (usbd_get_string (udev, ddesc->iSerialNumber, string)));
 
     return NULL;
 }
@@ -703,8 +713,9 @@ _kernel_oserror* command_dev_info (int n)
 
 _kernel_oserror* command_conf_info (int n)
 {
-    char string[127];
+    char   string[USB_MAX_STRING_LEN];
     struct device* dev = get_usbdev (n);
+
     if (dev == NULL)
     {
         return uerror (E_NoDevice);
@@ -720,8 +731,8 @@ _kernel_oserror* command_conf_info (int n)
     }
     printf ("# of interfaces : %d\n", cdesc->bNumInterface);
     printf ("Config value    : %d\n", cdesc->bConfigurationValue);
-    printf ("Name            : '%s'\n",
-        usbd_get_string (udev, cdesc->iConfiguration, string)? string: "");
+    printf ("Name            : '%s'\n", ltrim (usbd_get_string (udev, cdesc->iConfiguration, string)));
+
     printf ("Attributes      : ");
     int f = 0;
     if (cdesc->bmAttributes & UC_BUS_POWERED)
@@ -753,13 +764,14 @@ _kernel_oserror* command_conf_info (int n)
         case UDESC_INTERFACE:
         {
             usb_interface_descriptor_t * d = (usb_interface_descriptor_t *) ptr;
+
             printf ("\nInterface %d.%d class %d.%d:%d '%s'\n",
                 d->bInterfaceNumber,
                 d->bAlternateSetting,
                 d->bInterfaceClass,
                 d->bInterfaceSubClass,
                 d->bInterfaceProtocol,
-                usbd_get_string (udev, d->iInterface, string)? string: "");
+                ltrim (usbd_get_string (udev, d->iInterface, string)));
             break;
         }
         case UDESC_ENDPOINT:
@@ -1317,7 +1329,7 @@ struct device* attach_hub (struct device* parent, void* aux)
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = malloc (uhub_uhub_ca.ca_devsize);
-    if (softc == 0) {
+    if (softc == NULL) {
         dprintf (("", "Couldn't allocate memory for hub device\n"));
         return NULL;
     }
@@ -1678,7 +1690,7 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = calloc (sizeof *softc, 1);
-    if (softc == 0) {
+    if (softc == NULL) {
         dprintf (("", "Couldn't allocate memory for device\n"));
         return NULL;
     }
@@ -1806,7 +1818,7 @@ void usb_needs_explore_callback (void* h) {
 
 void bufrem (void* dma, void* priv_id, int size)
 {
-    if (priv_id == 0)
+    if (priv_id == NULL)
     {
         dprintf (("", "Stream has been closed\n"));
         return;
@@ -1870,7 +1882,7 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
 {
     _kernel_oserror* e = NULL;
     usb_device_descriptor_t *udd = &dev->ddesc;
-    char *vendor = 0, *product = 0;
+    char *vendor = NULL, *product = NULL;
 
     if (dev == NULL) {
         v[0] = p[0] = '\0';
@@ -1882,8 +1894,12 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
 
     if (usedev)
     {
-        vendor = usbd_get_string(dev, udd->iManufacturer, v);
-        product = usbd_get_string(dev, udd->iProduct, p);
+        char string[USB_MAX_STRING_LEN];
+
+        vendor = usbd_get_string(dev, udd->iManufacturer, string);
+        strncpy(v, ltrim(string), vl);
+        product = usbd_get_string(dev, udd->iProduct, string);
+        strncpy(p, ltrim(string), pl);
     }
 
     if (vendor == NULL) {
@@ -2662,14 +2678,14 @@ _kernel_oserror* create_buffer
     if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
     {
         p = usbd_alloc_buffer (str->isoc[0].xfer, *size / 2);
-        if (p == 0) return uerror (E_NoMem);
+        if (p == NULL) return uerror (E_NoMem);
         p = usbd_alloc_buffer (str->isoc[1].xfer, *size / 2);
-        if (p == 0) return uerror (E_NoMem);
+        if (p == NULL) return uerror (E_NoMem);
     }
     else
     {
         p = usbd_alloc_buffer (str->xfer, *size);
-        if (p == 0) return uerror (E_NoMem);
+        if (p == NULL) return uerror (E_NoMem);
 #ifdef DMA_FROM_BUFFER
         e = _swix (Buffer_Register, _INR(0,3)|_OUT(0),
             *flags,

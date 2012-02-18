@@ -190,7 +190,7 @@ struct device* attach_keyboard (struct device* parent, void* aux)
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = calloc (sizeof *softc, 1);
-    if (softc == 0) {
+    if (softc == NULL) {
         dprintf (("", "Couldn't allocate memory for keyboard device\n"));
         return NULL;
     }

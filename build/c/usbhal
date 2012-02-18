@@ -226,7 +226,7 @@ struct device* attach_keyboard (struct device* parent, void* aux)
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = malloc (sizeof *softc);
-    if (softc == 0) {
+    if (softc == NULL) {
         return NULL;
     }
     memset(softc,0,sizeof(*softc));
@@ -571,7 +571,7 @@ struct device* attach_hub (struct device* parent, void* aux)
 
     /* If so, allocate memory for the device and attach ourselves. */
     softc = malloc (uhub_uhub_ca.ca_devsize);
-    if (softc == 0) {
+    if (softc == NULL) {
         hdprintf ("Couldn't allocate memory for hub device\n");
         return NULL;
     }
