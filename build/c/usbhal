@@ -797,6 +797,6 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
     snprintf(v, vl, "Vendor ID %04X", UGETW(udd->idVendor));
     snprintf(p, pl, "Product ID %04X", UGETW(udd->idProduct));
 #else
-    *v = *p = 0;
+    *v = *p = NULL;
 #endif
 }

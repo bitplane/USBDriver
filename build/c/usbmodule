@@ -1911,7 +1911,7 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
             &usbdev_messages.fd,
             str,
             v,
-            255,
+            vl,
             &vendor, &len);
         dprintf (("", "lookup '%s' returned '%s' e = %s\n",
             str, vendor? vendor: "(null)", e? e->errmess: "NULL"));
@@ -1928,7 +1928,7 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
             &usbdev_messages.fd,
             str,
             p,
-            255,
+            pl,
             &product, &len);
         dprintf (("", "lookup '%s' returned '%s' e = %s\n",
             str, product? product: "(null)", e? e->errmess: "NULL"));
