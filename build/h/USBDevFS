@@ -105,6 +105,12 @@
    0x07  Reserved for 'other' speed configuration info, layout per UDESC_CONFIG
    0x08  Reserved for interface power info
    Other Reserved */
+#define  UDESC_OTG              0x09
+#define  UDESC_CS_DEVICE        0x21 /* class specific */
+#define  UDESC_CS_CONFIG        0x22
+#define  UDESC_CS_STRING        0x23
+#define  UDESC_CS_INTERFACE     0x24
+#define  UDESC_CS_ENDPOINT      0x25
 #define  UDESC_HUB              0x29
 
 /* Device (descriptor type 0x01) */
