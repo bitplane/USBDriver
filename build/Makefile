@@ -28,6 +28,16 @@ RES_AREA        = resource_files
 LIBS            = ${CALLXLIB} ${ASMUTILS}
 
 #
+# Debug switch
+#
+DEBUG ?= FALSE
+ifeq (${DEBUG},TRUE)
+CFLAGS         += -DDEBUGLIB -DUSB_DEBUG -DOHCI_DEBUG -DEHCI_DEBUG
+CMHGDEFINES    += -DUSB_DEBUG -DOHCI_DEBUG -DEHCI_DEBUG
+LIBS           += ${DEBUGLIBS} ${NET5LIBS}
+endif
+
+#
 # Generate USBDriver and the controller drivers by choosing the list of objects
 #
 ifeq ("${COMPONENT}","EHCIDriver")

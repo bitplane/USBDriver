@@ -81,7 +81,7 @@ void USBHAL_EHCIDriver_Init(void)
 	do {
 		usbinfo info;
 		size_t usbinfolen = HAL_USBControllerInfo(idx,&info,sizeof(info));
-		if((usbinfolen >= sizeof(info)) && (info.type == 1))
+		if((usbinfolen == sizeof(info)) && (info.type == 1))
 			init_device(&info,idx);
 		else if(!usbinfolen)
 			return;

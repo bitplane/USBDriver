@@ -13,6 +13,6 @@
 | limitations under the License.
 |
 dir <obey$dir>
-amu_machine debug gpa_debug COMPONENT=USBDriver  CDEFINES="-DDEBUGLIB -DUSB_DEBUG  -DSTANDALONE" CMHGDEFINES="-DUSB_DEBUG"  THROWBACK=-throwback
-amu_machine debug gpa_debug COMPONENT=OHCIDriver CDEFINES="-DDEBUGLIB -DOHCI_DEBUG -DSTANDALONE" CMHGDEFINES="-DOHCI_DEBUG" THROWBACK=-throwback
-amu_machine debug gpa_debug COMPONENT=EHCIDriver CDEFINES="-DDEBUGLIB -DEHCI_DEBUG -DSTANDALONE" CMHGDEFINES="-DEHCI_DEBUG" THROWBACK=-throwback
+amu_machine debug gpa_debug COMPONENT=USBDriver  DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback
+amu_machine debug gpa_debug COMPONENT=OHCIDriver DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback
+amu_machine debug gpa_debug COMPONENT=EHCIDriver DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback

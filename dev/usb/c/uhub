@@ -600,9 +600,6 @@ uhub_explore(usbd_device_handle dev)
                         printf("%s: device problem, disabling port %d\n",
 			       USBDEVNAME(sc->sc_dev), port);
 			usbd_clear_port_feature(dev, port, UHF_PORT_ENABLE);
-#ifdef __riscos
-			riscos_failed_device (&sc->sc_dev);
-#endif
 		} else {
 			/* The port set up succeeded, reset error count. */
 			up->restartcnt = 0;

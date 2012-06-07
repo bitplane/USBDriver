@@ -21,6 +21,7 @@
         GET     Hdr:Macros
         GET     Hdr:System
         GET     Hdr:OSRSI6
+        GET     Hdr:Proc
 
         AREA    |C$$data|, DATA
 ptr_IRQsema
@@ -30,7 +31,7 @@ ptr_IRQsema
 
         EXPORT  triggercbs
 triggercbs
-        stmfd   r13!, {lr}
+        Entry
         LDR     r3, =ptr_IRQsema
         LDR     r1, [sl,#-536]       ; Get relocation
         ADD     r3, r3, r1
@@ -48,10 +49,10 @@ triggercbs
 10
         LDR     lr, [r2]
         MOVS    lr, lr
-        LDMNEFD r13!,{pc}            ; NZ is within IRQ.. so no CB allowed
+        EXIT    NE                   ; NZ is within IRQ.. so no CB allowed
         SWI     OS_LeaveOS
         SWI     OS_EnterOS
-        ldmfd   r13!,{pc}
+        EXIT
 
         LTORG
 

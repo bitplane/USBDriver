@@ -56,7 +56,6 @@ int usbdebug;
 
 uint32_t irq0;
 int irq_device;
-//int irq_buf;
 char debugname[16];
 #endif
 
@@ -133,14 +132,12 @@ void build_veneer (int* vn, int* st, size_t sz)
                                    entry_table + 2 * (sz / sizeof (void*)) - 1);
 }
 
-int pci_device = 0;
+int pci_device = -1;
+int hal_device = -1;
 int instance = 0;
 int device_number;
 int unhandled_irqs;
-
-#ifdef RHENIUM
-int registers_32bit=0;                    //(used with rhenium)
-#endif        /* RHENIUM */
+int registers_32bit=0;
 
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
@@ -181,10 +178,10 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     }
 
 
-    // allow enough space for name, % and number, then space, and
-    // another number
-    char name[sizeof Module_Title + 1 + 12 + 1 + 12];
-    sprintf (name, Module_Title"%%%d %d", instance + 1, pci_device);
+    // allow enough space for name, % and number, then space, device type,
+    // and another number
+    char name[sizeof Module_Title + 1 + 12 + 1 + 1 + 12];
+    sprintf (name, Module_Title"%%%d %c%d", instance + 1, (pci_device>=0?'P':'H'), (pci_device>=0?pci_device:hal_device));
     dprintf (("", "Trying to start %s\n", name));
     e = _swix (OS_Module, _INR(0,1), 14, name);
 
@@ -234,33 +231,65 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     if (podule_base != 0)
     {
-        char* endptr;
-        pci_device = (int) strtol (cmd_tail, &endptr, 0);
-        if (endptr == cmd_tail)
+        const char* endptr = cmd_tail;
+        while(*endptr == ' ')
+            endptr++;
+        if(*endptr == 'P')
+            pci_device = (int) strtol (endptr+1, NULL, 0);
+        else if(*endptr == 'H')
+            hal_device = (int) strtol (endptr+1, NULL, 0);
+        else if(*endptr > 32)
         {
             return (_kernel_oserror*)
                 "\1\0\0\0"Module_Title" can't be reinitialised";
         }
+        else
+            pci_device = 0;
     }
-//#ifdef STANDALONE
-//    else
-//    {
-//        e = _swix (ResourceFS_RegisterFiles, _IN (0), resource_files ());
-//        if (e != NULL) return e;
-//    }
-//#endif
+    else
+    {
+        pci_device = 0;
+    }
 
+    /* find the next possible controller */
+    if(pci_device >= 0)
+    {
+        /* Looking for PCI device */
+        e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
+            0x0C0320,
+            0xFFFFFF,
+            pci_device,
+            &pci_device);
+        if(!e && pci_device)
+        {
+             dprintf (("", "Found EHCI controller on PCI device %d\n", pci_device));
+            e = _swix(PCI_ReadInfo, _INR(0,3),
+                PCI_ReadInfo_IntDeviceVector,
+                &device_number,
+                sizeof device_number,
+                pci_device);
+            if (e) goto error;
+        
+        
+            e = _swix(PCI_HardwareAddress, _INR(0,1)|_IN(3)|_OUT(4),
+                0, 0, pci_device, &ehci_base);
+            if (e) goto error;
+        
 
-    // find the next possible controller
-    do {
-    e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
-        0x0C0320,
-        0xFFFFFF,
-        pci_device,
-        &pci_device);
-#ifdef RHENIUM
-       if (e || pci_device == 0)
-       {
+            registers_32bit = 0;
+        }
+        else
+        {
+            /* Reached end of list */
+            pci_device = -1;
+            e = NULL;
+        }
+    }
+    if(pci_device == -1)
+    {
+        /* Looking for HAL device */
+        do {
+            hal_device++;
             struct
             {
                 int type;
@@ -269,63 +298,31 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                 int devno;
             } usbinfo;
             size_t usbinfolen;
-
+    
             e = _swix(OS_Hardware, _INR(0,2)|_INR(8,9)|_OUT(0),
-                                   instance, &usbinfo, sizeof usbinfo,
+                                   hal_device, &usbinfo, sizeof usbinfo,
                                    0, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
-            if (!e && (usbinfolen >= sizeof(usbinfo)) && usbinfo.type == 1)
+            if (!e && (usbinfolen == sizeof(usbinfo)) && usbinfo.type == 1)
             {
+                dprintf (("", "Found EHCI controller on HAL device %d\n", hal_device));
                 device_number = usbinfo.devno;
                 ehci_base = usbinfo.hw;
-                // The only flag we support ATM is for 32bit register access
+                /* The only flag we support ATM is for 32bit register access */
                 if(usbinfo.flags & 8)
-                  registers_32bit = 1;
-                pci_device = -1;
+                    registers_32bit = 1;
+                break;
             }
-            else
-                pci_device = 0; // Explicitly set pci_device to the fail state else we'll start infinite instantiations if the PCI module isn't present
-        }
-#endif  /* RHENIUM */
-    if (e) return e;
-    } while (0);
-
-    /* if there were no more EHCI controllers, then return an error.  This
-       will be thrown away by the callback above */
-
-    if (pci_device == 0)
-    {
-        return (_kernel_oserror*) "\0\0\0\0No EHCI devices found";
+            else if(e || !usbinfolen)
+            {
+                /* Reached end of list */
+                return (_kernel_oserror*) "\0\0\0\0No EHCI devices found";
+            }
+        } while(1);
     }
 
-    dprintf (("", "Found EHCI controller on device %d\n", pci_device));
-
-#ifdef   RHENIUM
-
-    if (pci_device != -1)
-    {
-#endif  /* RHENIUM */
-    
-        /* now establish our interrupt and address */
-    
-        e = _swix(PCI_ReadInfo, _INR(0,3),
-            PCI_ReadInfo_IntDeviceVector,
-            &device_number,
-            sizeof device_number,
-            pci_device);
-        if (e) goto error;
-    
-        dprintf (("Main_0", "interrupt device %d\n", device_number));
-    
-        e = _swix(PCI_HardwareAddress, _INR(0,1)|_IN(3)|_OUT(4),
-            0, 0, pci_device, &ehci_base);
-        if (e) goto error;
-    
-        dprintf (("Main_0", "hardware address %p\n", ehci_base));
-#ifdef   RHENIUM
-     }
-#endif  /* RHENIUM */
-
+    dprintf (("Main_0", "interrupt device %d\n", device_number));
+    dprintf (("Main_0", "hardware address %p\n", ehci_base));
 
     private_word = pw;
 
@@ -363,7 +360,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     /* try and start a new instance to catch any more controllers on the bus */
 
      callx_add_callback (new_instance, 0);
-//   _swix (OS_AddCallBack, _INR(0,1), new_entry, pw);
 
     return 0;
 
@@ -398,13 +394,6 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
 
-//#ifdef STANDALONE
-//    /* only remove files for last instantiation */
-//    if (podule == 0)
-//    {
-//        _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
-//    }
-//#endif
     return NULL;
 }
 
@@ -593,17 +582,6 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
         int t = (u2s - u2s1) * 5;
         if (t < 0) t += 10000000; /* it wrapped */
         if (ehcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
-//        if (irq_buf)
-//        {
-//            _swix (OS_CallAVector, _INR(1,3)|_IN(9),
-//                irq_buf | (1<<31),
-//                (int [2]) { gettime () / 1000 - irq0, t},
-//                8,
-//                20);
-//        }
-//        irq_tot += t;
-//        if (t < irq_min) irq_min = t;
-//        if (t > irq_max) irq_max = t;
     }
 #endif
 
@@ -634,7 +612,6 @@ void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
     if (ehcidebug > 10)
         dprintf  (("", "write %x to %p\n", x, ((uint16_t*) ehci_base) + o/2));
 #endif
-#ifdef RHENIUM
     if (registers_32bit)
     {
       x &= 0xFFFF;
@@ -644,34 +621,28 @@ void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
         ehci_base[o>>2]=(ehci_base[o>>2]&0xFFFF0000)|x;
     }
     else
-#endif
       ((uint16_t*) ehci_base)[o>>1] = x;
 }
 
 int bus_space_read_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 {
-#ifdef EHCI_DEBUG0
-    if (ehcidebug > 15)
-    {
-#ifdef RHENIUM
-       if (registers_32bit)
-         dprintf(("", "read %x from %p\n",ehci_base[o>>2],((uint16_t*)ehci_base) + o/2));
-       else
-#endif
-         dprintf  (("", "read %x from %p\n",
-            ((uint16_t*)ehci_base)[o>>1], ((uint16_t*)ehci_base) + o/2));
-   }
-#endif
-#ifdef RHENIUM
+    uint32_t value;
     if (registers_32bit)
     {
       if (o&2)
-        return ((uint32_t*)ehci_base)[o>>2]>>16;
+        value = ((uint32_t*)ehci_base)[o>>2]>>16;
       else
-        return ((uint32_t*)ehci_base)[o>>2]&0xFFFF;
+        value = ((uint32_t*)ehci_base)[o>>2]&0xFFFF;
     }
+    else
+      value = ((uint16_t*) ehci_base)[o>>1];
+#ifdef EHCI_DEBUG0
+    if (ehcidebug > 15)
+    {
+       dprintf(("", "read %x from %p\n",value,((uint16_t*)ehci_base) + o/2));
+   }
 #endif
-    return ((uint16_t*) ehci_base)[o>>1];
+   return value;
 }
 
 void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
@@ -680,7 +651,6 @@ void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
     if (ehcidebug > 10)
         dprintf  (("", "write %x to %p\n", x, ((uint8_t*) ehci_base) + o));
 #endif
-#ifdef RHENIUM
     if (registers_32bit)
     {
       x &= 0xFF;
@@ -690,29 +660,24 @@ void bus_space_write_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
       ehci_base[o>>2] = t;
     }
     else
-#endif
       ((uint8_t*) ehci_base)[o] = x;
 }
 
 int bus_space_read_1 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 {
+    uint32_t value;
+    if (registers_32bit)
+      value = (((uint32_t*)ehci_base)[o/4]>>((o&3)*8))&0xff;
+    else
+      value = ((uint8_t*) ehci_base)[o];
 #ifdef EHCI_DEBUG0
     if (ehcidebug > 15)
     {
-#ifdef RHENIUM
-       if (registers_32bit)
-         dprintf  (("", "read %x from %p\n", ehci_base[o/4], ((uint8_t*)ehci_base)+o));
-       else
-#endif
          dprintf  (("", "read %x from %p\n",
-            ((uint8_t*) ehci_base)[o], ehci_base + o));
+            value, ehci_base + o));
     }
 #endif
-#ifdef RHENIUM
-    if (registers_32bit)
-      return (((uint32_t*)ehci_base)[o/4]>>((o&3)*8))&0xff;
-#endif
-    return ((uint8_t*) ehci_base)[o];
+    return value;
 }
 
 
@@ -803,23 +768,3 @@ softintr (_kernel_swi_regs* r, void* pw)
     ehci_softintr ((void*) r->r[0]);
     return 1;
 }
-
-/*---------------------------------------------------------------------------*/
-//#ifdef EHCI_DEBUG
-//
-//_kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
-//{
-//    switch (r->r[0])
-//    {
-//    case DeviceFSCallDevice_Terminate:
-//        irq_buf = 0;
-//        break;
-//    case DeviceFSCallDevice_StreamCreated:
-//        irq_buf = r->r[3];
-//        break;
-//    }
-//
-//    return NULL;
-//}
-//
-//#endif

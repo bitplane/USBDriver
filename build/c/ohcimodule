@@ -120,7 +120,8 @@ void build_veneer (int* vn, int* st, size_t sz)
                                    entry_table + 2 * (sz / sizeof (void*)) - 1);
 }
 
-int pci_device = 0;
+int pci_device = -1;
+int hal_device = -1;
 int instance = 0;
 int device_number;
 int unhandled_irqs;
@@ -128,12 +129,13 @@ int irqs;
 unsigned int irq_min = INT_MAX, irq_max = 0;
 unsigned long long irq_tot;
 
-#ifdef RHENIUM
-void (*ohci_ppower)(int port, int state);  //(used with rhenium)
-int  (*ohci_error)(int port);              //(used with rhenium)
-int  (*ohci_pirq)(int port, int mode);     //(used with rhenium)
-int hal_pirq_device;                       // device to use for power IRQ, or -1
-int hal_error_irq_claimed;
+/* Port power controls - only used by HAL devices */
+
+void (*ohci_ppower)(int port, int state);
+int  (*ohci_error)(int port); /* Never gets used? */
+int  (*ohci_pirq)(int port, int mode);
+int hal_pirq_device=-1;                       // device to use for power IRQ, or -1
+int hal_error_irq_claimed=0;
 typedef enum {P_none,P_on,P_off,P_going_on,P_going_on2,P_ready,P_retry}P_Phase;
 typedef struct p_err_chk{
 int unit;
@@ -142,7 +144,7 @@ P_Phase state;
 p_err_chk pchk;
 
 // 0 if OK, 1 if overcurrent
-int do_hal_perror(int port)
+static int do_hal_perror(int port)
 {
     int r;
     _swix(OS_Hardware, _INR(0,1)|_INR(8,9)|_OUT(0),
@@ -155,7 +157,7 @@ int do_hal_perror(int port)
 // mode=0 .. turn off irq .. report irq device number
 // mode=1 .. turn irq source on and acknowledge the IRQ
 // mode=2 .. read irq status and acknowledge the IRQ
-int do_hal_pirq (int port, int mode)
+static int do_hal_pirq (int port, int mode)
 {
     int r=0;
     
@@ -166,10 +168,10 @@ int do_hal_pirq (int port, int mode)
     return r;
 }
 
-void do_hal_ppower(int port, int state);
+static void do_hal_ppower(int port, int state);
 
 //_kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v);
-_kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v)
+static _kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v)
 {
    p_err_chk *p = (p_err_chk*)v;
    switch(p->state)
@@ -206,7 +208,7 @@ _kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v)
 }
 
 /* Note OHCI numbers ports from 1, the HAL from 0 */
-void do_hal_ppower(int port, int state)
+static void do_hal_ppower(int port, int state)
 {
   dprintf (("", "HAL port %d power state %d\n", port, state));
   _swix(OS_Hardware, _INR(0,2)|_INR(8,9), 0, port-1, state,
@@ -254,26 +256,29 @@ int usb_irq_port_error_handler(_kernel_swi_regs *r, void *pw)
 
 
 
-int do_ohci_pirq (int port, int mode)
+static int do_ohci_pirq (int port, int mode)
 {
   return !mode?-1:0;       // not implemented..
 }  
 
-void do_ohci_ppower(int port, int state)
+static void do_ohci_ppower(int port, int state)
 {
   dprintf (("", "OHCI port %d power state %d\n", port, state));
     ohci_base[OHCI_RH_PORT_STATUS(port)/4] =
         state ? UPS_PORT_POWER : UPS_LOW_SPEED;
 }
 
-int do_ohci_perror(int port)
+static int do_ohci_perror(int port)
 {
     return ohci_base[OHCI_RH_PORT_STATUS(port)/4] & UPS_OVERCURRENT_INDICATOR
              ? 1 : 0;
 }                           
 
+static void do_dummy_ppower(int port, int state)
+{
+    /* Do nothing for PCI devices */
+}
 
-#endif        /* RHENIUM */
 
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
@@ -302,22 +307,16 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 
     /* fill in the device name in the callback so that our service call handler
        is threaded and there to respond to PCI calls */
-#ifdef RHENIUM
     if (pci_device == -1)
     {
         strncpy (ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
-//        return NULL;
     }
     else
     {
-#endif  /* RHENIUM */
         _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
         if (v == 0) v = (char *)" ";
         strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
-//            [sizeof ohci_soft.sc_vendor - 1] = '\0';
-#ifdef RHENIUM
     }
-#endif  /* RHENIUM */
     /* now we know the root hub info, register it with USBDriver */
     dprintf (("", "Init-Registering with USB driver\n"));
     e = register_bus(&ohci_soft, &usb_soft);
@@ -330,10 +329,10 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
         dprintf (("", "Init-Registering with USB driver-done\n"));
     }
 
-    /* allow enough space for name, % and number, then space, and
-       another number */
-    char name[sizeof Module_Title + 1 + 12 + 1 + 12];
-    sprintf (name, Module_Title"%%%d %d", instance + 1, pci_device);
+    /* allow enough space for name, % and number, then space, device type,
+       and another number */
+    char name[sizeof Module_Title + 1 + 12 + 1 + 1 + 12];
+    sprintf (name, Module_Title"%%%d %c%d", instance + 1, (pci_device>=0?'P':'H'), (pci_device>=0?pci_device:hal_device));
     dprintf (("", "Trying to start %s\n", name));
     e = _swix (OS_Module, _INR(0,1), 14, name);
 
@@ -351,7 +350,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     char* v = "";
     _kernel_oserror* e = 0;
     *panic_string = '\0';
-//    char tmp[16];
     
     callx_init (pw);
 
@@ -383,21 +381,27 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     if (podule_base != 0)
     {
-        char* endptr;
-        pci_device = (int) strtol (cmd_tail, &endptr, 0);
-        if (endptr == cmd_tail)
+        const char* endptr = cmd_tail;
+        while(*endptr == ' ')
+            endptr++;
+        if(*endptr == 'P')
+            pci_device = (int) strtol (endptr+1, NULL, 0);
+        else if(*endptr == 'H')
+            hal_device = (int) strtol (endptr+1, NULL, 0);
+        else
         {
             return (_kernel_oserror*)
                 "\1\0\0\0"Module_Title" can't be reinitialised";
         }
     }
-#ifdef STANDALONE
     else
     {
+        pci_device = 0;
+#ifdef STANDALONE
         e = _swix (ResourceFS_RegisterFiles, _IN (0), resource_files ());
         if (e != NULL) return e;
-    }
 #endif
+    }
 
     e = _swix (MessageTrans_OpenFile, _INR(0,2),
         &mod_messages,
@@ -407,15 +411,41 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     /* see if there are any more USB OHCI controllers */
 
-    do {
+    if(pci_device >= 0)
+    {
+        /* Looking for PCI device */
         e = _swix(PCI_FindByClass, _INR(0,1)|_IN(3)|_OUT(3),
             0x0C0310,
             0xFFFFFF,
             pci_device,
             &pci_device);
-#ifdef RHENIUM
-       if (e || pci_device == 0)
-       {
+        if(!e)
+        {
+             dprintf (("", "Found OHCI controller on PCI device %d\n", pci_device));
+            e = _swix(PCI_ReadInfo, _INR(0,3),
+                PCI_ReadInfo_IntDeviceVector,
+                &device_number,
+                sizeof device_number,
+                pci_device);
+            if (e) goto error;
+        
+            e = _swix(PCI_HardwareAddress, _INR(0,1)|_IN(3)|_OUT(4),
+                0, 0, pci_device, &ohci_base);
+            if (e) goto error;
+        
+            ohci_ppower = do_dummy_ppower;
+        }
+        else
+        {
+            /* Reached end of list */
+            pci_device = -1;
+        }
+    }
+    if(pci_device == -1)
+    {
+        /* Looking for HAL device */
+        do {
+            hal_device++;
             struct
             {
                 int type;
@@ -426,11 +456,12 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
             size_t usbinfolen;
 
             e = _swix(OS_Hardware, _INR(0,2)|_INR(8,9)|_OUT(0),
-                                   instance, &usbinfo, sizeof usbinfo,
+                                   hal_device, &usbinfo, sizeof usbinfo,
                                    0, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
-            if (!e && (usbinfolen >= sizeof(usbinfo)) && usbinfo.type == 0)
+            if (!e && (usbinfolen == sizeof(usbinfo)) && usbinfo.type == 0)
             {
+                dprintf (("", "Found OHCI controller on HAL device %d\n", hal_device));
                 device_number = usbinfo.devno;
                 ohci_base = usbinfo.hw;
                 
@@ -461,73 +492,32 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                   ohci_pirq = do_ohci_pirq;
                   hal_pirq_device=-1; // not implemented
                 }
-                pci_device = -1;
                 (ohci_ppower)(1,0);  // ensure port power off
             }
-            else
-                pci_device = 0; // Explicitly set pci_device to the fail state else we'll start infinite instantiations if the PCI module isn't present
-        }
-#endif  /* RHENIUM */
-        if (e) goto error;
-    } while (0);//pci_device == 2 || pci_device == 3);
-
-
-    /* if there were no more OHCI controllers, then return an error.  This
-       will be thrown away by the callback above */
-
-    if (pci_device == 0)
-    {
-        e = (_kernel_oserror*) "\0\0\0\0No OHCI devices found";
-        goto error;
+            else if(e || !usbinfolen)
+            {
+                return (_kernel_oserror*) "\0\0\0\0No OHCI devices found";
+            }
+        } while(1);
     }
 
-    dprintf (("", "Found OHCI controller on device %d\n", pci_device));
+    dprintf (("Main_0", "interrupt device %d\n", device_number));
+    dprintf (("Main_0", "hardware address %p\n", ohci_base));
 
-
-#ifdef   RHENIUM
-
-    if (pci_device != -1)
-    {
-#endif  /* RHENIUM */
-
-        /* now establish our interrupt and address */
-
-        e = _swix(PCI_ReadInfo, _INR(0,3),
-            PCI_ReadInfo_IntDeviceVector,
-            &device_number,
-            sizeof device_number,
-            pci_device);
-        if (e) goto error;
-
-        dprintf (("Main_0", "interrupt device %d\n", device_number));
-
-        e = _swix(PCI_HardwareAddress, _INR(0,1)|_IN(3)|_OUT(4),
-            0, 0, pci_device, &ohci_base);
-        if (e) goto error;
-
-        dprintf (("Main_0", "hardware address %p\n", ohci_base));
-#ifdef   RHENIUM
-     }
-#endif  /* RHENIUM */
     memset (&ohci_soft, 0, sizeof ohci_soft);
 
     sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
     ohci_soft.sc_irqdevno = device_number;
 
 
-#ifdef   RHENIUM
     if (pci_device == -1)
         strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
     else
     {
-#endif  /* RHENIUM */
         _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
         if (v == 0) v = (char *)" ";
         strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
-//            [sizeof ohci_soft.sc_vendor - 1] = '\0';
-#ifdef   RHENIUM
     }
-#endif  /* RHENIUM */
 
 
     private_word = pw;
@@ -540,9 +530,6 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
         usb_irq_entry, pw, 0, 0);
     _swix (OS_Hardware, _IN(0) | _INR(8,9),
         device_number, 0, EntryNo_HAL_IRQEnable);
-#ifdef   RHENIUM
-    
-#endif  /* RHENIUM */
 
     if ((magic = init_veneer ()) == NULL)
     {
@@ -606,7 +593,6 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     v = ob[OHCI_CONTROL / 4]; // flush the write
 
-#ifdef RHENIUM
     if(hal_error_irq_claimed)
     {
       (ohci_pirq)(1,0);
@@ -614,7 +600,6 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
                              hal_pirq_device | (1u<<31),
                              usb_irq_port_error_entry, private_word, 0, 0);
     }                         
-#endif /*RHENIUM*/
 
 
     callx_remove_all_callbacks ();
@@ -737,19 +722,14 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             usb_soft = NULL;
             memset (&ohci_soft, 0, sizeof ohci_soft);
             sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
-#ifdef   RHENIUM
             if (pci_device == -1)
                 strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
             else
             {
-#endif  /* RHENIUM */
                 _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
                 if (v == 0) v = (char *)" ";
                 strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
-//                    [sizeof ohci_soft.sc_vendor - 1] = '\0';
-#ifdef   RHENIUM
             }
-#endif  /* RHENIUM */
             ohci_init (&ohci_soft);
             break;
         }
@@ -946,12 +926,10 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
     /* interrupts must be left off for the duration of this call, otherwise
        it hangs */
       ret = !ohci_intr (&ohci_soft);
-#ifdef   RHENIUM
       // the chip requires its interrupts cleared
       if (pci_device == -1)
          _swix(OS_Hardware, _IN(0)|_INR(8,9), device_number,
                                            0, EntryNo_HAL_IRQClear);
-#endif  /* RHENIUM */
 
 #ifdef OHCI_DEBUG
     if (ret)
@@ -981,7 +959,6 @@ void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
     if (ohcidebug > 10)
         dprintf  (("", "write %x to %p\n", x, ohci_base + o/4));
 #endif
-//    _swix (OS_ReadC, 0);
     ohci_base[o/4] = x;
 }
 
@@ -993,8 +970,6 @@ int bus_space_read_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
          dprintf  (("", "read %x from %p\n", ret, ohci_base + o/4));
 #endif
     return ret;
-//    dprintf (("", "about to read from %x\n", ohci_base + o/4));
-//    return 0;
 }
 
 void timeout(timeout_func_t f, void * h, int t)

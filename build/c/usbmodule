@@ -182,19 +182,6 @@ _kernel_oserror* uerror (char* e)
     return _swix (MessageTrans_ErrorLookup, _INR(0,2), e, &mod_messages.fd, 0);
 }
 
-void riscos_failed_device (void* p)
-{
-//#ifdef STANDALONE
-#ifndef RHENIUM
-//    _kernel_oserror* e;
-    (void) p;
-//    e = uerror (E_BadDevice);
-//    _swix (OS_UpCall, _INR(0,6), UpCall_MediaNotPresent, fsnumber_DeviceFS,
-//        -1, -1, 0, 0x7f/*ffffff*/, e->errmess);
-#endif /*RHENIUM*/
-//#endif /*STANDALONE*/
-}
-
 _kernel_oserror* messages_update (messages* mess)
 {
     dprintf (("main", "loading message file: %s\n", mess->filename));
