@@ -523,7 +523,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     private_word = pw;
 
 #ifdef OHCI_DEBUG
-    usbdebug = ohcidebug = atoi (getenv ("ohcidebug"));
+    const char *c = getenv("ohcidebug");
+    usbdebug = ohcidebug = (c?atoi(c):0);
 #endif
     _swix (OS_ClaimDeviceVector, _INR(0,4),
         device_number | ((pci_device == -1)?0:(1u<<31)),

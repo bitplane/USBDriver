@@ -327,7 +327,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     private_word = pw;
 
 #ifdef EHCI_DEBUG
-    usbdebug = ehcidebug = atoi (getenv ("ehcidebug"));
+    const char *c = getenv("ehcidebug");
+    usbdebug = ehcidebug = (c?atoi(c):0);
     irq0 = gettime () / 1000;
 #endif
 

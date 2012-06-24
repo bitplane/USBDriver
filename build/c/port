@@ -239,6 +239,7 @@ int t_locks[100];
 int nhandles = 0;
 
 extern void triggercbs (void);
+extern int *get_ptr_IRQsema(void);
 
 int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 {
@@ -252,7 +253,7 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
     t1 += ((uint64_t) timo) * 1000000;
 #ifdef USB_DEBUG
 
-    int sema = *(int*)(0x108);
+    int sema = *get_ptr_IRQsema();
     char bbf[32];strncpy( bbf, wmesg, 31);bbf[31]=0;
     dprintf(("","enter sleep:%s                  irqstate:%d\n",bbf,sema));
 #endif

@@ -125,6 +125,8 @@ struct devstream {
 #define FLAG_SHORT 2
 #define FLAG_VALIDMASK 3 /* Which bits can be modified */
     struct isoc_buffer * isoc;
+    bool xfer_busy;
+    bool delayed_read;
 };
 
 struct dev_struct {
@@ -338,9 +340,10 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 #endif
 
 #ifdef USB_DEBUG
-    usbdebug = atoi(getenv("usbdebug"));
-    uhubdebug = atoi(getenv("uhubdebug"));
-    uhidevdebug = atoi(getenv("uhidevdebug"));
+    const char *c;
+    c = getenv("usbdebug"); usbdebug = (c?atoi(c):0);
+    c = getenv("uhubdebug"); uhubdebug = (c?atoi(c):0);
+    c = getenv("uhidevdebug"); uhidevdebug = (c?atoi(c):0);
 #endif
 
     usbbus_no = 1;
@@ -1175,13 +1178,11 @@ struct device* riscos_usb_attach
     char* getenv (const char*);
     int atoi (const char*);
     dprintf (("", "Trying match on ignore device\n"));
-    char* getenv (const char*);
-    int atoi (const char*);
-    char* del ;
     sprintf (str, "USB$Ignore_%04X_%04X", ((struct usb_attach_arg*)aux)->vendor, ((struct usb_attach_arg*)aux)->product);
-    dprintf (("", "look for %s.. got x%sx\n",str,getenv (str)));
+    const char *env = getenv(str);
+    dprintf (("", "look for %s.. got \"%s\"\n",str,(env?env:"")));
 
-    if(!getenv (str) )    /* check if we are allowed to handle it */
+    if(!env)    /* check if we are allowed to handle it */
     {
       typedef device_ptr_t pf (device_ptr_t, void*);
       pf* funcs[] = { attach_hub, attach_mouse, attach_keyboard, NULL };
@@ -2256,6 +2257,8 @@ static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 {
     struct devstream* str = priv;
 
+    str->xfer_busy = (status == USBD_IN_PROGRESS);
+
     if (status != USBD_NORMAL_COMPLETION)
     {
         dprintf (("", "Bad completion code: %d (%s), %d bytes written\n", status, ccodes[status], xfer->actlen));
@@ -2282,10 +2285,15 @@ static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 
 void start_write (struct devstream* str)
 {
-    static int reentry = 0;
     if (str->xfer == NULL)
     {
         dprintf (("", "Non-head HID stream\n"));
+        return;
+    }
+
+    if (str->xfer_busy)
+    {
+        dprintf (("", "Can't start, xfer still busy\n"));
         return;
     }
 
@@ -2295,15 +2303,11 @@ void start_write (struct devstream* str)
             str->xfer->status, ccodes[str->xfer->status]));
         return;
     }
-    if (reentry != 0)
-    {
-        dprintf (("", "!! start_write reentered !!\n"));
-        return;
-    }
-    reentry = 1;
 
     int s = _kernel_irqs_disabled ();
     _kernel_irqs_off ();
+
+    str->xfer_busy = true;
 
 #ifdef DMA_FROM_BUFFER
     _kernel_swi_regs r;
@@ -2338,6 +2342,8 @@ void start_write (struct devstream* str)
 #endif
         str->xfer->status = usbd_transfer (str->xfer);
 
+        str->xfer_busy = (str->xfer->status == USBD_IN_PROGRESS);
+
         /* this can either return in progress, or normal completion (if
            the pipe wasn't already running) */
         if (str->xfer->status != USBD_IN_PROGRESS &&
@@ -2350,11 +2356,11 @@ void start_write (struct devstream* str)
     else
     {
         str->xfer->actlen = 0;
+        str->xfer_busy = false;
         dprintf (("", "no more data to write\n"));
     }
 
     if (s == 0) _kernel_irqs_on ();
-    reentry = 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2363,6 +2369,8 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
                       usbd_status status)
 {
     struct devstream* str = priv;
+
+    str->xfer_busy = (status == USBD_IN_PROGRESS);
 
     if (status != USBD_NORMAL_COMPLETION)
     {
@@ -2379,8 +2387,13 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 
     if((str->flags & FLAG_NOPAD) || (str->count == str->totalcount))
     {
-       /* Whatever happened, we're finished */
-       return;
+        /* Handle any delayed read */
+        if(str->delayed_read)
+        {
+            dprintf(("", "Starting delayed read from callback\n"));
+            start_read(str);
+        }
+        return;
     }
     /* only start another transfer if we haven't finished the transfer and
        this is not a interrupt endpoint (the BSD framework restarts
@@ -2407,6 +2420,12 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
             CallBufMan (&r);
             if(r.r[3])
                 break; /* Buffer was full - what do we do here? Try and insert the extra padding as more space becomes available? For now, just do what the old code did and give up */
+        }
+        /* Handle any delayed read */
+        if(str->delayed_read)
+        {
+            dprintf(("", "Starting delayed read from callback\n"));
+            start_read(str);
         }
     }
     else if (!xfer->pipe->repeat)
@@ -2436,10 +2455,16 @@ void fill_isoc_xfer (struct devstream* str, int maxpacket)
 
 void start_read (struct devstream* str)
 {
-    static int reentry = 0;
     if (str->xfer == NULL)
     {
         dprintf (("", "Non-head HID stream\n"));
+        return;
+    }
+
+    if (str->xfer_busy)
+    {
+        dprintf (("", "Can't start, xfer still busy\n"));
+        str->delayed_read = true; /* Flag that we want to start another read after the current one finishes. This may result in some confusion over how much data is being requested and when padding should be applied, but it's better than having no checks at all and creating circular references in the pipes xfer queue. */
         return;
     }
 
@@ -2456,15 +2481,11 @@ void start_read (struct devstream* str)
         return;
     }
 
-    if (reentry != 0)
-    {
-        dprintf (("", "!! start_read reentered !!\n"));
-        return;
-    }
-
     int s = _kernel_irqs_disabled ();
     _kernel_irqs_off ();
-    reentry = 1;
+
+    str->xfer_busy = true;
+    str->delayed_read = false;
 
 #ifdef DMA_FROM_BUFFER
     // XXX this was copied from write probably wrong for read
@@ -2498,7 +2519,11 @@ void start_read (struct devstream* str)
             /* truncate at length requested */
             if (str->totalcount && actlen > str->totalcount - str->count)
                 actlen = str->totalcount - str->count;
-            if (actlen <= 0) goto end;
+            if (actlen <= 0)
+            {
+                str->xfer_busy = false;
+                goto end;
+            }
             break;
         }
 
@@ -2538,6 +2563,9 @@ void start_read (struct devstream* str)
         str->xfer->rqflags |= URQ_RISCOS_BUF;
 #endif
         str->xfer->status = usbd_transfer (str->xfer);
+
+        str->xfer_busy = (str->xfer->status == USBD_IN_PROGRESS);
+
         /* this can either return in progress, or normal completion (if
            the pipe wasn't already running) */
         if (str->xfer->status != USBD_IN_PROGRESS &&
@@ -2547,8 +2575,11 @@ void start_read (struct devstream* str)
                 str->xfer->status, ccodes[str->xfer->status]));
         }
     }
+    else
+    {
+        str->xfer_busy = false;
+    }
 end:
-    reentry = 0;
     if (s == 0) _kernel_irqs_on ();
 }
 
@@ -2976,11 +3007,13 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
     case DeviceFSCallDevice_MonitorTX:
     case DeviceFSCallDevice_MonitorRX:
         {
-            int status = str->xfer->status;
             /* the xfer is NULL for case of HID not owning the xfer */
-            if (str->xfer == NULL||
+            if (str->xfer == NULL)
+                return NULL;
+
+            int status = str->xfer->status;
 /* normal completion occurs when a transfer has finished */
-                status == USBD_NORMAL_COMPLETION ||
+            if (status == USBD_NORMAL_COMPLETION ||
                 status == USBD_IN_PROGRESS)
                 return NULL;
 

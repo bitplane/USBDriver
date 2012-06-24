@@ -29,25 +29,29 @@ ptr_IRQsema
 
         AREA    |C$$code|, CODE, READONLY
 
-        EXPORT  triggercbs
-triggercbs
-        Entry
-        LDR     r3, =ptr_IRQsema
+        EXPORT  get_ptr_IRQsema
+get_ptr_IRQsema
         LDR     r1, [sl,#-536]       ; Get relocation
-        ADD     r3, r3, r1
-        LDR     r2, [r3]
-        CMP     r2, #0
-        BNE     %FT10
+        LDR     r3, =ptr_IRQsema
+        LDR     r0, [r3, r1]!
+        CMP     r0, #0
+        MOVNE   pc, lr
         MOV     r0, #6
         MOV     r1, #0
         MOV     r2, #OSRSI6_IRQsema
+        MOV     ip, lr
         SWI     XOS_ReadSysInfo
         MOVVS   r2, #0
-        CMP     r2, #0
-        MOVEQ   r2, #Legacy_IRQsema
-        STR     r2, [r3]
-10
-        LDR     lr, [r2]
+        MOVS    r0, r2
+        MOVEQ   r0, #Legacy_IRQsema
+        STR     r0, [r3]
+        MOV     pc, ip
+
+        EXPORT  triggercbs
+triggercbs
+        Entry
+        BL      get_ptr_IRQsema
+        LDR     lr, [r0]
         MOVS    lr, lr
         EXIT    NE                   ; NZ is within IRQ.. so no CB allowed
         SWI     OS_LeaveOS
