@@ -2861,7 +2861,9 @@ _kernel_oserror* get_transfer_info
     *totalcount=str->totalcount;
     switch(str->xfer->status) {
       case USBD_NORMAL_COMPLETION: {
-        *status=1;
+        /* If we've got a delayed xfer, claim we're still running
+           Matches old behaviour before the delayed xfer code was introduced */
+        *status=(str->delayed_read?0:1);
         }
       break;
       case USBD_IN_PROGRESS: {
