@@ -2369,8 +2369,10 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
                       usbd_status status)
 {
     struct devstream* str = priv;
+    bool delayed_read = str->delayed_read && !xfer->pipe->repeat;
 
-    str->xfer_busy = (status == USBD_IN_PROGRESS);
+    str->xfer_busy = false;
+    str->delayed_read = false;
 
     if (status != USBD_NORMAL_COMPLETION)
     {
@@ -2388,7 +2390,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
     if((str->flags & FLAG_NOPAD) || (str->count == str->totalcount))
     {
         /* Handle any delayed read */
-        if(str->delayed_read)
+        if(delayed_read)
         {
             dprintf(("", "Starting delayed read from callback\n"));
             start_read(str);
@@ -2422,7 +2424,7 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
                 break; /* Buffer was full - what do we do here? Try and insert the extra padding as more space becomes available? For now, just do what the old code did and give up */
         }
         /* Handle any delayed read */
-        if(str->delayed_read)
+        if(delayed_read)
         {
             dprintf(("", "Starting delayed read from callback\n"));
             start_read(str);
