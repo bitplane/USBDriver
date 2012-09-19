@@ -95,6 +95,12 @@ struct isoc_buffer {
     int size;
 };
 
+typedef enum {
+    ReadStatus_Idle, /* Initial state, doing nothing */
+    ReadStatus_Busy, /* Read is in progress. Note xfer may be idle if buffer has become full. */
+    ReadStatus_Complete, /* Read has completed */
+} ReadStatus;
+
 struct devstream {
     /* HID needs to know the ugen */
     struct ugen_softc* ugen;
@@ -126,7 +132,9 @@ struct devstream {
 #define FLAG_VALIDMASK 3 /* Which bits can be modified */
     struct isoc_buffer * isoc;
     bool xfer_busy;
-    bool delayed_read;
+    bool delayed_read; /* Gets set if a read has been queued by RxWakeUp but hasn't actually been started yet (e.g. due to previous read still being in progress) */
+    int nextcount; /* How long the next (i.e. delayed) read should be */
+    ReadStatus read_status;
 };
 
 struct dev_struct {
@@ -2096,6 +2104,8 @@ static _kernel_oserror* device_initialise
     /* New flags to work around deficencies in the DeviceFS interface */
     str->flags = (valid->nopad?0:FLAG_NOPAD)|(valid->shortflag?0:FLAG_SHORT);
 
+    str->read_status = ReadStatus_Idle;
+
     /* see if an interface was specified, if not then look for the interface
        with the endpoint specified */
     find_interface_and_endpoint
@@ -2215,6 +2225,8 @@ detach_done:
         }
     }
 
+    dprintf(("","Got xfer %08x\n",str->xfer));
+
     if (str->xfer == NULL)
     {
         e = uerror (E_BadXfer);
@@ -2257,6 +2269,8 @@ static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 {
     struct devstream* str = priv;
 
+    dprintf(("","%08x write_cb, status=%d, actlen=%d\n",xfer,status,xfer->actlen));
+
     str->xfer_busy = (status == USBD_IN_PROGRESS);
 
     if (status != USBD_NORMAL_COMPLETION)
@@ -2285,27 +2299,29 @@ static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 
 void start_write (struct devstream* str)
 {
+    int s = _kernel_irqs_disabled ();
+    _kernel_irqs_off ();
+
+    dprintf(("","%08x start_write\n",str->xfer));
+
     if (str->xfer == NULL)
     {
         dprintf (("", "Non-head HID stream\n"));
-        return;
+        goto end;
     }
 
     if (str->xfer_busy)
     {
         dprintf (("", "Can't start, xfer still busy\n"));
-        return;
+        goto end;
     }
 
     if (str->xfer->status != USBD_NORMAL_COMPLETION)
     {
         dprintf (("", "Can't start, status = %d (%s)\n",
             str->xfer->status, ccodes[str->xfer->status]));
-        return;
+        goto end;
     }
-
-    int s = _kernel_irqs_disabled ();
-    _kernel_irqs_off ();
 
     str->xfer_busy = true;
 
@@ -2360,6 +2376,7 @@ void start_write (struct devstream* str)
         dprintf (("", "no more data to write\n"));
     }
 
+end:
     if (s == 0) _kernel_irqs_on ();
 }
 
@@ -2371,24 +2388,30 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
     struct devstream* str = priv;
     bool delayed_read = str->delayed_read && !xfer->pipe->repeat;
 
+    dprintf(("","%08x read_cb, status=%d, actlen=%d, delayed_read=%d, read_status=%d\n",xfer,status,xfer->actlen,delayed_read,str->read_status));
+
     str->xfer_busy = false;
-    str->delayed_read = false;
 
     if (status != USBD_NORMAL_COMPLETION)
     {
         dprintf (("", "Bad completion code: %d (%s) %d bytes read\n",
             status, ccodes[status], xfer->actlen));
+        str->delayed_read = false;
+        str->read_status = ReadStatus_Complete;
         return;
     }
 
     if (str->fs_stream == 0)
     {
         dprintf (("", "Stream has been closed\n"));
+        str->delayed_read = false;
+        str->read_status = ReadStatus_Complete;
         return;
     }
 
     if((str->flags & FLAG_NOPAD) || (str->count == str->totalcount))
     {
+        str->read_status = ReadStatus_Complete;
         /* Handle any delayed read */
         if(delayed_read)
         {
@@ -2404,6 +2427,8 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
        transfer must have ended.. else.. try more */
     if (xfer->actlen % UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize))
     {
+        str->read_status = ReadStatus_Complete;
+
         /* required due to DeviceFS concept. */
         char zero[ UGETW(xfer->pipe->endpoint->edesc->wMaxPacketSize)];
 
@@ -2457,37 +2482,63 @@ void fill_isoc_xfer (struct devstream* str, int maxpacket)
 
 void start_read (struct devstream* str)
 {
+    int s = _kernel_irqs_disabled ();
+    _kernel_irqs_off ();
+
+    dprintf(("","%08x start_read busy %d delayed %d read_status %d\n",str->xfer,str->xfer_busy,str->delayed_read,str->read_status));
     if (str->xfer == NULL)
     {
         dprintf (("", "Non-head HID stream\n"));
-        return;
+        goto end;
     }
 
     if (str->xfer_busy)
     {
         dprintf (("", "Can't start, xfer still busy\n"));
-        str->delayed_read = true; /* Flag that we want to start another read after the current one finishes. This may result in some confusion over how much data is being requested and when padding should be applied, but it's better than having no checks at all and creating circular references in the pipes xfer queue. */
-        return;
+        goto end;
     }
 
     if (str->xfer->status != USBD_NORMAL_COMPLETION)
     {
         dprintf (("", "Can't start, status = %d (%s)\n",
             str->xfer->status, ccodes[str->xfer->status]));
-        return;
+        goto end;
     }
 
-    if (str->count >= str->totalcount && !str->xfer->pipe->repeat)
+    if ((str->read_status == ReadStatus_Busy) && (str->count >= str->totalcount) && !str->xfer->pipe->repeat)
     {
         dprintf (("", "Finished reading %d bytes\n", str->totalcount));
-        return;
+        str->read_status = ReadStatus_Complete;
+        if(!str->delayed_read)
+            goto end;
+        dprintf (("", "Falling through to start delayed read\n"));
     }
 
-    int s = _kernel_irqs_disabled ();
-    _kernel_irqs_off ();
 
+    if(!str->pipe->repeat)
+    {
+        /* Only use this logic for non-repeating xfers (i.e. only for bulk) */
+        if(str->read_status != ReadStatus_Busy)
+        {
+            /* Starting a new transfer queued by RxWakeUp */
+            if(!str->delayed_read)
+            {
+                dprintf(("","Can't start, no wakeup reads queued\n"));
+                goto end;
+            }
+            dprintf(("","Starting new read of %d bytes\n",str->nextcount));
+            str->delayed_read = false;
+            str->totalcount = str->nextcount;
+            str->count = 0;
+            str->padded_bytes = 0;
+            str->read_status = ReadStatus_Busy;
+        }
+        else
+        {
+            dprintf(("","Continuing read of %d bytes\n",str->totalcount));
+        }
+    }
     str->xfer_busy = true;
-    str->delayed_read = false;
 
 #ifdef DMA_FROM_BUFFER
     // XXX this was copied from write probably wrong for read
@@ -2904,6 +2955,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
     struct ugen_softc* udev = (struct ugen_softc*) r->r[8];
 //    int32_t ep;
     struct devstream * str = (struct devstream*) r->r[2];
+    int s;
 
     (void) pw;
 
@@ -2939,20 +2991,28 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         break;
 
     case DeviceFSCallDevice_TxWakeUp:
+        s = _kernel_irqs_disabled ();
+        _kernel_irqs_off ();
         str->count = 0;
-        dprintf (("main", "wakeup write, resetting count to %d\n",
-            str->count));
+        dprintf (("main", "%08x wakeup write, resetting count to %d\n",
+            str->xfer, str->count));
         start_write (str);
+        if(s == 0) _kernel_irqs_on();
         break;
     case DeviceFSCallDevice_RxWakeUp:
-        str->count = 0;
-        str->padded_bytes=0;
-        /* total length has always been passed in R3, although not documented */
-        str->totalcount = r->r[3];
-        dprintf (("main", "wakeup read, resetting count to %d, totalcount to %d\n",
-            str->count, str->totalcount));
-        if (!str->pipe->repeat)
+        if(!str->pipe->repeat && r->r[3])
+        {
+            s = _kernel_irqs_disabled ();
+            _kernel_irqs_off ();
+            /* Even if the read starts immediately, we still set the delayed_read flag, because that's what start_read checks for */
+            str->delayed_read = true;
+            /* total length has always been passed in R3, although not documented */
+            str->nextcount = r->r[3];
+            dprintf (("main", "%08x wakeup read, read_status %d, resetting nextcount to %d\n",
+                str->xfer, str->read_status, str->nextcount));
             start_read (str);
+            if(s == 0) _kernel_irqs_on();
+        }
         break;
     case DeviceFSCallDevice_RxSleep:
         break;
@@ -2970,7 +3030,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
     case DeviceFSCallDevice_Halt:
         break;
     case DeviceFSCallDevice_Resume:
-        dprintf (("main", "resume ep = %x\n", str->ep));
+        dprintf (("main", "%08x resume ep = %x\n", str->xfer, str->ep));
         /* if the top bit is set, this is an IN endpoint */
         if (UE_GET_DIR(str->ep) == UE_DIR_IN)
         {
@@ -3004,6 +3064,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
             /* obviously only do this if we're an in endpoint */
             if (UE_GET_DIR(str->ep) == UE_DIR_IN)
             {
+              dprintf(("","%08x start_read from StreamCreated\n",str->xfer));
               start_read(str);
             }
         }
