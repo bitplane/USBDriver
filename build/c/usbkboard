@@ -269,7 +269,11 @@ int detach_keyboard (struct device* kb)
     usbd_close_pipe(sc->sc_intrpipe);
     TAILQ_REMOVE (&allukbds, sc, link_kb);
     if (TAILQ_EMPTY(&allukbds))
+    {
         _swix (OS_Release, _INR(0,2), KEYV, keyv_entry, private_word);
+        /* Notify any other drivers (e.g. PandoraKey) that there (probably) aren't any PC keyboards connected anymore */
+        _swix (OS_CallAVector, _INR(0,1)|_IN(9), KeyV_KeyboardRemoved, KeyboardID_PC, KEYV);
+    }
     free (kb);
     return 0;
 }
