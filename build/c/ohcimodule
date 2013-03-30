@@ -128,6 +128,7 @@ int unhandled_irqs;
 int irqs;
 unsigned int irq_min = INT_MAX, irq_max = 0;
 unsigned long long irq_tot;
+static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
 
 /* Port power controls - only used by HAL devices */
 
@@ -291,8 +292,10 @@ _kernel_oserror* register_bus(void *in,struct device **out)
     if(version < RISCOS_USBDRIVER_API_VERSION)
         return (_kernel_oserror*)"\0\0\0\0USBDriver too old";
     /* Now attempt to register */
+    registering = true;
     e = _swix(USBDriver_RegisterBus, _INR(0,1)|_OUT(0),in,RISCOS_USBDRIVER_API_VERSION,out);
     if(e) *out = NULL;
+    registering = false;
     return e;
 }
 
@@ -699,7 +702,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
     case Service_USB:
         switch (r->r[0]) {
         case Service_USBDriver_Starting:
-            if (usb_soft == NULL)
+            if ((usb_soft == NULL) && !registering)
             {
                 if(ohci_soft.sc_vendor[0]!='\0') // (means svce_PCI has happened)
                 {   /* we're here in callback.. so foo we go */

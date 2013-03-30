@@ -138,6 +138,7 @@ int instance = 0;
 int device_number;
 int unhandled_irqs;
 int registers_32bit=0;
+static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
 
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
@@ -150,8 +151,10 @@ _kernel_oserror* register_bus(void *in,struct device **out)
     if(version < RISCOS_USBDRIVER_API_VERSION)
         return (_kernel_oserror*)"\0\0\0\0USBDriver too old";
     /* Now attempt to register */
+    registering = true;
     e = _swix(USBDriver_RegisterBus, _INR(0,1)|_OUT(0),in,RISCOS_USBDRIVER_API_VERSION,out);
     if(e) *out = NULL;
+    registering = false;
     return e;
 }
 
@@ -407,7 +410,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         switch (r->r[0])
         {
            case Service_USBDriver_Starting:
-             if (usb_soft == NULL)
+             if ((usb_soft == NULL) && !registering)
              {
                  dprintf (("", "Registering with USB driver from svcecall\n"));
                  _kernel_oserror *e = register_bus(&ehci_soft,&usb_soft);
