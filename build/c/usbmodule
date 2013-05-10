@@ -1375,10 +1375,10 @@ char* service_call (usbd_device_handle dev, int unit, int link)
         nifs * sizeof (usb_interface_descriptor_t*) + 20;
 
     char* real_serv = malloc (size);
-    USBServiceCall* serv = (USBServiceCall*) (link? real_serv + 4: real_serv);
+    USBServiceCall* serv = (USBServiceCall*) (link? real_serv + sizeof (USBServiceCall*): real_serv);
 
     char* srv = (char*) serv;
-    if (serv == NULL)
+    if (real_serv == NULL)
     {
         return 0;
     }
@@ -1467,9 +1467,9 @@ char* service_call (usbd_device_handle dev, int unit, int link)
         UGETW(dev->cdesc->wTotalLength);
 
     char* real_serv = malloc (size);
-    USBServiceCall* serv = (USBServiceCall*) (link? real_serv + 4: real_serv);
+    USBServiceCall* serv = (USBServiceCall*) (link? real_serv + sizeof (USBServiceCall*): real_serv);
 
-    if (serv == NULL)
+    if (real_serv == NULL)
     {
         return 0;
     }
