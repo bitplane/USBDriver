@@ -2555,7 +2555,7 @@ void start_read (struct devstream* str)
 #endif
     int actlen = r.r[2];
     int maxpacket = UGETW(str->pipe->endpoint->edesc->wMaxPacketSize);
-    if (actlen > maxpacket)
+    if (actlen >= maxpacket)
     {
         switch (str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE)
         {
