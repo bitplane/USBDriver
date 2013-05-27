@@ -1995,7 +1995,9 @@ static void find_interface_and_endpoint
     usb_interface_descriptor_t *    d;
     usb_endpoint_descriptor_t *     b;
 
-    if (valid->ep_type == 0xdeaddead)
+   /* if neither the ep_type nor the endpoint number were given in the special
+      fields, try to find first bulk endpoint */
+    if ((valid->ep_type == 0xdeaddead) && (valid->endpoint == 0xdeaddead))
     {
         valid->ep_type = UE_BULK;
     }
@@ -2007,6 +2009,7 @@ static void find_interface_and_endpoint
     usb_config_descriptor_t * cdesc = dev->cdesc;
     char* ptr = (char*) cdesc, *ptr_end = ptr + UGETW(cdesc->wTotalLength);
     ptr += cdesc->bLength;
+    i = j = 0;
     while (ptr < ptr_end)
     {
         switch (ptr[1])
@@ -2020,31 +2023,21 @@ static void find_interface_and_endpoint
         case UDESC_ENDPOINT:
             b = (usb_endpoint_descriptor_t *) ptr;
             dprintf (("", "endpoint %x\n", b->bEndpointAddress));
-            dprintf (("", "attributes %x\n", UE_GET_XFERTYPE (b->bmAttributes)));
+            dprintf (("", "attributes %x\n", UE_GET_XFERTYPE(b->bmAttributes)));
 
-            /* if we've found the requested endpoint, return the interface */
-            if (UE_GET_ADDR(b->bEndpointAddress) == valid->endpoint &&
-                ((dir & 1) << 7) != UE_GET_DIR(b->bEndpointAddress))
-            {
-                *iface_return = i;
-                *endpoint_return = b->bEndpointAddress;
-                return;
-            }
-
-            /* if no endpoint was requested, see if the type matches (if given)
-               and the direction and the interface (if given) */
-            else if (
-                (valid->interface == i || valid->interface == 0xdeaddead) &&
-                (valid->endpoint == 0xdeaddead) &&
-                (valid->ep_type == UE_GET_XFERTYPE (b->bmAttributes)) &&
+            /* try to match as many of the fields that have been supplied as possible,
+               but the direction flag must always be correct */
+            if ((valid->interface == i || valid->interface == 0xdeaddead) &&
+                (valid->alternate == j || valid->alternate == 0xdeaddead) &&
+                (valid->endpoint == UE_GET_ADDR(b->bEndpointAddress) || valid->endpoint == 0xdeaddead) &&
+                (valid->ep_type == UE_GET_XFERTYPE(b->bmAttributes) || valid->ep_type == 0xdeaddead) &&
                 /* bit is set for TX, whereas USB is set for IN */
-                (((dir & 1) << 7) != UE_GET_DIR(b->bEndpointAddress)) &&
-                (valid->alternate == j || valid->alternate == 0xdeaddead)
-            )
+                (((dir & 1) << 7) != UE_GET_DIR(b->bEndpointAddress)))
             {
                 *iface_return = i;
                 *alternate_return = j;
                 *endpoint_return = b->bEndpointAddress;
+                valid->ep_type = UE_GET_XFERTYPE(b->bmAttributes);
                 return;
             }
             break;
@@ -2087,13 +2080,6 @@ static _kernel_oserror* device_initialise
     str->size = valid->size;
 
     str->ugen = ugen;
-
-    /* flags bit one is the transmit bit, if set we're open for TX, i.e. an
-       OUT endpoint */
-    if (valid->endpoint != 0xdeaddead)
-    {
-        ep = valid->endpoint + ((flags & 1)? 0: 1 << 7);
-    }
 
     /* XXX we should validate the report at this point */
     str->report = valid->report;
