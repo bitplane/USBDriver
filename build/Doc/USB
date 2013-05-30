@@ -8,6 +8,8 @@ Versions
 --------
 
 Version  Date       Author   Change
+0.94     30/5/2013  RPS      Clarify availability of R6 options for
+                             call device 'USB Control Request'
 0.93     18/7/2010  JL       Updated for USBDriver 0.49
 0.92     06/3/2010  TM       Clear Stall/Transfer info added
 0.91     11/4/2003  JWB      Minor corrections.
@@ -131,15 +133,7 @@ in% = OPENIN"devices#endpoint1:usbd3"
 DeviceFS_CallDevice
 -------------------
 
-Also: Fehler über Fehler in Dokumentation. Es gibt noch einen SWI der das Löschen eines
-Endpunkts erlaubt (Aus Castles Quellcode).
-
-R0       1<<31  + 5   Löscht die Stall Bedingung für einen Endpunkt sowohl per Request
-                      als auch intern auf Hostseite.
-R1                    Device name eg "usbd"                                                       
-R2                    Stream handle as returned by fileswitch.                                    
-
-There are 4 extension calls into the DeviceFS driver which are passed directly to the USB driver and are shown in the table below.
+There are 9 extension calls into the DeviceFS driver which are passed directly to the USB driver and are shown in the table below.
 
 Register  Value       Entry                                                   IYONIX?  Podule?    
 USB Control Request                                                           Yes      Yes        
@@ -152,19 +146,19 @@ R3        Byte 0      BmRequestType                                             
 R4        Bytes 0,1   WIndex                                                                      
           Bytes 2,3   WLength                                                                     
 R5                    Pointer to data buffer.                                                     
-R6        0           Return on command completion, command failure,                              
-                      or command timeout.                                                         
-          Bit 0 = 1   Return after commencing the command with R7 containing                      
-                      the address of a pollable status byte. See                                  
-                      below for details of return values                                          
-          Bit 1 = 1   On entry, R7 contains the address of a routine to be                        
-                      called on command completion. R8 will contain the                           
-                      value to be used for the R12 value when this is                             
-                      called. See below for details of this call.                                 
-R7                    Callback address if R6 bit 1 set.                                           
-R8                    Private word for Callback address in R7 if                                  
-                      R6 bit 1 set.                                                               
-Check buffer space                                                            Yes      Yes        
+R6        0           Return on command completion, command failure,        }                     
+                      or command timeout.                                   }                     
+          Bit 0 = 1   Return after commencing the command with R7           }                     
+                      containing the address of a pollable status byte.     }                     
+                      See below for details of return values                }                     
+          Bit 1 = 1   On entry, R7 contains the address of a routine to be  } No       Yes                    
+                      called on command completion. R8 will contain the     }                     
+                      value to be used for the R12 value when this is       }                     
+                      called. See below for details of this call.           }                     
+R7                    Callback address if R6 bit 1 set.                     }                     
+R8                    Private word for Callback address in R7 if            }                     
+                      R6 bit 1 set.                                         }
+Check Buffer Space                                                            Yes      Yes        
 R0        1<<31 + 2   Interrogate the free space and data available in the                        
                       buffer associated with a DeviceFS stream. (note:                            
                       not all drivers will implement this, as the                                 
@@ -173,7 +167,7 @@ R1                    Device name eg "usbd"                                     
 R2                    Stream handle as returned by fileswitch.                                    
 Returns:R3            Bytes available in buffer                                                   
 Returns:R4            Bytes free in buffer                                                        
-Return handles                                                                Yes      Yes        
+Return Handles                                                                Yes      Yes        
 R0        1<<31 + 3   Return the buffer handle and DeviceFS stream                                
                       handle for this stream                                                      
 R1                    Device name eg "usbd"                                                       
@@ -209,7 +203,7 @@ Returns:R3            Transfer Status:
 Returns:R4            After end of transfer number of Bytes with which
                       Buffer has been padded up to requested length in case
                       of receiving a short package.
-Return handles 2                                                              Yes      No      
+Return Handles 2                                                              Yes      No      
 R0        1<<31 + 7   Return the buffer handle and DeviceFS stream                                
                       handle for this stream                                                      
 R1                    Device name eg "usbd"                                                       
@@ -218,7 +212,7 @@ Returns:R3            Buffer handle                                             
 Returns:R4            DeviceFS stream handle                                                      
 Returns:R5            USB Stream handle
 Returns:R6            Device drivers handle for usage with DeviceFS_CallDevice
-Get/Set options                                                               Yes      No
+Get/Set Options                                                               Yes      No
 R0        1<<31 + 8   Get/set current options
 R1                    Device name eg "usbd"                                                       
 R2                    USB Stream handle as returned by 'Return handles 2' in R5
@@ -233,8 +227,9 @@ Returns:R4            New flags value
                       Note that modifying flags is only guaranteed to work
                       correctly if no transfer is active for that stream
 
-Note: The Check Buffer Space call has been added to enable users to code simple drivers in higher level languages such as BASIC. On RISC OS 4 and earlier, commands such as BGET of BPUT will not return if there is no data or space in the stream's buffer. With this call the user can only make such blocking calls when they wont be blocked.
+Note: The "Check Buffer Space" call has been added to enable users to code simple drivers in higher level languages such as BASIC. On RISC OS 4 and earlier, commands such as BGET of BPUT will not return if there is no data or space in the stream's buffer. With this call the user can only make such blocking calls when they wont be blocked.
 
+Note: The 'USB Control Request' can optionally be polled or called back (see below). The common operation for both IYONIX and podule versions is to use R6=0.
 
 Command completion status 
 -------------------------
@@ -400,7 +395,7 @@ USBReset                    "enumerated" again.                                 
 DeviceFS issues
 ---------------
 
-This is for others intending to provide a DeviceFS interface to their USB cards.. When writing a DeviceFS driver the DeviceFS driver entry 0 (initialise) is missing a vital parameter on versions of DeviceFS prior to that shipped with RISC OS 4. The RISC OS 4(or 5) entry provides the fileswitch stream handle in R4. For earlier DeviceFS versions, this handle may be found as a 32 bit value at offset 44 from the pointer supplied in R2.
+This is for others intending to provide a DeviceFS interface to their USB cards. When writing a DeviceFS driver the DeviceFS driver entry 0 (initialise) is missing a vital parameter on versions of DeviceFS prior to that shipped with RISC OS 4. The RISC OS 4 (or 5) entry provides the fileswitch stream handle in R4. For earlier DeviceFS versions, this handle may be found as a 32 bit value at offset 44 from the pointer supplied in R2.
 
 Licence:
 --------
