@@ -282,16 +282,20 @@ int detach_keyboard (struct device* kb)
 
 void triggercbs (void)
 {
-    int s = splbio();
     if(!USBHALWS->irqsema)
     {
-        /* Prevent recusrive callbacks */
-        USBHALWS->irqsema++;
+        if(!USBHALWS->cbs_needed)
+            return;
+
+        int s = splbio();
+        /* Prevent nested calls to triggercbs() needlessly processing the callback chain when we're already in the middle of it. Effectively matches behaviour of CBack_VectorReq flag in kernel. */
+        USBHALWS->cbs_needed = false;
         /* Trigger all pending callbacks */
         while(USBHALWS->numcb)
         {
-            void (*cbfunc)(void *) = USBHALWS->callbacks[USBHALWS->nextcb].cbfunc;
-            void *param = USBHALWS->callbacks[USBHALWS->nextcb].param;
+            int idx = USBHALWS->nextcb & (MAX_CALLBACKS-1);
+            void (*cbfunc)(void *) = USBHALWS->callbacks[idx].cbfunc;
+            void *param = USBHALWS->callbacks[idx].param;
             USBHALWS->numcb--;
             USBHALWS->nextcb++;
             hdprintf("cb %p %p\n",cbfunc,param);
@@ -301,9 +305,8 @@ void triggercbs (void)
                 splbio(); /* Make sure IRQs remain off */
             }
         }
-        USBHALWS->irqsema--;
+        splx(s);
     }
-    splx(s);
 }
 
 void USBHAL_Init(void *heapbase,uint32_t heapsize,void *ncnbbase,uint32_t ncnbsize)
@@ -326,6 +329,7 @@ void USBHAL_Init(void *heapbase,uint32_t heapsize,void *ncnbbase,uint32_t ncnbsi
     USBHALWS->callbacks = malloc(sizeof(usbhal_callback)*MAX_CALLBACKS);
     USBHALWS->nextcb = 0;
     USBHALWS->numcb = 0;
+    USBHALWS->cbs_needed = false;
     /* The centisecond timer will be running, but the interrupt won't. Enable it. */
     HAL_IRQEnable(HAL_TimerDevice(0));
     /* Start rediscover callout. Half second interval should do it. */
@@ -419,7 +423,7 @@ void USBHAL_Shutdown(void)
     /* Done! */
     /* TODO - Clear up memory allocations? */
     splbio();
-}    
+}
 
 void USBHAL_AddCallback(void (*cbfunc)(void *),void *param)
 {
@@ -430,6 +434,7 @@ void USBHAL_AddCallback(void (*cbfunc)(void *),void *param)
     USBHALWS->callbacks[idx].cbfunc = cbfunc;
     USBHALWS->callbacks[idx].param = param;
     USBHALWS->numcb++;
+    USBHALWS->cbs_needed = true;
     splx(s);
 }
 

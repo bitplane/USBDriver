@@ -45,6 +45,7 @@ typedef struct {
 	usbhal_callback *callbacks; /* Array of callbacks, handled as circular buffer */
 	int nextcb; /* Index of next callback to run */
 	int numcb; /* Number of callbacks */
+	int cbs_needed; /* True if callbacks need processing */
 } usbhal_ws;
 
 extern int USBHAL_WorkspaceOffset;

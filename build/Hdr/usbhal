@@ -37,6 +37,7 @@ USBHAL_WS_kbdflags      # 4 ; Sticky keyboard scan bits
 USBHAL_WS_callbacks     # 4 ; Array of callbacks
 USBHAL_WS_nextcb        # 4 ; Index of next callback to run
 USBHAL_WS_numcb         # 4 ; Number of callbacks
+USBHAL_WS_cbs_needed    # 4 ; True if callbacks need processing
 USBHAL_WS_Size          # 0
 
         END
