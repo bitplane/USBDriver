@@ -40,8 +40,7 @@
 #define __stdio_h
 
 #include "DebugLib/DebugLib.h"
-#include "service.h"
-#include "oslib/devicefs.h"
+#include "USBDevFS.h"
 
 
 
@@ -409,7 +408,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
       case Service_USB:
         switch (r->r[0])
         {
-           case Service_USBDriver_Starting:
+           case Service_USB_USBDriverStarting:
              if ((usb_soft == NULL) && !registering)
              {
                  dprintf (("", "Registering with USB driver from svcecall\n"));
@@ -424,7 +423,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
                  }
              }
              break;
-           case Service_USBDriver_Dying:
+           case Service_USB_USBDriverDying:
              dprintf (("", "Deregistering with USB driver\n"));
              /* USBDriver will do the deregistering at this point, since
                 it's SWIs are not active anymore */

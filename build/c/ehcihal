@@ -39,8 +39,6 @@
 #define __stdio_h
 
 #include "DebugLib/DebugLib.h"
-#include "service.h"
-#include "oslib/devicefs.h"
 
 typedef struct
 {

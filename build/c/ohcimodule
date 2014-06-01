@@ -41,7 +41,7 @@
 #define __stdio_h
 
 #include "DebugLib/DebugLib.h"
-#include "service.h"
+#include "USBDevFS.h"
 
 #define Event_Disable               0xd
 #define Event_Enable                0xe
@@ -701,7 +701,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         break;
     case Service_USB:
         switch (r->r[0]) {
-        case Service_USBDriver_Starting:
+        case Service_USB_USBDriverStarting:
             if ((usb_soft == NULL) && !registering)
             {
                 if(ohci_soft.sc_vendor[0]!='\0') // (means svce_PCI has happened)
@@ -719,7 +719,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
                 }
             }
             break;
-        case Service_USBDriver_Dying:
+        case Service_USB_USBDriverDying:
             dprintf (("", "Deregistering with USB driver\n"));
             /* USBDriver will do the deregistering at this point, since
                it's SWIs are not active anymore */

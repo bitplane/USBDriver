@@ -129,6 +129,7 @@ export_hdrs:   ^.dev.usb.h.usbdevs
         ${CP} ^.dev.usb.h.usb      ${EXPDIR}.dev.usb.h.usb      ${CPFLAGS}
         ${CP} ^.dev.usb.h.usbdevs  ${EXPDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
         ${CP} ^.dev.usb.h.usbdi    ${EXPDIR}.dev.usb.h.usbdi    ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdi_util ${EXPDIR}.dev.usb.h.usbdi_util ${CPFLAGS}
         ${CP} ^.dev.usb.h.usb_port ${EXPDIR}.dev.usb.h.usb_port ${CPFLAGS}
         ${CP} h.USBDevFS           ${EXPDIR}.h.USBDevFS         ${CPFLAGS}
         ${CP} ^.sys.h.device       ${EXPDIR}.sys.h.device       ${CPFLAGS}

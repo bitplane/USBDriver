@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* Changed 17.02.2010 TM DeviceFSCallDevice_TransferInfo and notation of padded bytes. */
+/* Changed 17.02.2010 TM DeviceCall_USB_TransferInfo and notation of padded bytes. */
 #include "usbmodhead.h"
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +26,7 @@
 #include "Global/Services.h"
 #include "Global/UpCall.h"
 #include "Global/FSNumbers.h"
+#include "Interface/DeviceFS.h"
 
 #include <sys/callout.h>
 #include <sys/ioctl.h>
@@ -49,40 +50,12 @@
 
 #include "usbmouse.h"
 #include "usbkboard.h"
-#include "service.h"
+#include "USBDevFS.h"
 
 
 /*---------------------------------------------------------------------------*/
 /* structure definitions                                                     */
 /*---------------------------------------------------------------------------*/
-
-/* for interfacing with ioctl */
-#define FWRITE          0x0002
-
-#define DeviceFSCallDevice_MonitorTX        12
-#define DeviceFSCallDevice_MonitorRX        13
-
-#define DeviceFSCallDevice_USBRequest       0x80000000
-#define DeviceFSCallDevice_BufferSpace      0x80000002
-#define DeviceFSCallDevice_GetHandles       0x80000003
-#define DeviceFSCallDevice_GetLocation      0x80000004
-#define DeviceFSCallDevice_ClearStall       0x80000005
-#define DeviceFSCallDevice_TransferInfo     0x80000006
-#define DeviceFSCallDevice_GetHandles2      0x80000007
-#define DeviceFSCallDevice_GetSetOptions    0x80000008
-
-/* Was this used by the Castle podule at some time? - JL
-#define DeviceFSCallDevice_GetConfig        0x80000001
-#define DeviceFSCallDevice_SetConfig        0x80000002
-#define DeviceFSCallDevice_GetAltInterface  0x80000003
-#define DeviceFSCallDevice_SetAltInterface  0x80000004
-#define DeviceFSCallDevice_GetNoAlt         0x80000005
-#define DeviceFSCallDevice_GetDeviceDesc    0x80000006
-#define DeviceFSCallDevice_GetConfigDesc    0x80000007
-#define DeviceFSCallDevice_GetInterfaceDesc 0x80000008
-#define DeviceFSCallDevice_GetEndpointDesc  0x80000009
-#define DeviceFSCallDevice_GetString        0x8000000a
-*/
 
 struct ugen_softc;
 
@@ -312,8 +285,8 @@ static _kernel_oserror *init_handler(_kernel_swi_regs *r, void *pw, void* h)
 {
     /* issue a service call to request any latent HCDs to report themselves */
     _swix (OS_ServiceCall, _INR (0, 1),
-        Service_USBDriver_Starting,
-        Service_USBDriver);
+        Service_USB_USBDriverStarting,
+        Service_USB);
     /* set up a periodic call to re-discover anything lurking */
     callx_add_callevery(3000,re_discover,NULL);
     /* set up a one off call to re-discover anything lurking early */
@@ -384,7 +357,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     /* issue a service call to request any running HCDs can object */
     /* do this first in case other things still need to happen     */
     _swix (OS_ServiceCall, _INR (0, 1),
-        Service_USBDriver_Dying, Service_USBDriver);
+        Service_USB_USBDriverDying, Service_USB);
 
 
     _swix (OS_Release, _INR(0,2), PointerV, pointerv_entry, pw);
@@ -519,7 +492,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         }
     case Service_USB:
         switch (r->r[0]) {
-        case Service_USBDriver_Connected:
+        case Service_USB_Connected:
         {
             struct device* dev;
             USBServiceAnswer* serv;
@@ -547,9 +520,9 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             }
         }
             break;
-        case Service_USBDriver_Attach:
+        case Service_USB_Attach:
             break;
-        case Service_USBDriver_Detach:
+        case Service_USB_Detach:
             break;
         }
         break;
@@ -558,7 +531,7 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
     /* issue a service call to request any running HCDs can object */
     /* do this first in case other things still need to happen     */
     _swix (OS_ServiceCall, _INR (0, 1),
-        Service_USBDriver_Dying, Service_USBDriver);
+        Service_USB_USBDriverDying, Service_USB);
             callx_remove_all_calleverys ();
             callx_remove_all_callafters ();
             callx_remove_all_callbacks ();
@@ -1353,111 +1326,6 @@ int detach_hub (struct device* hub)
 
 /*---------------------------------------------------------------------------*/
 
-#ifdef OBSOLETE_SERVICE_CALLS
-/* returns non-zero if not handed */
-char* service_call (usbd_device_handle dev, int unit, int link)
-{
-    char name[3 + 11 + 1];
-    int nifs = dev->cdesc->bNumInterface;
-    int epn, iface;
-    for (epn = 0, iface = 0; iface < nifs; ++iface)
-    {
-        epn += dev->ifaces[iface].idesc->bNumEndpoints;
-    }
-    sprintf (name, "USB%d", unit);
-
-    size_t size =
-        (link? sizeof (USBServiceCall*): 0) +
-        sizeof (USBServiceCall) +
-        epn * sizeof (USBDevFSEndpoint) +
-        epn * sizeof (USBDevFSEndpoint*) +
-        nifs * sizeof (usb_interface_descriptor_t) +
-        nifs * sizeof (usb_interface_descriptor_t*) + 20;
-
-    char* real_serv = malloc (size);
-    USBServiceCall* serv = (USBServiceCall*) (link? real_serv + sizeof (USBServiceCall*): real_serv);
-
-    char* srv = (char*) serv;
-    if (real_serv == NULL)
-    {
-        return 0;
-    }
-    memset (serv, 0, size);
-
-    USBDevFSEndpoint* ep = (USBDevFSEndpoint*)
-        (srv +
-        sizeof (USBServiceCall));
-
-    USBDevFSEndpoint** eps = (USBDevFSEndpoint**)
-        (srv +
-        sizeof (USBServiceCall) +
-        epn * sizeof (USBDevFSEndpoint));
-    for (int i = 0; i < epn; ++i)
-        eps[i] = ep + i;
-
-    usb_interface_descriptor_t* idesc = (usb_interface_descriptor_t*)
-        (srv +
-        sizeof (USBServiceCall) +
-        epn * sizeof (USBDevFSEndpoint) +
-        epn * sizeof (USBDevFSEndpoint*));
-
-    usb_interface_descriptor_t** idescs = (usb_interface_descriptor_t**)
-        (srv +
-        sizeof (USBServiceCall) +
-        epn * sizeof (USBDevFSEndpoint) +
-        epn * sizeof (USBDevFSEndpoint*) +
-        nifs * sizeof (usb_interface_descriptor_t));
-    for (int i = 0; i < epn; ++i)
-        idescs[i] = idesc + i;
-
-    serv->dev.address = dev->address;
-    serv->dev.port_status = dev->powersrc->status;
-    serv->dev.dev = dev->ddesc;
-
-    /* only the device pointer and the name need filling in here - the rest
-       are zero */
-    serv->dev.ep_default.dev = &serv->dev;
-    strncpy (serv->dev.ep_default.device_name, name, 19)[19] = '\0';
-
-    serv->dev.config = dev->cdesc;
-    serv->dev.eps = eps;
-    strncpy(serv->dev.name, name, 19)[19] = '\0';
-
-    serv->ep = ep;
-    serv->epd = NULL;  // not filling this in
-    serv->ifc = NULL;  // not filling this in
-    serv->neps = epn;
-    serv->nifs = nifs;
-    serv->hostaddr = dev->powersrc->parent? dev->powersrc->parent->address: 0;
-    serv->hostport = dev->powersrc->portno;
-    serv->bus = dev->bus->bdev.dv_unit;
-
-    serv->dev.ifcs = idescs;
-
-    for (epn = 0, iface = 0; iface < nifs; ++iface)
-    {
-        int ifcepn = dev->ifaces[iface].idesc->bNumEndpoints;
-        dprintf(("", "iface %d, num endpoints = %d, at %p\n", iface, ifcepn, idescs[iface]));
-        memcpy (idescs[iface], dev->ifaces[iface].idesc,
-            USB_INTERFACE_DESCRIPTOR_SIZE);
-        struct usbd_interface * ifc = &dev->ifaces[iface];
-
-        for (int n = 0; n < ifcepn; ++n, ++epn)
-        {
-            ep[epn].dev = &serv->dev;
-            ep[epn].ifc = ifc->index;
-            ep[epn].altifc = ifc->altindex;
-            ep[epn].ep = ifc->endpoints[n].edesc;
-            strncpy(ep[epn].device_name, name, 19)[19] = '\0';
-        }
-    }
-
-    dprintf (("", "%s\n", name));
-//    ddumpbuf ("", serv, size, (int) serv);
-
-    return real_serv;
-}
-#else
 /* returns non-zero if not handed */
 char* service_call (usbd_device_handle dev, int unit, int link)
 {
@@ -1489,7 +1357,6 @@ char* service_call (usbd_device_handle dev, int unit, int link)
 
     return real_serv;
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
 
@@ -1664,8 +1531,8 @@ _kernel_oserror* announce_device (_kernel_swi_regs* r, void* pw, void* sc)
     if (serv == NULL) return NULL;
     dprintf (("", "Send USBDriver_Attach service call\n"));
     _swix (OS_ServiceCall, _INR(0,2),
-        Service_USBDriver_Attach,
-        Service_USBDriver,
+        Service_USB_Attach,
+        Service_USB,
         serv);
     free (serv);
 
@@ -1716,20 +1583,6 @@ struct device* attach_device (struct device* parent, struct usb_attach_arg* aux,
 int detach_device (struct device* dev, int d)
 {
     struct ugen_softc * udev = (struct ugen_softc*) dev;
-
-
-#ifdef OBSOLETE_SERVICE_CALLS
-    /* inform the world that the device has gone */
-    char* serv = service_call (udev->sc_udev, udev->sc_dev.dv_unit, 0);
-    int nothandled;
-    _swix (OS_ServiceCall, _INR(0,2)|_OUT(1),
-        Service_USBDriver_Detach,
-        Service_USBDriver,
-        serv,
-        &nothandled);
-    free (serv);
-#endif
-
 
     if (udev->sc_devfs)
     {
@@ -2949,7 +2802,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
 //        r->r[0], udev, str));
     switch ((uint32_t) r->r[0])
     {
-    case DeviceFSCallDevice_Initialise:
+    case DeviceCall_Initialise:
         return device_initialise
         (
             r->r[2],
@@ -2960,7 +2813,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         );
         break;
 
-    case DeviceFSCallDevice_Terminate:
+    case DeviceCall_Finalise:
         if (str == NULL)
         {
             for (struct devstream** str = udev->str;
@@ -2976,7 +2829,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         }
         break;
 
-    case DeviceFSCallDevice_TxWakeUp:
+    case DeviceCall_WakeUpTX:
         s = _kernel_irqs_disabled ();
         _kernel_irqs_off ();
         str->count = 0;
@@ -2985,7 +2838,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         start_write (str);
         if(s == 0) _kernel_irqs_on();
         break;
-    case DeviceFSCallDevice_RxWakeUp:
+    case DeviceCall_WakeUpRX:
         if(!str->pipe->repeat && r->r[3])
         {
             s = _kernel_irqs_disabled ();
@@ -3000,12 +2853,12 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
             if(s == 0) _kernel_irqs_on();
         }
         break;
-    case DeviceFSCallDevice_RxSleep:
+    case DeviceCall_SleepRX:
         break;
-    case DeviceFSCallDevice_EnumDir:
+    case DeviceCall_EnumDir:
         break;
-    case DeviceFSCallDevice_TxCreateBuffer:
-    case DeviceFSCallDevice_RxCreateBuffer:
+    case DeviceCall_CreateBufferTX:
+    case DeviceCall_CreateBufferRX:
         return create_buffer (
             (struct devstream*) r->r[2],
             (uint32_t*)r->r + 3,
@@ -3013,9 +2866,9 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
             (uint32_t*)r->r + 5,
             (size_t*)r->r + 6);
         break;
-    case DeviceFSCallDevice_Halt:
+    case DeviceCall_Halt:
         break;
-    case DeviceFSCallDevice_Resume:
+    case DeviceCall_Resume:
         dprintf (("main", "%08x resume ep = %x\n", str->xfer, str->ep));
         /* if the top bit is set, this is an IN endpoint */
         if (UE_GET_DIR(str->ep) == UE_DIR_IN)
@@ -3025,13 +2878,13 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         }
         else start_write (str);
         break;
-    case DeviceFSCallDevice_EndOfData:
+    case DeviceCall_EndOfData:
         /* this was to try and make bulk transfers finish neatly, but doesn't
            seem to achieve the desired effect */
         if (str->xfer->status == USBD_IN_PROGRESS)
             r->r[3] = 0;
         break;
-    case DeviceFSCallDevice_StreamCreated:
+    case DeviceCall_StreamCreated:
         str->buffer = r->r[3];
         _swix (Buffer_InternalInfo, _IN(0)|_OUTR(0,2),
 
@@ -3055,8 +2908,8 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
             }
         }
         break;
-    case DeviceFSCallDevice_MonitorTX:
-    case DeviceFSCallDevice_MonitorRX:
+    case DeviceCall_MonitorTX:
+    case DeviceCall_MonitorRX:
         {
             /* the xfer is NULL for case of HID not owning the xfer */
             if (str->xfer == NULL)
@@ -3086,7 +2939,7 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
                 errtoken, &mod_messages, &err, sizeof err, cp);
         }
         break;
-    case DeviceFSCallDevice_USBRequest:
+    case DeviceCall_USB_USBRequest:
         {
             struct req { int a, b; } rq = (struct req) { r->r[3], r->r[4] };
             int err = usbd_do_request (udev->sc_udev, (void*) &rq, (char*)r->r[5]);
@@ -3107,25 +2960,25 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
 
             break;
         }
-    case DeviceFSCallDevice_BufferSpace:
+    case DeviceCall_USB_BufferSpace:
         return get_buffer_space (udev, r->r[2], r->r + 3, r->r + 4);
         break;
-    case DeviceFSCallDevice_GetHandles:
+    case DeviceCall_USB_GetHandles:
         return get_handles (udev, r->r[2], r->r + 3, r->r + 4, NULL, NULL);
         break;
-    case DeviceFSCallDevice_GetLocation:
+    case DeviceCall_USB_GetLocation:
         return get_location (udev, (char*) r->r[3]);
         break;
-    case DeviceFSCallDevice_ClearStall:
+    case DeviceCall_USB_ClearStall:
         return clear_endpoint_stall (udev, r->r[2]);
         break;
-    case DeviceFSCallDevice_TransferInfo:
+    case DeviceCall_USB_TransferInfo:
         return get_transfer_info (str, r->r + 0, r->r + 1, r->r + 3, r->r + 4);
         break;
-    case DeviceFSCallDevice_GetHandles2:
+    case DeviceCall_USB_GetHandles2:
         return get_handles (udev, r->r[2], r->r + 3, r->r + 4, (struct devstream **) ((int *) r->r + 5), (devicefs_device**) ((int *) r->r + 6));
         break;
-    case DeviceFSCallDevice_GetSetOptions:
+    case DeviceCall_USB_GetSetOptions:
         return getset_options (str, r->r + 3, r->r + 4);
         break;
     }

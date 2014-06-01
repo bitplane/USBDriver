@@ -92,6 +92,7 @@
                      R1 =  0xD2
            On exit:  Do not claim this call, it is for information only */
 
+#ifndef _USB_H_ /* Avoid conflicts if NetBSD USB headers included */
 /*****************************************************************************
 * USB descriptor types as C structures
 *****************************************************************************/
@@ -197,6 +198,7 @@ typedef __packed struct {
         uint8_t         bDescriptorType;
         uint8_t         bDescriptorSubtype; /* optional */
 } usb_descriptor_t;
+#endif /* _USB_H_ */
 
 /*****************************************************************************
 * Service call format as a C structure
@@ -238,6 +240,19 @@ struct USBServiceAnswer {
 USBServiceAnswer     * link;         // pointer to next, or NULL for no more
 USBServiceCall         svc;          // data as per 'Attach' service call
 };
+
+/*****************************************************************************
+* DeviceFS_CallDevice codes
+*****************************************************************************/
+
+#define DeviceCall_USB_USBRequest       0x80000000
+#define DeviceCall_USB_BufferSpace      0x80000002
+#define DeviceCall_USB_GetHandles       0x80000003
+#define DeviceCall_USB_GetLocation      0x80000004
+#define DeviceCall_USB_ClearStall       0x80000005
+#define DeviceCall_USB_TransferInfo     0x80000006
+#define DeviceCall_USB_GetHandles2      0x80000007
+#define DeviceCall_USB_GetSetOptions    0x80000008
 
 #endif  /* end of sentry #ifdef */
 /*****************************************************************************
