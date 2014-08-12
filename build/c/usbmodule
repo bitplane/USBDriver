@@ -676,6 +676,8 @@ _kernel_oserror* command_dev_info (int n)
     printf ("Manufacturer    : '%s'\n", ltrim (usbd_get_string (udev, ddesc->iManufacturer, string)));
     printf ("Product         : '%s'\n", ltrim (usbd_get_string (udev, ddesc->iProduct, string)));
     printf ("Serial number   : '%s'\n", ltrim (usbd_get_string (udev, ddesc->iSerialNumber, string)));
+    static const char *speeds[] = {"???","Low","Full","High"};
+    printf ("Speed           : %s\n", speeds[udev->speed>USB_SPEED_HIGH?0:udev->speed]);
 
     return NULL;
 }

@@ -216,16 +216,21 @@ uint16_t                sclen;       // sum length of the block including
                                      // the appended descriptors
 uint16_t                descoff;     // offset to the descriptors
 char                    devname[20]; // device name as appears in DeviceFS
-                                     // e.g.USBD37  NULL terminated
+                                     // e.g.USB37  NULL terminated
 uint8_t                 bus;         // bus number, 0-255
 uint8_t                 devaddr;     // usb address,1-127
 uint8_t                 hostaddr;    // usb address of upstream port 0-127
 uint8_t                 hostport;    // port on host address
 uint8_t                 speed;       // device speed
-                                     // 0:     full speed (12Mbps)
                                      // 1:     low speed (1.5Mbps)
-                                     // 2:     hi speed (480bps)
+                                     // 2:     full speed (12Mbps)
+                                     // 3:     hi speed (480Mbps)
                                      // others:reserved
+                                     // Note: Old versions of USBDriver
+                                     // (version < 0.27 with date <= 07 Jan
+                                     // 2004) used a different scheme:
+                                     // 0:     low speed (1.5Mbps)
+                                     // 1:     full speed (12Mbps)
 uint8_t                 spare1;      // spare, set NULL
 uint8_t                 spare2;      // spare, set NULL
 uint8_t                 spare3;      // spare, set NULL
