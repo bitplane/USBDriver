@@ -65,7 +65,7 @@ static void init_device(usbinfo *info,int idx)
 	ehci->iot = (bus_space_tag_t) info->hw;
 	ehci->ioh = (bus_space_handle_t) info->flags;
 	if(info->flags & HALUSBControllerFlag_EHCI_ETTF)
-		ehci->sc_flags |= EHCI_ETTF;
+		ehci->sc_flags |= EHCIF_ETTF;
 	ehci_init(ehci);
 	/* Enable IRQ */
 	HAL_IRQEnable(ehci->sc_irqdevno);
