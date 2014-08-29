@@ -462,13 +462,13 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                                    hal_device, &usbinfo, sizeof usbinfo,
                                    0, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
-            if (!e && (usbinfolen == sizeof(usbinfo)) && usbinfo.type == 0)
+            if (!e && (usbinfolen == sizeof(usbinfo)) && (usbinfo.type == HALUSBControllerType_OHCI))
             {
                 dprintf (("", "Found OHCI controller on HAL device %d\n", hal_device));
                 device_number = usbinfo.devno;
                 ohci_base = usbinfo.hw;
                 
-                if(usbinfo.flags & 1)
+                if(usbinfo.flags & HALUSBControllerFlag_HAL_USBPortPower)
                 {
                   ohci_ppower = do_hal_ppower;
                 }
@@ -476,7 +476,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                 {
                   ohci_ppower = do_ohci_ppower;
                 }
-                if(usbinfo.flags & 2)
+                if(usbinfo.flags & HALUSBControllerFlag_HAL_USBPortStatus)
                 {
                   ohci_error = do_hal_perror;
                 }
@@ -484,7 +484,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                 {
                   ohci_error = do_ohci_perror;
                 }
-                if(usbinfo.flags & 4)
+                if(usbinfo.flags & HALUSBControllerFlag_HAL_USBPortIRQ)
                 {
                   ohci_pirq = do_hal_pirq;
                   hal_pirq_device=(ohci_pirq)(1,0); // irq off .. read devicenum

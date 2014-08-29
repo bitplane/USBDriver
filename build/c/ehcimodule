@@ -199,6 +199,7 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     _kernel_oserror* e = 0;
+    bool ettf = false;
 
     callx_init (pw);
 
@@ -305,14 +306,15 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                                    hal_device, &usbinfo, sizeof usbinfo,
                                    0, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
-            if (!e && (usbinfolen == sizeof(usbinfo)) && usbinfo.type == 1)
+            if (!e && (usbinfolen == sizeof(usbinfo)) && (usbinfo.type == HALUSBControllerType_EHCI))
             {
                 dprintf (("", "Found EHCI controller on HAL device %d\n", hal_device));
                 device_number = usbinfo.devno;
                 ehci_base = usbinfo.hw;
-                /* The only flag we support ATM is for 32bit register access */
-                if(usbinfo.flags & 8)
+                if(usbinfo.flags & HALUSBControllerFlag_32bit_Regs)
                     registers_32bit = 1;
+                if(usbinfo.flags & HALUSBControllerFlag_EHCI_ETTF)
+                    ettf = true;
                 break;
             }
             else if(e || !usbinfolen)
@@ -349,6 +351,11 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
     ehci_soft.sc_irqdevno = device_number;
+
+    if (ettf)
+    {
+        ehci_soft.sc_flags |= EHCIF_ETTF;
+    }
 
     /* fix n companions */
     ehci_soft.sc_ncomp = 2;
@@ -602,11 +609,12 @@ void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int 
 
 int bus_space_read_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o)
 {
+    int val = ehci_base[o>>2];
 #ifdef EHCI_DEBUG0
     if (ehcidebug > 15)
-         dprintf  (("", "read %x from %p\n", ehci_base[o/4], ehci_base + o/4));
+         dprintf  (("", "read %x from %p\n", val, ehci_base + o/4));
 #endif
-    return ehci_base[o>>2];
+    return val;
 }
 
 void bus_space_write_2 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)

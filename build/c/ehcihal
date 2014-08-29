@@ -64,6 +64,8 @@ static void init_device(usbinfo *info,int idx)
 	/* Abuse iot & ioh members to store base addr & flags */
 	ehci->iot = (bus_space_tag_t) info->hw;
 	ehci->ioh = (bus_space_handle_t) info->flags;
+	if(info->flags & HALUSBControllerFlag_EHCI_ETTF)
+		ehci->sc_flags |= EHCI_ETTF;
 	ehci_init(ehci);
 	/* Enable IRQ */
 	HAL_IRQEnable(ehci->sc_irqdevno);
@@ -79,7 +81,7 @@ void USBHAL_EHCIDriver_Init(void)
 	do {
 		usbinfo info;
 		size_t usbinfolen = HAL_USBControllerInfo(idx,&info,sizeof(info));
-		if((usbinfolen == sizeof(info)) && (info.type == 1))
+		if((usbinfolen == sizeof(info)) && (info.type == HALUSBControllerType_EHCI))
 			init_device(&info,idx);
 		else if(!usbinfolen)
 			return;
@@ -113,7 +115,7 @@ void usbhal_ehci_shutdown(struct usbd_bus *bus)
 
 /* #define these because I'm feeling lazy */
 #define ehci_base ((volatile int *)iot)
-#define registers_32bit (((int)ioh) & 8)
+#define registers_32bit (((int)ioh) & HALUSBControllerFlag_32bit_Regs)
 
 void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
 {
