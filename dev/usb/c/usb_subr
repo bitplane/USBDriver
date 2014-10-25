@@ -1177,10 +1177,8 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 
 	dev->def_ep_desc.bInterval = 0;
 
-#ifndef __riscos /* No datatoggle member (and we memset dev to zero anyway!) */
 	/* doesn't matter, just don't let it uninitialized */
 	dev->def_ep.datatoggle = 0;
-#endif
 
 	dev->quirks = &usbd_no_quirk;
 	dev->address = USB_START_ADDR;

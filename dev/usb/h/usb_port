@@ -60,12 +60,6 @@
 #define lockinit(a,b,c,d,e)
 #define lockmgr(a,b,c)
 struct lock { int a; };
-/* XXX now we have to worry about our lack of support for mutexes too */
-#define mutex_init(a,b,c)
-#define mutex_destroy(a)
-#define mutex_enter(a)
-#define mutex_exit(a)
-typedef struct { int a; } kmutex_t;
 
 #define device_has_power(a) (true)
 

@@ -12,13 +12,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "ohcimodhead.h"
-#include "USBDriver.h"
-#include "swis.h"
 #include <string.h>
 #include <stdlib.h>
-#include <machine/bus.h>
 #include <limits.h>
+#include <machine/bus.h>
+#include "swis.h"
 
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -33,6 +31,7 @@
 #include "Global/RISCOS.h"
 #include "Global/Services.h"
 #include "Global/HALEntries.h"
+#include "Global/OsBytes.h"
 #include "Interface/PCI.h"
 #include "callx/callx.h"
 #include "toolbox.h"
@@ -40,11 +39,10 @@
 /* Have to avoid including stdio as there's a clash with the BSD stuff */
 #define __stdio_h
 
+#include "ohcimodhead.h"
+#include "USBDriver.h"
 #include "DebugLib/DebugLib.h"
 #include "USBDevFS.h"
-
-#define Event_Disable               0xd
-#define Event_Enable                0xe
 
 #define OHCIEmulator_GetRegisters 0x54a80
 #define OHCIEmulator_ClaimDeviceVector  0x054a81
@@ -53,8 +51,6 @@
 #define OHCIEmulator_WriteWord          0x054a84
 
 #define OHCIVendorUnknownRootName       "Built-in"
-
-MessagesFD mod_messages;
 
 /* for debugging */
 #ifdef OHCI_DEBUG
@@ -69,14 +65,13 @@ static int print_fm = 0;
 static int fm_interval = 11999;
 
 char debugname[16];
+
+int unhandled_irqs;
+int irqs;
+unsigned int irq_min = INT_MAX, irq_max = 0;
+unsigned long long irq_tot;
 #endif
 
-void* private_word;
-
-volatile int* ohci_base;
-
-ohci_softc_t ohci_soft;
-struct device * usb_soft=NULL;
 extern int * init_veneer (void);
 extern void* resource_files (void);
 #ifdef OHCI_DEBUG
@@ -85,9 +80,44 @@ extern void ohci_dump_ed (ohci_soft_ed_t*);
 #endif
 extern void ohci_abort_xfer (void*, int);
 
+void* private_word;
+MessagesFD mod_messages;
+volatile int* ohci_base;
+ohci_softc_t ohci_soft;
+struct device * usb_soft=NULL;
+
 extern char panic_string[255];
 
 int* magic = NULL;
+
+int pci_device = -1;
+int hal_device = -1;
+int instance = 0;
+int device_number;
+static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
+
+/* Port power controls - only used by HAL devices */
+void (*ohci_ppower)(int port, int state);
+int  (*ohci_error)(int port); /* Never gets used? */
+void (*ohci_pirqclear)(int port);
+static _kernel_oserror *ppower_statemachine(_kernel_swi_regs *, void *, void *);
+static int hal_oc_device[15]; /* One over current device per port, max for OHCI is 15 */
+static bool hal_oc_device_claimed[15];
+typedef struct p_err_chk
+{
+    int unit;
+    enum
+    {
+        P_none,
+        P_on,
+        P_off,
+        P_going_on,
+        P_going_on2,
+        P_ready,
+        P_retry
+    } state;
+} p_err_chk;
+static p_err_chk pchk;
 
 void build_veneer (int* vn, int* st, size_t sz)
 {
@@ -120,153 +150,18 @@ void build_veneer (int* vn, int* st, size_t sz)
                                    entry_table + 2 * (sz / sizeof (void*)) - 1);
 }
 
-int pci_device = -1;
-int hal_device = -1;
-int instance = 0;
-int device_number;
-int unhandled_irqs;
-int irqs;
-unsigned int irq_min = INT_MAX, irq_max = 0;
-unsigned long long irq_tot;
-static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
-
-/* Port power controls - only used by HAL devices */
-
-void (*ohci_ppower)(int port, int state);
-int  (*ohci_error)(int port); /* Never gets used? */
-int  (*ohci_pirq)(int port, int mode);
-int hal_pirq_device=-1;                       // device to use for power IRQ, or -1
-int hal_error_irq_claimed=0;
-typedef enum {P_none,P_on,P_off,P_going_on,P_going_on2,P_ready,P_retry}P_Phase;
-typedef struct p_err_chk{
-int unit;
-P_Phase state;
-}p_err_chk;
-p_err_chk pchk;
-
-// 0 if OK, 1 if overcurrent
+/* Read overcurrent state of port (1's based numbering).
+ * Returns 0 if OK, non-0 if overcurrent
+ */
 static int do_hal_perror(int port)
 {
     int r;
     _swix(OS_Hardware, _INR(0,1)|_INR(8,9)|_OUT(0),
-                       0, port-1,
-                       0, EntryNo_HAL_USBPortStatus,
+                       hal_device, port - 1,
+                       OSHW_CallHAL, EntryNo_HAL_USBPortIRQStatus,
                        &r);
+
     return r;
-}
-
-// mode=0 .. turn off irq .. report irq device number
-// mode=1 .. turn irq source on and acknowledge the IRQ
-// mode=2 .. read irq status and acknowledge the IRQ
-static int do_hal_pirq (int port, int mode)
-{
-    int r=0;
-    
-    _swix(OS_Hardware, _INR(0,1)|_INR(8,9)|_OUT(0),
-                       port-1,mode,
-                       0, EntryNo_HAL_USBPortIRQ,
-                       &r);          
-    return r;
-}
-
-static void do_hal_ppower(int port, int state);
-
-//_kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v);
-static _kernel_oserror * _hal_powercheck (_kernel_swi_regs * r, void* pw, void* v)
-{
-   p_err_chk *p = (p_err_chk*)v;
-   switch(p->state)
-   {
-      case P_going_on:
-               if(do_hal_perror(1))      // power is not yet good
-               {
-                 p->state=P_going_on2;   // wait a little longer
-                 callx_add_callafter(USB_PORT_RESET_DELAY/10, _hal_powercheck, p);
-                 break;
-               }                         // else fall through
-      case P_going_on2:
-               if(do_hal_perror(1))      // power is still not good
-               {
-                 p->state=P_off;
-                 do_hal_ppower(p->unit,0);
-                 break;
-               }                         // else fall through
-      case P_ready:
-               {
-                 _swix (OS_ClaimDeviceVector, _INR(0,4),
-                             hal_pirq_device | (1u<<31),
-                             usb_irq_port_error_entry, private_word, 0, 0);
-                 hal_error_irq_claimed = 1;
-                 p->state=P_on;
-                 do_hal_pirq(1,1);       // force the irq source on again
-               }
-               break;
-      case P_retry:
-               do_hal_ppower(p->unit,1); // try turning on again
-               break;         
-   }
-   return NULL;  
-}
-
-/* Note OHCI numbers ports from 1, the HAL from 0 */
-static void do_hal_ppower(int port, int state)
-{
-  dprintf (("", "HAL port %d power state %d\n", port, state));
-  _swix(OS_Hardware, _INR(0,2)|_INR(8,9), 0, port-1, state,
-                                        0, EntryNo_HAL_USBPortPower);
-  // only allowed to monitor overcurrent status if port is on
-  if(hal_pirq_device!=-1)
-  {
-    if (state && !hal_error_irq_claimed)
-    {
-      pchk.state=P_going_on;
-      pchk.unit = port;
-      /* give it a little turn on time before grumbling */
-      callx_add_callafter(USB_PORT_RESET_DELAY/10,_hal_powercheck,(void*)&pchk);    // delay monitoring
-    }
-    else
-    if (!state )
-    {
-      do_hal_pirq(1,0);
-      pchk.state=P_retry;
-      pchk.unit = port;
-      /* try again after a delay of a second or so */  
-      callx_add_callafter(10*(USB_PORT_STARTUP_DELAY/10),
-                          _hal_powercheck,(void*)&pchk); // try again 
-      if(hal_error_irq_claimed)
-      _swix (OS_ReleaseDeviceVector, _INR(0,4),
-                             hal_pirq_device | (1u<<31),
-                             usb_irq_port_error_entry, private_word, 0, 0);
-      hal_error_irq_claimed = 0;
-    }
-  }
-}
-
-// designed to turn off root port power if overcurrent detected
-int usb_irq_port_error_handler(_kernel_swi_regs *r, void *pw)
-{
-    int ret;
-    ret=do_hal_pirq(1,2);    // my IRQ?
-    if(ret)
-    {
-     do_hal_pirq(1,0);       // else ack the irq and force irq off..back on
-     do_hal_ppower(1,0);     // if irq .. power off please
-    }                                       
-    return ret?0:1;          // claim.. or pass on
-}
-
-
-
-static int do_ohci_pirq (int port, int mode)
-{
-  return !mode?-1:0;       // not implemented..
-}  
-
-static void do_ohci_ppower(int port, int state)
-{
-  dprintf (("", "OHCI port %d power state %d\n", port, state));
-    ohci_base[OHCI_RH_PORT_STATUS(port)/4] =
-        state ? UPS_PORT_POWER : UPS_LOW_SPEED;
 }
 
 static int do_ohci_perror(int port)
@@ -275,11 +170,135 @@ static int do_ohci_perror(int port)
              ? 1 : 0;
 }                           
 
+/* Clear the overcurrent interrupt for the port (1's based numbering) */
+static void do_hal_pirqclear(int port)
+{
+    _swix(OS_Hardware, _INR(0,1)|_INR(8,9),
+                       hal_device, port - 1,
+                       OSHW_CallHAL, EntryNo_HAL_USBPortIRQClear);
+}
+
+static void do_ohci_pirqclear(int port)
+{
+    /* Not implemented */
+}
+
+/* Turn on power to port (1's based numbering) */
+static void do_hal_ppower(int port, int state)
+{
+    dprintf(("", "HAL port %d power state %d\n", port - 1, state));
+    _swix(OS_Hardware, _INR(0,2)|_INR(8,9), hal_device, port - 1, state,
+                                            OSHW_CallHAL, EntryNo_HAL_USBPortPower);
+  
+    /* Only allowed to monitor overcurrent status if port is on */
+    if (hal_oc_device[port - 1] != -1)
+    {
+        if (state && !hal_oc_device_claimed[port - 1])
+        {
+            pchk.state = P_going_on;
+            pchk.unit = port;
+            /* Give it a little turn on time before grumbling */
+            callx_add_callafter(USB_PORT_RESET_DELAY/10, ppower_statemachine, (void *)&pchk);
+        }
+        else
+        {
+            if (!state)
+            {
+                pchk.state = P_retry;
+                pchk.unit = port;
+                /* Try again after a delay of a second or so */  
+                callx_add_callafter(100, ppower_statemachine, (void *)&pchk);
+                if (hal_oc_device_claimed[port - 1])
+                {
+                    do_hal_pirqclear(port);
+                    _swix(OS_ReleaseDeviceVector, _INR(0,2),
+                                           hal_oc_device[port - 1],
+                                           usb_overcurrent_entry, private_word);
+                    hal_oc_device_claimed[port - 1] = false;
+                }
+            }
+        }
+    }
+}
+
+static void do_ohci_ppower(int port, int state)
+{
+    dprintf (("", "OHCI port %d power state %d\n", port, state));
+    ohci_base[OHCI_RH_PORT_STATUS(port)/4] =
+        state ? UPS_PORT_POWER : UPS_LOW_SPEED;
+}
+
 static void do_dummy_ppower(int port, int state)
 {
     /* Do nothing for PCI devices */
 }
 
+static _kernel_oserror *ppower_statemachine(_kernel_swi_regs *r, void *pw, void *v)
+{
+    p_err_chk *p = (p_err_chk *)v;
+    switch(p->state)
+    {
+        case P_going_on:
+            if (do_hal_perror(p->unit))
+            {
+                /* Power is not yet good, wait a little longer */
+                p->state = P_going_on2;
+                callx_add_callafter(USB_PORT_RESET_DELAY/10, ppower_statemachine, v);
+                break;
+            }
+            /* Else fall through */
+        case P_going_on2:
+            if (do_hal_perror(p->unit))
+            {
+                /* Power is still not good, turn it off */
+                p->state = P_off;
+                do_hal_ppower(p->unit, 0);
+                break;
+            }
+            /* Else fall through */
+        case P_ready:
+            /* Power on, and not overcurrent yet, monitor it normally */
+            do_hal_pirqclear(p->unit);
+            _swix(OS_ClaimDeviceVector, _INR(0,2),
+                  hal_oc_device[p->unit - 1], usb_overcurrent_entry, private_word);
+            _swix(OS_Hardware, _IN(0) | _INR(8,9), hal_oc_device[p->unit - 1],
+                               OSHW_CallHAL, EntryNo_HAL_IRQEnable);
+            hal_oc_device_claimed[p->unit - 1] = true;
+            p->state = P_on;
+            break;
+        case P_retry:
+            /* Try turning on again */ 
+            do_hal_ppower(p->unit, 1);
+            break;         
+    }
+    return NULL;
+}
+
+int usb_overcurrent_handler(_kernel_swi_regs *r, void *pw)
+{
+    size_t i;
+    int    test, devno = r->r[0] & 0xFFFFFF; /* Knock out ClaimDeviceVector flags */
+
+    /* This single handler is registered for all the port overcurrents, so
+     * we need to match up the device number with a port in our table. Note,
+     * the device numbers might be shared, in which case only the first hit
+     * claims (any subsequent ones will come back here anyway).
+     */
+    for (i = 0; i < (sizeof(hal_oc_device) / sizeof(hal_oc_device[0])); i++)
+    {
+        test = hal_oc_device[i] & 0xFFFFFF; 
+        if ((devno == test) && do_hal_perror(i + 1))
+        {
+            /* Claim this one, it's one of ours, and is interrupting */
+            do_hal_pirqclear(i + 1);
+            _swix(OS_Hardware, _IN(0)|_INR(8,9), test,
+                                                 OSHW_CallHAL, EntryNo_HAL_IRQClear);
+            do_hal_ppower(i + 1, 0); /* Power off please */
+            return 0;
+        }
+    }
+    return 1;
+}
 
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
@@ -350,10 +369,18 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 
 
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
-    char* v = "";
-    _kernel_oserror* e = 0;
+    size_t i;
+    _kernel_oserror *e;
+    struct
+    {
+        int type;
+        int flags;
+        void *hw;
+        int devno;
+    } usbinfo;
+
     *panic_string = '\0';
-    
+
     callx_init (pw);
 
     /* set up debugging */
@@ -446,21 +473,15 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     }
     if(pci_device == -1)
     {
+        size_t usbinfolen;
+
         /* Looking for HAL device */
         do {
             hal_device++;
-            struct
-            {
-                int type;
-                int flags;
-                void *hw;
-                int devno;
-            } usbinfo;
-            size_t usbinfolen;
 
             e = _swix(OS_Hardware, _INR(0,2)|_INR(8,9)|_OUT(0),
                                    hal_device, &usbinfo, sizeof usbinfo,
-                                   0, EntryNo_HAL_USBControllerInfo,
+                                   OSHW_CallHAL, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
             if (!e && (usbinfolen == sizeof(usbinfo)) && (usbinfo.type == HALUSBControllerType_OHCI))
             {
@@ -468,34 +489,24 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                 device_number = usbinfo.devno;
                 ohci_base = usbinfo.hw;
                 
-                if(usbinfo.flags & HALUSBControllerFlag_HAL_USBPortPower)
+                if (usbinfo.flags & HALUSBControllerFlag_HAL_Port_Power)
                 {
-                  ohci_ppower = do_hal_ppower;
+                    ohci_ppower = do_hal_ppower;
                 }
                 else
                 {
-                  ohci_ppower = do_ohci_ppower;
+                    ohci_ppower = do_ohci_ppower;
                 }
-                if(usbinfo.flags & HALUSBControllerFlag_HAL_USBPortStatus)
+                if (usbinfo.flags & HALUSBControllerFlag_HAL_Over_Current)
                 {
-                  ohci_error = do_hal_perror;
+                    ohci_error = do_hal_perror;
+                    ohci_pirqclear = do_hal_pirqclear;
                 }
                 else
                 {
-                  ohci_error = do_ohci_perror;
+                    ohci_error = do_ohci_perror;
+                    ohci_pirqclear = do_ohci_pirqclear;
                 }
-                if(usbinfo.flags & HALUSBControllerFlag_HAL_USBPortIRQ)
-                {
-                  ohci_pirq = do_hal_pirq;
-                  hal_pirq_device=(ohci_pirq)(1,0); // irq off .. read devicenum
-                  hal_error_irq_claimed=0;
-                }
-                else
-                {
-                  ohci_pirq = do_ohci_pirq;
-                  hal_pirq_device=-1; // not implemented
-                }
-                (ohci_ppower)(1,0);  // ensure port power off
             }
             else if(e || !usbinfolen)
             {
@@ -507,6 +518,27 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     dprintf (("Main_0", "interrupt device %d\n", device_number));
     dprintf (("Main_0", "hardware address %p\n", ohci_base));
 
+    /* Build a table of port overcurrent device numbers to ports */
+    for (i = 0; i < (sizeof(hal_oc_device) / sizeof(hal_oc_device[0])); i++)
+    {
+        if (usbinfo.flags & HALUSBControllerFlag_HAL_Over_Current)
+        {
+            _swix(OS_Hardware, _INR(0,1)|_INR(8,9)|_OUT(0),
+                               hal_device, i,
+                               OSHW_CallHAL, EntryNo_HAL_USBPortDevice,
+                               &hal_oc_device[i]);
+            if (hal_oc_device[i] != -1)
+            {
+                dprintf(("", "HAL port %d is overcurrent device %d\n", port, hal_oc_device[i])); 
+            }
+        }
+        else
+        {
+            hal_oc_device[i] = -1; /* Not used */
+        }
+        hal_oc_device_claimed[i] = false;
+    }
+
     memset (&ohci_soft, 0, sizeof ohci_soft);
 
     sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
@@ -514,11 +546,15 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
 
     if (pci_device == -1)
+    {
         strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
+    }
     else
     {
-        _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
-        if (v == 0) v = (char *)" ";
+        char *v = NULL;
+
+        _swix (PCI_ReadInfo, _INR(0,3), PCI_ReadInfo_Vendor, &v, sizeof(v), pci_device);
+        if (v == NULL) v = (char *)" ";
         strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
     }
 
@@ -529,11 +565,11 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     const char *c = getenv("ohcidebug");
     usbdebug = ohcidebug = (c?atoi(c):0);
 #endif
-    _swix (OS_ClaimDeviceVector, _INR(0,4),
+    _swix (OS_ClaimDeviceVector, _INR(0,2),
         device_number | ((pci_device == -1)?0:(1u<<31)),
-        usb_irq_entry, pw, 0, 0);
+        usb_irq_entry, pw);
     _swix (OS_Hardware, _IN(0) | _INR(8,9),
-        device_number, 0, EntryNo_HAL_IRQEnable);
+        device_number, OSHW_CallHAL, EntryNo_HAL_IRQEnable);
 
     if ((magic = init_veneer ()) == NULL)
     {
@@ -545,7 +581,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     /* in BSD this is called from sys/pci/ohci_pci.c */
     ohci_init (&ohci_soft);
     ohci_soft.sc_vendor[0]='\0'; // flag no svce_PCI yet
-    
+
     dprintf (("", "Finished module initialisation\n"));
 
 #ifdef OHCI_DEBUG
@@ -554,7 +590,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     {
         vsync_count++;
         _swix (OS_Claim, _INR(0, 2), EventV, vsync_entry, pw);
-        _kernel_osbyte (Event_Enable, Event_VSync, 0);
+        _kernel_osbyte (OsByte_EnableEvent, Event_VSync, 0);
     }
 #endif
 
@@ -597,15 +633,6 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     v = ob[OHCI_CONTROL / 4]; // flush the write
 
-    if(hal_error_irq_claimed)
-    {
-      (ohci_pirq)(1,0);
-      _swix (OS_ReleaseDeviceVector, _INR(0,4),
-                             hal_pirq_device | (1u<<31),
-                             usb_irq_port_error_entry, private_word, 0, 0);
-    }                         
-
-
     callx_remove_all_callbacks ();
     callx_remove_all_callafters ();
     callx_remove_all_calleverys ();
@@ -613,9 +640,18 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     /* don't disable the interrupt since it is shared, the OS will disable it
        when noone is left responding */
 
-    _swix (OS_ReleaseDeviceVector, _INR(0,4),
+    _swix (OS_ReleaseDeviceVector, _INR(0,2),
         device_number | ((pci_device == -1)?0:(1u<<31)),
-        usb_irq_entry, pw, 0, 0);
+        usb_irq_entry, pw);
+
+    for (v = 0; v < (sizeof(hal_oc_device) / sizeof(hal_oc_device[0])); v++)
+    {
+        if (hal_oc_device_claimed[v] && (hal_oc_device[v] != -1))
+        {
+            _swix(OS_ReleaseDeviceVector, _INR(0,2),
+                  hal_oc_device[v], usb_overcurrent_entry, private_word);
+        }
+    }                         
 
     if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
 
@@ -623,7 +659,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     /* if we're sharing an interrupt with th video card */
     if (device_number == 62 && vsync_count)
     {
-        _kernel_osbyte (Event_Disable, Event_VSync, 0);
+        _kernel_osbyte (OsByte_DisableEvent, Event_VSync, 0);
         _swix (OS_Release, _INR(0, 2), EventV, vsync_entry, pw);
     }
 #endif
@@ -743,10 +779,10 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 
 #define OREAD(o) ohci_base[o/4]
 
+#ifdef OHCI_DEBUG
 _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
 {
     switch (cmd_no) {
-#ifdef OHCI_DEBUG
     case CMD_OHCIRegs:
         printf
         (
@@ -866,13 +902,13 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
     case CMD_TargetFM:
         target_fm = (int) strtol (arg_string, NULL, 10);
         break;
-#endif
     default:
         break;
     }
 
     return 0;
 }
+#endif
 
 #ifdef OHCI_DEBUG
 int vsync(_kernel_swi_regs *r, void *pw)
@@ -919,7 +955,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
 #ifdef OHCI_DEBUG
     int u2s, u2s1;
     _swix (OS_Hardware, _INR(8,9)|_OUT(0),
-        0, EntryNo_HAL_CounterRead, &u2s);
+        OSHW_CallHAL, EntryNo_HAL_CounterRead, &u2s);
     irqs++;
 #endif
 
@@ -933,7 +969,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
       // the chip requires its interrupts cleared
       if (pci_device == -1)
          _swix(OS_Hardware, _IN(0)|_INR(8,9), device_number,
-                                           0, EntryNo_HAL_IRQClear);
+                                           OSHW_CallHAL, EntryNo_HAL_IRQClear);
 
 #ifdef OHCI_DEBUG
     if (ret)
@@ -943,7 +979,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
     else
     {
         _swix (OS_Hardware, _INR(8,9)|_OUT(0),
-            0, EntryNo_HAL_CounterRead, &u2s1);
+            OSHW_CallHAL, EntryNo_HAL_CounterRead, &u2s1);
         int t = (u2s - u2s1) * 5;
         if (t < 0) t += 10000000; /* it wrapped */
 //        if (ohcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
@@ -1007,7 +1043,7 @@ usb_transfer_complete(usbd_xfer_handle xfer)
     _swix (USBDriver_TransferComplete, _IN (0), xfer);
 }
 
-_kernel_oserror*
+static _kernel_oserror*
 _riscos_abort_pipe (_kernel_swi_regs * r, void* pw, void* v)
 {
     ohci_abort_xfer (v, USBD_TIMEOUT);

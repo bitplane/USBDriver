@@ -42,6 +42,14 @@
 #else
 #define EHCI_SMALL_PAGE_SIZE EHCI_PAGE_SIZE
 #endif
+#ifdef __riscos
+/* EHCI could use SyncLib for mutex, but for now, just wing it */
+#define mutex_init(a,b,c)
+#define mutex_destroy(a)
+#define mutex_enter(a)
+#define mutex_exit(a)
+typedef struct { int a; } kmutex_t;
+#endif
 
 typedef struct ehci_soft_qtd {
 	ehci_qtd_t qtd;
