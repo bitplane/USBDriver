@@ -57,19 +57,6 @@ extern int USBHAL_OSentriesOffset;
 extern void HAL_IRQClear(int device);
 #define riscos_irqclear HAL_IRQClear
 
-/* Keyboard scan flags
-   TODO - Should be in Kernel.Hdr.HALEntries */
-
-#define HAL_KbdScan_Ctrl        (1u<<0)
-#define HAL_KbdScan_Shift       (1u<<1)
-#define HAL_KbdScan_R           (1u<<4)
-#define HAL_KbdScan_T           (1u<<5)
-#define HAL_KbdScan_Delete      (1u<<6)
-#define HAL_KbdScan_End         (1u<<7)
-#define HAL_KbdScan_Return      (1u<<8)
-#define HAL_KbdScan_Present     (1u<<30)
-#define HAL_KbdScan_Complete    (1u<<31)
-
 /* Initialise workspace, heaps & core USB code */
 extern void USBHAL_Init(void *heapbase,uint32_t heapsize,void *ncnbbase,uint32_t ncnbsize);
 

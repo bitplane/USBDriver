@@ -179,24 +179,23 @@ void ukbd_intr(usbd_xfer_handle xfer, usbd_private_handle addr, usbd_status usta
     }
 
     /* Minimal decoding, as per Tungsten HAL */
-    uint32_t result = HAL_KbdScan_Present;
+    uint32_t result = KbdFlag_Present;
     if (data->modifiers & ((1<<0) | (1<<4)))
-        result |= HAL_KbdScan_Ctrl;
+        result |= KbdFlag_Ctrl;
     if (data->modifiers & ((1<<1) | (1<<5)))
-        result |= HAL_KbdScan_Shift;
+        result |= KbdFlag_Shift;
 
     for (int i = 0; i < NKEYCODE; ++i)
     {
         switch (data->keycode[i])
         {
-        case 0x15: result |= HAL_KbdScan_R; break;
-        case 0x17: result |= HAL_KbdScan_T; break;
-        case 0x4c: result |= HAL_KbdScan_Delete; break;
-        case 0x4d: result |= HAL_KbdScan_End; break;
-        case 0x28: result |= HAL_KbdScan_Return; break;
+        case 0x15: result |= KbdFlag_R; break;
+        case 0x17: result |= KbdFlag_T; break;
+        case 0x4c: result |= KbdFlag_Delete; break;
+        case 0x4d: result |= KbdFlag_Copy; break;
         }
     }
-    result |= HAL_KbdScan_Complete;
+    result |= KbdFlag_Done;
     int s = splbio();
     USBHALWS->kbdflags |= result;
     splx(s);
@@ -252,7 +251,7 @@ struct device* attach_keyboard (struct device* parent, void* aux)
 
     hdprintf("USB keyboard enabled\n");
     int s = splbio();
-    USBHALWS->kbdflags |= HAL_KbdScan_Present;
+    USBHALWS->kbdflags |= KbdFlag_Present;
     splx(s);
 
     /* set idle rate to 0 */
