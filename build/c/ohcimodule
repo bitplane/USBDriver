@@ -734,6 +734,9 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         ohci_base[OHCI_CONTROL / 4] = OHCI_HCFS_RESET;
 
         magic = (int*) ohci_base[OHCI_CONTROL]; // flush the write
+        callx_remove_all_callbacks ();
+        callx_remove_all_callafters ();
+        callx_remove_all_calleverys ();
         break;
     case Service_USB:
         switch (r->r[0]) {

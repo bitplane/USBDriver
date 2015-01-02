@@ -527,11 +527,13 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         }
         break;
     case Service_PreReset:
-        {
-    /* issue a service call to request any running HCDs can object */
-    /* do this first in case other things still need to happen     */
-    _swix (OS_ServiceCall, _INR (0, 1),
-        Service_USB_USBDriverDying, Service_USB);
+      {
+        /* Machine is about to be reset. We do not have time to shut the */
+        /* system down cleanly. We MUST make sure our chip is 'muted'    */
+//    /* issue a service call to request any running HCDs can object */
+//    /* do this first in case other things still need to happen     */
+//    _swix (OS_ServiceCall, _INR (0, 1),
+//        Service_USB_USBDriverDying, Service_USB);
             callx_remove_all_calleverys ();
             callx_remove_all_callafters ();
             callx_remove_all_callbacks ();

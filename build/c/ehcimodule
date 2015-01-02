@@ -449,6 +449,9 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         EOWRITE4(&ehci_soft, EHCI_USBCMD, 0);
         EOWRITE4(&ehci_soft, EHCI_USBCMD, EHCI_CMD_HCRESET);
         EOREAD4(&ehci_soft, EHCI_USBCMD);/* flush the command */
+        callx_remove_all_callbacks ();
+        callx_remove_all_callafters ();
+        callx_remove_all_calleverys ();
         break;
       default:break;
     }
