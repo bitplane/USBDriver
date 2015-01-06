@@ -737,6 +737,18 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         callx_remove_all_callbacks ();
         callx_remove_all_callafters ();
         callx_remove_all_calleverys ();
+        _swix (OS_ReleaseDeviceVector, _INR(0,2),
+            device_number | ((pci_device == -1)?0:(1u<<31)),
+            usb_irq_entry, pw);
+    
+        for (int i = 0; i < (sizeof(hal_oc_device) / sizeof(hal_oc_device[0])); i++)
+        {
+            if (hal_oc_device_claimed[i] && (hal_oc_device[i] != -1))
+            {
+                _swix(OS_ReleaseDeviceVector, _INR(0,2),
+                      hal_oc_device[i], usb_overcurrent_entry, private_word);
+            }
+        }                         
         break;
     case Service_USB:
         switch (r->r[0]) {

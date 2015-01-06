@@ -452,6 +452,8 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         callx_remove_all_callbacks ();
         callx_remove_all_callafters ();
         callx_remove_all_calleverys ();
+        _swix (OS_ReleaseDeviceVector, _INR(0,4),
+            device_number | (1u<<31), usb_irq_entry, pw, 0, 0);
         break;
       default:break;
     }
