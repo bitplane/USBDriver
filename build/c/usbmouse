@@ -51,6 +51,7 @@
 #include "Global/RISCOS.h"
 #include "Global/Keyboard.h"
 #include "Global/Pointer.h"
+#include "Global/VduExt.h"
 
 #include "usbmodhead.h"
 #include "swis.h"
@@ -115,6 +116,11 @@ static int uhidev_maxrepid(void *buf, int len);
 
 #define MAX_BUTTONS	31	/* must not exceed size of sc_buttons */
 
+struct tsscale {
+	int minx, maxx;
+	int miny, maxy;
+};
+
 struct ums_softc {
 	USBBASEDEVICE sc_dev;		/* base device */
 	usbd_device_handle sc_udev;
@@ -127,6 +133,7 @@ struct ums_softc {
 	int sc_isize;
 	struct hid_location sc_loc_x, sc_loc_y, sc_loc_z, sc_loc_w;
 	struct hid_location *sc_loc_btn;
+	struct tsscale sc_tsscale;
 
 	int sc_enabled;
 
@@ -395,6 +402,34 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 			sc->sc_loc_z.pos = 24;
 		if ((sc->flags & UMS_W) && sc->sc_loc_w.pos == 0)
 			sc->sc_loc_w.pos = sc->sc_loc_z.pos + 8;
+	}
+
+	/* Get coordinate range information for absolute pointing devices */
+	if (sc->flags & UMS_ABS) {
+		struct hid_item h;
+		struct hid_data *d;
+		d = hid_start_parse(desc, size, hid_input);
+		while(hid_get_item(d, &h))
+		{
+			if ((h.kind != hid_input) || (HID_GET_USAGE_PAGE(h.usage) != HUP_GENERIC_DESKTOP)) {
+				continue;
+			}
+			switch(HID_GET_USAGE(h.usage)) {
+			case HUG_X:
+				sc->sc_tsscale.minx = h.logical_minimum;
+				sc->sc_tsscale.maxx = h.logical_maximum;
+				break;
+			case HUG_Y:
+				sc->sc_tsscale.miny = h.logical_minimum;
+				sc->sc_tsscale.maxy = h.logical_maximum;
+				break;
+			}
+		}
+		hid_end_parse(d);
+		if ((sc->sc_tsscale.minx == sc->sc_tsscale.maxx) || (sc->sc_tsscale.miny == sc->sc_tsscale.maxy)) {
+			aprint_verbose("\n%s: Invalid or incomplete min/max bounds\n", USBDEVNAME(sc->sc_dev));
+			USB_ATTACH_ERROR_RETURN;
+		}
 	}
 
 	/* figure out the number of buttons */
@@ -704,10 +739,8 @@ void ums_intr
 	u_char *ibuf = sc->sc_ibuf;
 	int dx, dy, dz, dw;
 	u_int32_t buttons = 0;
-	int i, flags;
+	int i;
 	uint8_t change;
-
-	flags = WSMOUSE_INPUT_DELTA;	/* equals 0 */
 
 	if (status == USBD_CANCELLED)
 		return;
@@ -724,10 +757,10 @@ void ums_intr
 
 	dx =  hid_get_data(ibuf, &sc->sc_loc_x);
 	if (sc->flags & UMS_ABS) {
-		flags |= (WSMOUSE_INPUT_ABSOLUTE_X | WSMOUSE_INPUT_ABSOLUTE_Y);
 		dy = hid_get_data(ibuf, &sc->sc_loc_y);
-	} else
+	} else {
 		dy = -hid_get_data(ibuf, &sc->sc_loc_y);
+	}
 	dz =  hid_get_data(ibuf, &sc->sc_loc_z);
 	dw =  hid_get_data(ibuf, &sc->sc_loc_w);
 
@@ -744,11 +777,34 @@ void ums_intr
 
 	if (enabled)
 	{
-		if(dx || dy)
+		if(sc->flags & UMS_ABS)
 		{
-			_swix(OS_CallAVector, _INR(0,3) | _IN(9),
+			static int oldx, oldy;
+			if((dx != oldx) || (dy != oldy))
+			{
+				oldx = dx;
+				oldy = dy;
+				static const int vduin[5] = {
+					VduExt_XEigFactor,
+					VduExt_YEigFactor,
+					VduExt_XWindLimit,
+					VduExt_YWindLimit,
+					-1
+				};
+				int vduout[5];
+				_swix(OS_ReadVduVariables, _INR(0,1), vduin, vduout);
+				int width = (vduout[2] + 1) << vduout[0];
+				int height = (vduout[3] + 1) << vduout[1];
+				dx = ((dx - sc->sc_tsscale.minx) * width) / (sc->sc_tsscale.maxx - sc->sc_tsscale.minx);
+				dy = height - (((dy - sc->sc_tsscale.miny) * height) / (sc->sc_tsscale.maxy - sc->sc_tsscale.miny));
+				_swix(OS_CallAVector, _INR(0,4) | _IN(9), PointerReason_Report, PointerDevice_USB, dx, dy, 0x6f736241 /* "Abso" */, PointerV);
+			}
+		}
+		else if(dx || dy)
+		{
+			_swix(OS_CallAVector, _INR(0,4) | _IN(9),
 				PointerReason_Report, PointerDevice_USB,
-				dx, dy,
+				dx, dy, 0,
 				PointerV);
 		}
 		if (relz || relw)
