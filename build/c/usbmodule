@@ -1153,48 +1153,59 @@ struct device* riscos_usb_attach
 ) {
     struct device* ret;
 
-    /* reset these variables to false upon requesting attachment of a device */
-    if (((struct usb_attach_arg*) aux)->configno == UHUB_UNK_CONFIGURATION)
+    /* This function is called with:
+     * 1. aux->usegeneric == 0 && aux->configno == UHUB_UNK_CONFIGURATION
+     * 2. aux->usegeneric == 0 && aux->configno != UHUB_UNK_CONFIGURATION
+     *    this is repeated for each device interface
+     * 3. aux->usegeneric == 1 && aux->configno == UHUB_UNK_CONFIGURATION
+     *    the device is registered and announced now
+     *
+     * Alias running only occurs when sysvar_attach == false.
+     * Check specifically for case (1) so that only the first matching alias is run
+     * and not repeatedly for each interface.
+     */
+    if ((((struct usb_attach_arg*) aux)->usegeneric == 0) &&
+        (((struct usb_attach_arg*) aux)->configno == UHUB_UNK_CONFIGURATION))
     {
         sysvar_attach = false;
         announce_attach = false;
     }
-    char str[sizeof "USB$Ignore_VVVV_PPPP"];
-    char* getenv (const char*);
-    int atoi (const char*);
-    dprintf (("", "Trying match on ignore device\n"));
-    sprintf (str, "USB$Ignore_%04X_%04X", ((struct usb_attach_arg*)aux)->vendor, ((struct usb_attach_arg*)aux)->product);
-    const char *env = getenv(str);
-    dprintf (("", "look for %s.. got \"%s\"\n",str,(env?env:"")));
 
-    if(!env)    /* check if we are allowed to handle it */
+    char str[sizeof "USB$Ignore_VVVV_PPPP"];
+    sprintf (str, "USB$Ignore_%04X_%04X", ((struct usb_attach_arg*)aux)->vendor,
+                                          ((struct usb_attach_arg*)aux)->product);
+    const char *env = getenv(str);
+    dprintf (("", "Check for '%s' got '%s'\n", str, (env ? env : "NULL")));
+    if (!env)
     {
-      typedef device_ptr_t pf (device_ptr_t, void*);
-      pf* funcs[] = { attach_hub, attach_mouse, attach_keyboard, NULL };
-      for (pf** f = funcs; *f != NULL; ++f)
-      {
-          if ((ret = (*f) (parent, aux)) != NULL)
-          {
-            return ret;
-          }
-      }
+        /* No ignore variable, so try to look for it */
+        typedef device_ptr_t pf (device_ptr_t, void*);
+        pf* funcs[] = { attach_hub, attach_mouse, attach_keyboard, NULL };
+        for (pf** f = funcs; *f != NULL; ++f)
+        {
+            if ((ret = (*f) (parent, aux)) != NULL)
+            {
+                return ret;
+            }
+        }
     }
+
     /* get a number.. dev->dvunit will be 0 if this is the first time through */
-    if(((usbd_device_handle)dev)->dv_unit == NULL)
+    if (((usbd_device_handle)dev)->dv_unit == 0)
     {
-      int startnum = usbdev_no;
+        int startnum = usbdev_no;
 reloop:
-      if (usbdev_no > 999) usbdev_no=1;     /* cycle around mod 1000 */
-      if (usbdev_no > maxdev_no) maxdev_no = usbdev_no;
-      if (get_usbdev (usbdev_no)!=NULL)
-      {
-          if( usbdev_no != startnum)
-          {
-            usbdev_no++;
-            goto reloop;                    /* not looped yet .. try again */
-          }
-      }
-      ((usbd_device_handle)dev)->dv_unit = usbdev_no++;
+        if (usbdev_no > 999) usbdev_no = 1;   /* cycle around mod 1000 */
+        if (usbdev_no > maxdev_no) maxdev_no = usbdev_no;
+        if (get_usbdev (usbdev_no) != NULL)
+        {
+            if (usbdev_no != startnum)
+            {
+                usbdev_no++;
+                goto reloop;                  /* not looped yet .. try again */
+            }
+        }
+        ((usbd_device_handle)dev)->dv_unit = usbdev_no++;
     }
     ret = attach_device (parent, aux, ((usbd_device_handle)dev)->dv_unit);
     if (ret != NULL)
@@ -1211,8 +1222,6 @@ reloop:
         while (sc)
         {
             dprintf (("", "executing: %s\n", sc->com));
-//            if (_kernel_oscli (sc->com))
-//                dprintf (("", "error: %s\n", _kernel_last_oserror ()->errmess));
             if (NULL != (e = _swix (OS_CLI, _IN(0), sc->com)))
                 dprintf (("", "error: %s\n", e->errmess));
             sc = sysvar_head->next;

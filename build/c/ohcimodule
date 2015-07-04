@@ -529,7 +529,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                                &hal_oc_device[i]);
             if (hal_oc_device[i] != -1)
             {
-                dprintf(("", "HAL port %d is overcurrent device %d\n", port, hal_oc_device[i])); 
+                dprintf(("", "HAL port %d is overcurrent device %d\n", i, hal_oc_device[i])); 
             }
         }
         else
