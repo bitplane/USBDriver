@@ -23,7 +23,6 @@ CUSTOMEXP       = custom
 COMPONENT      ?= NetBSD
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:,C:USB
 CDEFINES       += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
-RES_OBJ         =
 RES_AREA        = resource_files
 LIBS            = ${CALLXLIB} ${ASMUTILS}
 
@@ -168,13 +167,13 @@ ${EXPDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
         ${MKDIR} ${EXPDIR}.o
         ${AR} ${ARFLAGS} $@ ${OBJS_HAL}
 
-${MERGEDMDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
-        ${MKDIR} ${MERGEDMDIR}
+${MERGEDRDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
+        ${MKDIR} ${MERGEDRDIR}
         ${TOKENCHECK} ${MSGS_ORIGIN}
         ${CP} ${MSGS_ORIGIN} $@ ${CPFLAGS}
 
-o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDMDIR}.${COMPONENT}Msgs ${DIRS}
-        ${RESGEN} ${RES_AREA} $@ ${MERGEDMDIR}.${COMPONENT}Msgs ${RES_PATH}
+o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDRDIR}.${COMPONENT}Msgs ${DIRS}
+        ${RESGEN} ${RES_AREA} $@ ${MERGEDRDIR}.${COMPONENT}Msgs ${RES_PATH}
 
 
 # Dynamic dependencies:
