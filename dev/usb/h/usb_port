@@ -63,8 +63,24 @@ struct lock { int a; };
 
 #define device_has_power(a) (true)
 
+#ifdef USBHAL
 /* Dummy macro should be all that we need for now */
 #define usb_syncmem(a,b,c,d) {}
+#else
+/* Module builds use bufferable memory and so may need synchronisation
+   However, we only need to synchronise in some situations - use the BUS_DMASYNC
+   hints to decide when. In many cases the if() will be optimised out.
+ */
+typedef void (*barrier_func)(void);
+extern barrier_func barriers[3];
+#define BARRIER_WRITE 1
+#define BARRIER_READ 2
+#define BUS_DMASYNC_PREREAD 0 /* Device is about to write to memory (e.g. about to read a packet from USB). Technically we need a write barrier here to ensure any buffered write to the area completes before the USB overwrites it, but there should be enough barriers elsewhere that we can get away without it (and having one here will really kill performance)  */
+#define BUS_DMASYNC_PREWRITE BARRIER_WRITE /* Device is about to read from memory (e.g. about to write a packet to USB). */
+#define BUS_DMASYNC_POSTREAD BARRIER_READ /* Device has finished writing to memory */
+#define BUS_DMASYNC_POSTWRITE 0 /* Device has finished reading from memory */
+#define usb_syncmem(a,b,c,d) do { int barrier = d; if (barrier) barriers[barrier-1](); } while(0)
+#endif
 
 extern int hz;
 
