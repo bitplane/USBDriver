@@ -77,7 +77,7 @@ include CModule
 CFLAGS         += -wp -wc
 LDFLAGS        += -LIST maps.${TARGET} -MAP -Xref -Symbols rm.sym${TARGET}
 DBG_LIBS       += ${NET5LIBS}
-EXPDIR          = <Lib$Dir>.USB
+EXPLIBDIR       = <Lib$Dir>.USB
 
 #
 # HAL library rules
@@ -117,23 +117,35 @@ ${DIRS}::
 export: export_${PHASE}
         @${NOP}
 
-export_libs: ${EXPDIR}.o.${COMPONENT}
+export_libs: ${EXPLIBDIR}.o.${COMPONENT}
         @echo ${COMPONENT}: library export complete
 
-export_hdrs:   ^.dev.usb.h.usbdevs
-        ${MKDIR} ${EXPDIR}.dev.usb.h
-        ${MKDIR} ${EXPDIR}.h
-        ${MKDIR} ${EXPDIR}.sys.h
-        ${MKDIR} ${EXPDIR}.Hdr
-        ${CP} ^.dev.usb.h.usb      ${EXPDIR}.dev.usb.h.usb      ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbdevs  ${EXPDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbdi    ${EXPDIR}.dev.usb.h.usbdi    ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbdi_util ${EXPDIR}.dev.usb.h.usbdi_util ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usb_port ${EXPDIR}.dev.usb.h.usb_port ${CPFLAGS}
-        ${CP} h.USBDevFS           ${EXPDIR}.h.USBDevFS         ${CPFLAGS}
-        ${CP} ^.sys.h.device       ${EXPDIR}.sys.h.device       ${CPFLAGS}
-        ${CP} ^.VersionNum         ${EXPDIR}.LibVersion         ${CPFLAGS}
-        ${CP} Hdr.usbhal           ${EXPDIR}.Hdr.usbhal         ${CPFLAGS}
+export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
+        ${MKDIR} o
+        ${MKDIR} ${EXPLIBDIR}.dev.usb.h
+        ${MKDIR} ${EXPLIBDIR}.sys.h
+        ${MKDIR} ${EXPLIBDIR}.machine.h
+        ${MKDIR} ${EXPLIBDIR}.h
+        ${MKDIR} ${EXPLIBDIR}.Hdr
+        # DeviceFS/Service call interface
+        ${CP} h.USBDevFS           ${EXPLIBDIR}.h.USBDevFS         ${CPFLAGS}
+        # Host driver interface
+        ${CP} ^.dev.usb.h.usb      ${EXPLIBDIR}.dev.usb.h.usb      ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdi    ${EXPLIBDIR}.dev.usb.h.usbdi    ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbdivar ${EXPLIBDIR}.dev.usb.h.usbdivar ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usb_port ${EXPLIBDIR}.dev.usb.h.usb_port ${CPFLAGS}
+        ${CP} ^.sys.h.device       ${EXPLIBDIR}.sys.h.device       ${CPFLAGS}
+        ${CP} ^.machine.h.bus      ${EXPLIBDIR}.machine.h.bus      ${CPFLAGS}
+        ${CP} ^.VersionNum         ${EXPLIBDIR}.LibVersion         ${CPFLAGS}
+        # Workspace size for HAL allocation (only)
+        ${CP} Hdr.usbhal           ${EXPLIBDIR}.Hdr.usbhal         ${CPFLAGS}
+        # Conversion of the USB device database
+        ${CP} ^.dev.usb.h.usbdevs  ${EXPLIBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
+        # Equivalent of ASMHDRS and ASMCHDRS and CMHGAUTOHDR
+        ${CP} Hdr.USBDriver        ${EXP_HDR}.USBDriver            ${CPFLAGS}
+        ${HDR2H} Hdr.USBDriver ${C_EXP_HDR}.USBDriver
+        ${DO} ${AWK} -- "/.ifndef ${CMHGFILE_SWIPREFIX}/,/endif/" h.${CMHGFILE} > o._h_USBDriver
+        ${FAPPEND} ${C_EXP_HDR}.USBDriver ${C_EXP_HDR}.USBDriver o._h_USBDriver
         @echo ${COMPONENT}: header export complete
 
 resources: resources_${COMPONENT}
@@ -163,8 +175,8 @@ resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
 ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data: ^.dev.usb.usbdevs ^.dev.usb.devlist2h/awk
         ${GAWK} -v os="${UNAME} -s" -f ^.dev.usb.devlist2h/awk ^.dev.usb.usbdevs
 
-${EXPDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
-        ${MKDIR} ${EXPDIR}.o
+${EXPLIBDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
+        ${MKDIR} ${EXPLIBDIR}.o
         ${AR} ${ARFLAGS} $@ ${OBJS_HAL}
 
 ${MERGEDRDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
@@ -174,6 +186,5 @@ ${MERGEDRDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
 
 o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDRDIR}.${COMPONENT}Msgs ${DIRS}
         ${RESGEN} ${RES_AREA} $@ ${MERGEDRDIR}.${COMPONENT}Msgs ${RES_PATH}
-
 
 # Dynamic dependencies:

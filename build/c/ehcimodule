@@ -13,7 +13,6 @@
  * limitations under the License.
  */
 #include "ehcimodhead.h"
-#include "USBDriver.h"
 #include "swis.h"
 #include <string.h>
 #include <stdlib.h>
@@ -34,6 +33,7 @@
 #include "Global/Services.h"
 #include "Global/HALEntries.h"
 #include "Interface/PCI.h"
+#include "Interface/USBDriver.h"
 #include "callx/callx.h"
 
 /* Have to avoid including stdio as there's a clash with the BSD stuff */

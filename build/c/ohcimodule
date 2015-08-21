@@ -33,6 +33,7 @@
 #include "Global/HALEntries.h"
 #include "Global/OsBytes.h"
 #include "Interface/PCI.h"
+#include "Interface/USBDriver.h"
 #include "callx/callx.h"
 #include "toolbox.h"
 
@@ -40,7 +41,6 @@
 #define __stdio_h
 
 #include "ohcimodhead.h"
-#include "USBDriver.h"
 #include "DebugLib/DebugLib.h"
 #include "USBDevFS.h"
 
