@@ -1875,7 +1875,7 @@ static void find_interface_and_endpoint
     usb_config_descriptor_t * cdesc = dev->cdesc;
     char* ptr = (char*) cdesc, *ptr_end = ptr + UGETW(cdesc->wTotalLength);
     ptr += cdesc->bLength;
-    i = j = 0;
+    i = j = -1;
     while (ptr < ptr_end)
     {
         switch (ptr[1])
@@ -1887,6 +1887,7 @@ static void find_interface_and_endpoint
             dprintf (("", "interface %d\n", i));
             break;
         case UDESC_ENDPOINT:
+            if (i == -1) break;
             b = (usb_endpoint_descriptor_t *) ptr;
             dprintf (("", "endpoint %x\n", b->bEndpointAddress));
             dprintf (("", "attributes %x\n", UE_GET_XFERTYPE(b->bmAttributes)));
