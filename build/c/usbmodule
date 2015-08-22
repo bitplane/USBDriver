@@ -1960,6 +1960,9 @@ static _kernel_oserror* device_initialise
 
     str->read_status = ReadStatus_Idle;
 
+    /* The supplied endpoint may include the direction, but mask it off internally */
+    if (valid->endpoint != 0xdeaddead) valid->endpoint = UE_GET_ADDR(valid->endpoint);
+
     /* see if an interface was specified, if not then look for the interface
        with the endpoint specified */
     find_interface_and_endpoint
