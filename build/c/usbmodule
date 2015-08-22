@@ -27,6 +27,7 @@
 #include "Global/UpCall.h"
 #include "Global/FSNumbers.h"
 #include "Interface/DeviceFS.h"
+#include "Interface/USBDriver.h"
 
 #include <sys/callout.h>
 #include <sys/ioctl.h>

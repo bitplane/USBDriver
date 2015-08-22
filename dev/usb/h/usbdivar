@@ -40,20 +40,8 @@
 
 #if defined(__NetBSD__)
 #include <sys/callout.h>
-#endif
-
-#ifdef __riscos
-/* The structures in this file (and a few other files?) are used by the USB HC
-   drivers to communicate with the main USBDriver module. Thus, we need to make
-   sure that HC driver modules only register themselves with USBDriver if both
-   modules use compatible structure definitions.
-   So whenever you make a backwards-incompatible change to these shared
-   structures, make sure you update this #define to the version of the USBDriver
-   module that first implemented those changes (as defined in
-   NetBSD.build.Version, not the dummy NetBSD.VersionNum file!). This #define
-   is used by both USBDriver and the HC modules to check that both parties are
-   using the same API. */
-#define RISCOS_USBDRIVER_API_VERSION 49
+#include <sys/mutex.h>
+#include <sys/bus.h>
 #endif
 
 #ifdef __riscos
@@ -69,6 +57,7 @@ typedef struct {
 
 struct usbd_xfer;
 struct usbd_pipe;
+struct usbd_port;
 
 struct usbd_endpoint {
 	usb_endpoint_descriptor_t *edesc;
@@ -130,7 +119,8 @@ struct usb_softc;
 struct usbd_bus {
 	/* Filled by HC driver */
 	USBBASEDEVICE		bdev; /* base device, host adapter */
-	struct usbd_bus_methods	*methods;
+	void			*hci_private;
+	const struct usbd_bus_methods	*methods;
 	u_int32_t		pipe_size; /* size of a pipe struct */
 	/* Filled by usb driver */
 	struct usbd_device     *root_hub;
@@ -187,7 +177,10 @@ struct usbd_device {
 	usb_config_descriptor_t *cdesc;	       /* full config descr */
 	const struct usbd_quirks     *quirks;  /* device quirks, always set */
 	struct usbd_hub	       *hub;           /* only if this is a hub */
+	int			subdevlen;     /* array length of following */
 	device_ptr_t	       *subdevs;       /* sub-devices, 0 terminated */
+	int			nifaces_claimed; /* number of ifaces in use */
+	void		       *hci_private;
 #if defined(__riscos) && !defined(USBHAL)
 	int			dv_unit;       /* underlying RISCOS device num */
 #endif
