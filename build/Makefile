@@ -114,13 +114,13 @@ ${DIRS}::
         ${MKDIR} maps
         ${MKDIR} bin
 
-export: export_${PHASE}
+export: export_${PHASE}_${COMPONENT}
         @${NOP}
 
 export_libs: ${EXPLIBDIR}.o.${COMPONENT}
-        @echo ${COMPONENT}: library export complete
+        @${ECHO} ${COMPONENT}: library export complete
 
-export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
+export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${MKDIR} o
         ${MKDIR} ${EXPLIBDIR}.dev.usb.h
         ${MKDIR} ${EXPLIBDIR}.sys.h
@@ -146,7 +146,10 @@ export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${HDR2H} Hdr.USBDriver ${C_EXP_HDR}.USBDriver
         ${DO} ${AWK} -- "/.ifndef ${CMHGFILE_SWIPREFIX}/,/endif/" h.${CMHGFILE} > o._h_USBDriver
         ${FAPPEND} ${C_EXP_HDR}.USBDriver ${C_EXP_HDR}.USBDriver o._h_USBDriver
-        @echo ${COMPONENT}: header export complete
+        @${ECHO} ${COMPONENT}: header export complete
+
+export_hdrs_EHCIDriver export_hdrs_OHCIDriver:
+        @${ECHO} ${COMPONENT}: header export complete
 
 resources: resources_${COMPONENT}
 
@@ -154,20 +157,20 @@ resources_OHCIDriver: LocalRes:OHCIMessages
         ${MKDIR} ${RESFSDIR}
         ${TOKENCHECK} LocalRes:OHCIMessages
         ${CP} LocalRes:OHCIMessages ${RESFSDIR}.Messages ${CPFLAGS}
-        @echo ${COMPONENT}: resources copied to Messages module
+        @${ECHO} ${COMPONENT}: resources copied to Messages module
 
 resources_EHCIDriver: LocalRes:EHCIMessages
         ${MKDIR} ${RESFSDIR}
         ${TOKENCHECK} LocalRes:EHCIMessages
         ${CP} LocalRes:EHCIMessages ${RESFSDIR}.Messages ${CPFLAGS}
-        @echo ${COMPONENT}: resources copied to Messages module
+        @${ECHO} ${COMPONENT}: resources copied to Messages module
 
 resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
         ${MKDIR} ${RESFSDIR}
         ${TOKENCHECK} LocalRes:USBMessages
         ${CP} LocalRes:USBMessages ${RESFSDIR}.Messages ${CPFLAGS}
         ${CP} ${DEVICELIST} ${RESFSDIR}.USBDevs ${CPFLAGS}
-        @echo ${COMPONENT}: resources copied to Messages module
+        @${ECHO} ${COMPONENT}: resources copied to Messages module
 
 #
 # Static dependencies
