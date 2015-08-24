@@ -117,7 +117,7 @@ ${DIRS}::
 export: export_${PHASE}_${COMPONENT}
         @${NOP}
 
-export_libs: ${EXPLIBDIR}.o.${COMPONENT}
+export_libs_${COMPONENT}: ${EXPLIBDIR}.o.${COMPONENT}
         @${ECHO} ${COMPONENT}: library export complete
 
 export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
