@@ -900,10 +900,10 @@ static _kernel_oserror* command_RemoveQuirk(unsigned vendor, unsigned product, u
           t->idProduct == product&&
           t->bcdDevice == device)
       {
-        t->idVendor  = NULL;
-        t->idProduct = NULL;
-        t->bcdDevice = NULL;
-        t->quirks.uq_flags    = NULL;
+        t->idVendor  = 0;
+        t->idProduct = 0;
+        t->bcdDevice = 0;
+        t->quirks.uq_flags = 0;
         return NULL;
       }
     }
