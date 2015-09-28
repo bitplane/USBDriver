@@ -148,6 +148,7 @@ struct iface_softc {
 #define E_BadRequest    "\x08\x90\x81\x00" "BadRequest"
 #define E_NotRootP      "\x09\x90\x81\x00" "NotRootP"
 #define E_BadDevice     "\x0A\x90\x81\x00" "BadDevice"
+#define E_MismatchVers  "\x0B\x90\x81\x00" "IncVers"
 #define E_XferFailed    "\x20\x90\x81\x00" "XferFailed"
 
 #define USBDEV_MESSAGES "Resources:$.Resources.USBDriver.USBDevs"
@@ -874,7 +875,7 @@ static _kernel_oserror* command_ListQuirks(void)
 {
   int i;
   usbd_quirk_entry *t;
-  printf("\n USB Extra Quirk listing:\nVendor Product Device Quirk\n");
+  printf("Vendor Product Device Flags\n");
 
   if(extra_quirks)
   {
@@ -1060,7 +1061,7 @@ _kernel_oserror *module_swis(int swi_offset, _kernel_swi_regs *r, void *pw)
         /* R1 now contains internal API version number
            This check should be made more permissive when appropriate */
         if(r->r[1] != RISCOS_USBDRIVER_API_VERSION)
-            return (_kernel_oserror *)"\0\0\0\0Incompatible USBDriver version";
+            return uerror (E_MismatchVers);
         r->r[0] = (int) register_bus ((device_ptr_t) r->r[0]);
         break;
 
@@ -1236,7 +1237,7 @@ reloop:
 
 /*---------------------------------------------------------------------------*/
 
-/* dummy - we don't do attachement like this */
+/* dummy - we don't do attachment like this */
 void* (config_found) (struct device* dev, void* h, int (*f) (void*, const char*))
 {
     (void) f;
