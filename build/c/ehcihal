@@ -52,6 +52,7 @@ extern size_t HAL_USBControllerInfo(int idx,usbinfo *info,size_t size);
 extern int HAL_IRQEnable(int device);
 extern int HAL_IRQDisable(int device);
 extern void HAL_IRQClear(int device);
+extern int HAL_USBPortPower(int idx,int port,int state);
 extern device_ptr_t register_bus(device_ptr_t bus);
 
 static void init_device(usbinfo *info,int idx)
@@ -71,6 +72,14 @@ static void init_device(usbinfo *info,int idx)
 	HAL_IRQEnable(ehci->sc_irqdevno);
 	/* Register with USBDriver */
 	register_bus((device_ptr_t) ehci);
+	/* Switch on the ports (if under HAL control) */
+	if(info->flags & HALUSBControllerFlag_HAL_Port_Power)
+	{
+		for (int i = 0; i < ehci->sc_noport; i++)
+		{
+			HAL_USBPortPower(idx, i, 1);
+		}
+	}
 }
 
 void USBHAL_EHCIDriver_Init(void)

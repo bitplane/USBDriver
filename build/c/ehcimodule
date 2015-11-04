@@ -138,6 +138,7 @@ int device_number;
 int unhandled_irqs;
 int registers_32bit=0;
 static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
+static bool hal_portpower = false; /* Whether to use HAL_PortPower to control the port */
 
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
@@ -176,6 +177,14 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     }
     else
     {
+        if (hal_portpower)
+        {
+            for (int i = 0; i < ehci_soft.sc_noport; i++)
+            {
+                _swix(OS_Hardware, _INR(0,2) | _INR(8,9),
+                      hal_device, i, 1, OSHW_CallHAL, EntryNo_HAL_USBPortPower);
+            }
+        }
         dprintf (("", "Registering with USB driver-done\n"));
     }
 
@@ -304,7 +313,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     
             e = _swix(OS_Hardware, _INR(0,2)|_INR(8,9)|_OUT(0),
                                    hal_device, &usbinfo, sizeof usbinfo,
-                                   0, EntryNo_HAL_USBControllerInfo,
+                                   OSHW_CallHAL, EntryNo_HAL_USBControllerInfo,
                                    &usbinfolen);
             if (!e && (usbinfolen == sizeof(usbinfo)) && (usbinfo.type == HALUSBControllerType_EHCI))
             {
@@ -315,6 +324,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                     registers_32bit = 1;
                 if(usbinfo.flags & HALUSBControllerFlag_EHCI_ETTF)
                     ettf = true;
+                if(usbinfo.flags & HALUSBControllerFlag_HAL_Port_Power)
+                    hal_portpower = true;
                 break;
             }
             else if(e || !usbinfolen)
@@ -339,7 +350,7 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     _swix (OS_ClaimDeviceVector, _INR(0,4),
         device_number| (1u<<31), usb_irq_entry, pw, 0, 0);
     _swix (OS_Hardware, _IN(0) | _INR(8,9),
-        device_number, 0, EntryNo_HAL_IRQEnable);
+        device_number, OSHW_CallHAL, EntryNo_HAL_IRQEnable);
 
     if ((magic = init_veneer ()) == NULL)
     {
@@ -395,7 +406,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     /* don't disable the interrupt since it is shared, the OS will disable it
        when noone is left responding */
 //    _swix (OS_Hardware, _IN(0) | _INR(8,9),
-//        device_number, 0, EntryNo_HAL_IRQDisable);
+//        device_number, OSHW_CallHAL, EntryNo_HAL_IRQDisable);
     callx_remove_all_callbacks ();
     callx_remove_all_callafters ();
     callx_remove_all_calleverys ();
@@ -576,7 +587,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
 #ifdef EHCI_DEBUG
     int u2s, u2s1;
     _swix (OS_Hardware, _INR(8,9)|_OUT(0),
-        0, EntryNo_HAL_CounterRead, &u2s);
+        OSHW_CallHAL, EntryNo_HAL_CounterRead, &u2s);
 //    irqs++;
 //    ehci_softc_t* sc = &ehci_soft;
 //    if (ehcidebug > 1) dprintf (("", "Frame index: %x\n",
@@ -593,7 +604,7 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
     else
     {
         _swix (OS_Hardware, _INR(8,9)|_OUT(0),
-            0, EntryNo_HAL_CounterRead, &u2s1);
+            OSHW_CallHAL, EntryNo_HAL_CounterRead, &u2s1);
         int t = (u2s - u2s1) * 5;
         if (t < 0) t += 10000000; /* it wrapped */
         if (ehcidebug > 1) dprintf(("", "irq for: %d nsecs\n", t));
