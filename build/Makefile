@@ -45,7 +45,7 @@ CMHGDEPENDS     = ehcimodule
 MSGS_ORIGIN     = LocalRes:EHCIMessages
 OBJS            = ehcimodule ehci port call_veneer \
                   triggercbs usbroothub_subr
-OBJS_HAL        = o_hal.ehci o_hal.usbroothub_subr o_hal.ehcihal
+OBJS_HAL        = o_hal.ehci o_hal.usbroothub_subr o_hal.ehcihal o_hal.ehcihalasm
 endif
 
 ifeq ("${COMPONENT}","OHCIDriver")
