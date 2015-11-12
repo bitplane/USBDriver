@@ -289,10 +289,6 @@ static _kernel_oserror *init_handler(_kernel_swi_regs *r, void *pw, void* h)
     _swix (OS_ServiceCall, _INR (0, 1),
         Service_USB_USBDriverStarting,
         Service_USB);
-    /* set up a periodic call to re-discover anything lurking */
-    callx_add_callevery(3000,re_discover,NULL);
-    /* set up a one off call to re-discover anything lurking early */
-    callx_add_callafter(1200,re_discover,NULL);
     return NULL;
 }
 
@@ -336,6 +332,9 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 
     /* do this in a callback so that clients can call our SWIs */
     callx_add_callback (init_handler, 0);
+
+    /* set up a periodic call to re-discover anything lurking */
+    callx_add_callevery(3000,re_discover,NULL);
 
     _swix (OS_Claim, _INR(0,2), PointerV, pointerv_entry, pw);
 
@@ -1128,12 +1127,12 @@ struct device* get_usbdev (int unit)
 }
 
 /*---------------------------------------------------------------------------*/
-static int rd_active = 0;
 static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h)
 {
-//    struct device* dev;
-    if(rd_active) return NULL;
-    rd_active++;
+    static bool rd_active = false;
+
+    if (rd_active) return NULL;
+    rd_active = true;
     for (int i = 1; i < usbbus_no; i++)
     {
         if (get_softc (i << 16) != NULL)
@@ -1142,7 +1141,7 @@ static _kernel_oserror *re_discover(_kernel_swi_regs *r, void *pw, void* h)
             usbioctl (i << 16, USB_DISCOVER, 0, 0, 0);
         }
     }
-    rd_active=0;
+    rd_active = false;
     return NULL;
 }
 

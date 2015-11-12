@@ -249,8 +249,9 @@ USB_ATTACH(usb)
 
 	config_pending_incr();
 #ifdef __riscos
-        /* set the explore flag here since threads don't do anything */
+	/* set the explore flag here since threads don't do anything */
 	sc->sc_bus->needs_explore = 1;
+	usb_needs_explore_callback(sc->sc_bus);
 #else
 	usb_kthread_create(usb_create_event_thread, sc);
 #endif
@@ -543,11 +544,10 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 		break;
 #endif /* USB_DEBUG */
 #ifdef __riscos
-        case USB_DISCOVER:
-                sc->sc_bus->needs_explore = 1;
-                usb_needs_explore_callback (sc->sc_bus);
-//                usb_discover(sc);
-                break;
+	case USB_DISCOVER:
+		sc->sc_bus->needs_explore = 1;
+		usb_needs_explore_callback(sc->sc_bus);
+		break;
 #endif
 	case USB_REQUEST:
 	{
@@ -567,7 +567,7 @@ usbioctl(dev_t devt, u_long cmd, caddr_t data, int flag, usb_proc_ptr p)
 		if (len < 0 || len > 32768)
 			return (EINVAL);
 		if (addr < 0 || addr >= USB_MAX_DEVICES ||
-		    sc->sc_bus->devices[addr] == 0)
+		    sc->sc_bus->devices[addr] == NULL)
 			return (EINVAL);
 		if (len != 0) {
 			iov.iov_base = (caddr_t)ur->ucr_data;
