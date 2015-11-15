@@ -29,7 +29,7 @@ SWIClass        SETS    USBDriverSWI_Name
         AddSWI  USBDriver_Version
 
 ; The structures in the 4 exported headers
-;    NetBSD/dev/usb/h/usb     NetBSD/dev/usb/h/usbvar
+;    NetBSD/dev/usb/h/usb     NetBSD/dev/usb/h/usbdivar
 ;    NetBSD/dev/usb/h/usbdi   NetBSD/dev/usb/h/usb_port
 ; are used by the USB host controller drivers to communicate with the main
 ; USBDriver module. Thus, we need to make sure that they only register
@@ -38,7 +38,7 @@ SWIClass        SETS    USBDriverSWI_Name
 ; structures, make sure you update this API version to the version of the
 ; USBDriver module that first implemented those changes (not the dummy value
 ; in VersionNum file!).
-RISCOS_USBDRIVER_API_VERSION * 76
+RISCOS_USBDRIVER_API_VERSION * 80
 
         OPT     OldOpt
         END

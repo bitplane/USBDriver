@@ -897,7 +897,7 @@ usbd_getnewaddr(usbd_bus_handle bus)
 	int addr;
 
 	for (addr = 1; addr < USB_MAX_DEVICES; addr++)
-		if (bus->devices[addr] == 0)
+		if (bus->devices[addr] == NULL)
 			return (addr);
 	return (-1);
 }
@@ -1140,12 +1140,6 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 
 	DPRINTF(("usbd_new_device bus=%p port=%d depth=%d speed=%d\n",
 		 bus, port, depth, speed));
-	addr = usbd_getnewaddr(bus);
-	if (addr < 0) {
-		printf("%s: No free USB addresses, new device ignored.\n",
-		       USBDEVNAME(bus->bdev));
-		return (USBD_NO_ADDR);
-	}
 
 	dev = malloc(sizeof *dev, M_USB, M_NOWAIT|M_ZERO);
 	if (dev == NULL)
@@ -1177,7 +1171,7 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 
 	dev->def_ep_desc.bInterval = 0;
 
-	/* doesn't matter, just don't let it uninitialized */
+	/* doesn't matter, just don't leave it uninitialized */
 	dev->def_ep.datatoggle = 0;
 
 	dev->quirks = &usbd_no_quirk;
@@ -1226,6 +1220,15 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 		return (err);
 	}
 
+	/* Do any bus specific preparation */
+	if (bus->methods->new_device_pre != NULL) {
+		err = bus->methods->new_device_pre(dev);
+		if (err) {
+			usbd_remove_device(dev, up);
+			return (err);
+		}
+	}
+
 	dd = &dev->ddesc;
 	/* Try a few times in case the device is slow (i.e. outside specs.) */
 	for (i = 0; i < 10; i++) {
@@ -1244,9 +1247,24 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 		return (err);
 	}
 
-	/* Windows resets the port here, do likewise */
+	/* Windows resets the port here to work around problematic LS & FS
+	 * devices that get upset by the initial device descriptor read
+	 * followed by another one once addressed, do likewise.
+	 */
 	if (up->parent)
 		usbd_reset_port(up->parent, port, &ps);
+
+	/* Pick a free address on this bus segment */
+	if (bus->methods->new_device_addr != NULL)
+		addr = bus->methods->new_device_addr(dev); /* Also sets MPS for EP0 */
+	else
+		addr = usbd_getnewaddr(bus);
+	if (addr < 0) {
+		printf("%s: No free USB addresses, new device ignored.\n",
+		       USBDEVNAME(bus->bdev));
+		usbd_remove_device(dev, up);
+		return (USBD_NO_ADDR);
+	}
 
 	if (speed == USB_SPEED_HIGH) {
 		/* Max packet size must be 64 (sec 5.5.3). */
@@ -1280,6 +1298,12 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 		return (USBD_INVAL);
 	}
 
+	/* 4.8.2.1 */
+	if (speed == USB_SPEED_SUPER)
+		USETW(dev->def_ep_desc.wMaxPacketSize, (1 << dd->bMaxPacketSize));
+	else
+		USETW(dev->def_ep_desc.wMaxPacketSize, dd->bMaxPacketSize);
+	DPRINTFN(5, ("bMaxPacketSize %u", dd->bMaxPacketSize));
 	USETW(dev->def_ep_desc.wMaxPacketSize, dd->bMaxPacketSize);
 
 	/* Re-establish the default pipe with the new MPS. */
@@ -1299,7 +1323,10 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 
 	/* Set the address */
 	DPRINTFN(5, ("usbd_new_device: setting device address=%d\n", addr));
-	err = usbd_set_address(dev, addr);
+	if (bus->methods->new_device_addr != NULL)
+		err = USBD_NORMAL_COMPLETION; /* Set earlier */
+	else
+		err = usbd_set_address(dev, addr);
 	if (err) {
 		DPRINTFN(-1, ("usbd_new_device: set address %d failed\n", addr));
 		err = USBD_SET_ADDR_FAILED;
@@ -1354,6 +1381,15 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 		return (err);
 	}
 
+	/* Do any bus specific tidying now everything is known */
+	if (bus->methods->new_device_post != NULL) {
+		err = bus->methods->new_device_post(dev);
+		if (err) {
+			usbd_remove_device(dev, up);
+			return (err);
+		}
+	}
+
 	return (USBD_NORMAL_COMPLETION);
 }
 
@@ -1381,6 +1417,8 @@ usbd_remove_device(usbd_device_handle dev, struct usbd_port *up)
 	if (dev->default_pipe != NULL)
 		usbd_kill_pipe(dev->default_pipe);
         up->device = NULL;
+        if (dev->bus->methods->remove_device != NULL)
+          dev->bus->methods->remove_device(dev);
         dev->bus->devices[dev->address] = NULL;
 
 	free(dev, M_USB);
@@ -1614,6 +1652,8 @@ usb_disconnect_port(struct usbd_port *up, device_ptr_t parent)
 	}
 
 	usbd_add_dev_event(USB_EVENT_DEVICE_DETACH, dev);
+	if (dev->bus->methods->remove_device != NULL)
+		dev->bus->methods->remove_device(dev);
 	dev->bus->devices[dev->address] = NULL;
 	up->device = NULL;
 	usb_free_device(dev);

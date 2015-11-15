@@ -74,6 +74,10 @@ struct usbd_bus_methods {
 	void		      (*freem)(struct usbd_bus *, usb_dma_t *);
 	struct usbd_xfer *    (*allocx)(struct usbd_bus *);
 	void		      (*freex)(struct usbd_bus *, struct usbd_xfer *);
+	usbd_status	      (*new_device_pre)(usbd_device_handle);
+	int		      (*new_device_addr)(usbd_device_handle);
+	usbd_status	      (*new_device_post)(usbd_device_handle);
+	void		      (*remove_device)(usbd_device_handle);
 #ifdef USBHAL
 	int		      (*do_intr)(struct usbd_bus *,int irqdevno);
 	void		      (*shutdown)(struct usbd_bus *);
