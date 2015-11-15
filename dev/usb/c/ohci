@@ -307,6 +307,7 @@ Static struct usbd_bus_methods ohci_bus_methods = {
 	ohci_freem,
 	ohci_allocx,
 	ohci_freex,
+	NULL, NULL, NULL, NULL, /* 4x unused HC overrides */
 #ifdef USBHAL
 	usbhal_ohci_do_intr,
 	usbhal_ohci_shutdown,
