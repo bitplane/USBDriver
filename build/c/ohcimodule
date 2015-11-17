@@ -127,6 +127,9 @@ void build_veneer (int* vn, int* st, size_t sz)
     for (i = 0; i < sz / sizeof (void*); ++i) {
         int* entry = entry_table + 2 * i;
 
+        /* if the method isn't implemented, don't veneer it */
+        if (st[i] == NULL) continue;
+
         /* copy function pointer into veneer */
         vn[i] = st[i];
 
