@@ -247,56 +247,7 @@ typedef struct {
 /* Split Transaction Isochronous Transfer Descriptor */
 typedef struct {
 	volatile ehci_link_t	sitd_next;
-	volatile u_int32_t	sitd_endp;
-#define EHCI_SITD_GET_ADDR(x)	(((x) >>  0) & 0x7f) /* device address */
-#define EHCI_SITD_SET_ADDR(x)	(x)
-#define EHCI_SITD_ADDRMASK	0x0000007f
-#define EHCI_SITD_GET_ENDPT(x)	(((x) >>  8) & 0x0f) /* endpoint no */
-#define EHCI_SITD_SET_ENDPT(x)	((x) <<  8)
-#define EHCI_SITD_GET_HUBA(x)	(((x) >> 16) & 0x7f) /* hub address */
-#define EHCI_SITD_SET_HUBA(x)	((x) << 16)
-#define EHCI_SITD_GET_PORT(x)	(((x) >> 24) & 0x7f) /* hub port */
-#define EHCI_SITD_SET_PORT(x)	((x) << 24)
-#define EHCI_SITD_GET_IO(x)	((x) >> 31)
-#define EHCI_SITD_SET_IO(x)	((x) << 31)          /* endpoint direction */    
-	volatile u_int32_t	sitd_mask;
-#define EHCI_SITD_GET_SMASK(x)	(((x) >>  0) & 0xff) /* split start mask */
-#define EHCI_SITD_SET_SMASK(x)	((x) <<  0)
-#define EHCI_SITD_GET_CMASK(x)	(((x) >>  8) & 0xff) /* split completion mask */
-#define EHCI_SITD_SET_CMASK(x)	((x) <<  8)
-	volatile u_int32_t	sitd_status;
-#define EHCI_SITD_GET_STATUS(x)	(((x) >>  0) & 0xff)
-#define EHCI_SITD_SET_STATUS(x)	((x) <<  0)
-#define  EHCI_SITD_ACTIVE	0x80
-#define  EHCI_SITD_ERR		0x40
-#define  EHCI_SITD_BUFERR	0x20
-#define  EHCI_SITD_BABBLE	0x10
-#define  EHCI_SITD_XACTERR	0x08
-#define  EHCI_SITD_MISSEDMICRO	0x04
-#define  EHCI_SITD_SPLITXSTATE	0x02
-/* Bit 0  reserved */
-#define  EHCI_SITD_STATERRS	0x7c
-#define EHCI_SITD_GET_CPMASK(x)	(((x) >> 8) &  0x7f)   /* C-PROG mask */
-#define EHCI_SITD_SET_CPMASK(x)	((x) << 8)
-#define EHCI_SITD_GET_LEN(x)	(((x) >> 16) &  0x3ff) /* bytes to transfer */
-#define EHCI_SITD_SET_LEN(x)	((x) << 16)
-#define EHCI_SITD_GET_PSEL(x)	(((x) >> 30) & 1)      /* page select */
-#define EHCI_SITD_SET_PSEL(x)	(x << 30)
-#define EHCI_SITD_GET_IOC(x)	((x) >> 31)
-#define EHCI_SITD_SET_IOC(x)	((x) << 31)
-#define EHCI_SITD_IOC		(1 << 31)
-#define EHCI_SITD_BUFFERS	2
-	volatile ehci_isoc_bufr_ptr_t	sitd_buffer[EHCI_SITD_BUFFERS];
-#define EHCI_SITD_SET_TCNT(x)	((x) << 0)
-#define EHCI_SITD_GET_TCNT(x)	(((x) >> 0) & 7)
-#define EHCI_SITD_SET_TPOS(x)	((x) << 3)
-#define EHCI_SITD_GET_TPOS(x)	(((x) >> 3) & 3)
-#define   EHCI_SITD_TPOS_ALL	0
-#define   EHCI_SITD_TPOS_BEGIN	1
-#define   EHCI_SITD_TPOS_MID	2
-#define   EHCI_SITD_TPOS_END	3
-	volatile ehci_link_t		sitd_back;
-	volatile ehci_isoc_bufr_ptr_t	sitd_buffer_hi[EHCI_SITD_BUFFERS];
+	/* XXX many more */
 } ehci_sitd_t;
 #define EHCI_SITD_ALIGN 32
 

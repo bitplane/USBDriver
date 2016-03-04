@@ -350,11 +350,7 @@ usbd_transfer(usbd_xfer_handle xfer)
         {
             /* the buffer pointer is actually a buffermanager private ID */
             if (xfer->rqflags & URQ_RISCOS_BUF)
-		/*
-		 * xfer passed instead of xfer->buffer so that the
-		 * transfer type can be found by bufrem.
-		 */
-		bufrem (KERNADDR(dmap, 0), xfer, size);
+                bufrem (KERNADDR(dmap, 0), xfer->buffer, size);
             else
 #endif
 		memcpy(KERNADDR(dmap, 0), xfer->buffer, size);
@@ -680,7 +676,6 @@ usbd_clear_endpoint_stall_async(usbd_pipe_handle pipe)
 #endif
 #ifdef __riscos
         if(pipe->endpoint)
-        {
 #endif
 
 	req.bmRequestType = UT_WRITE_ENDPOINT;
@@ -690,7 +685,6 @@ usbd_clear_endpoint_stall_async(usbd_pipe_handle pipe)
 	USETW(req.wLength, 0);
 	err = usbd_do_request_async(dev, &req, 0);
 #ifdef __riscos
-        }
         }
 #endif
 	return (err);

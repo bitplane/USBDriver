@@ -435,10 +435,8 @@ usbd_reset_port(usbd_device_handle dev, int port, usb_port_status_t *ps)
 		if (!(UGETW(ps->wPortStatus) & UPS_CURRENT_CONNECT_STATUS))
 			return (USBD_NORMAL_COMPLETION);
 	} while ((UGETW(ps->wPortChange) & UPS_C_PORT_RESET) == 0 && --n > 0);
-
 	if (n == 0)
 		return (USBD_TIMEOUT);
-
 	err = usbd_clear_port_feature(dev, port, UHF_C_PORT_RESET);
 #ifdef USB_DEBUG
 	if (err)
@@ -593,7 +591,6 @@ usbd_fill_iface_data(usbd_device_handle dev, int ifaceidx, int altidx)
 			}
 		}
 		ifc->endpoints[endpt].refcnt = 0;
-		ifc->endpoints[endpt].datatoggle = 0;
 		p += ed->bLength;
 	}
 #undef ed
@@ -1199,7 +1196,6 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 			}
 		}
 		panic("usbd_new_device: cannot find HS port\n");
-		dev->myhsport = NULL;
 	found:
 		DPRINTFN(1,("usbd_new_device: high speed port %d\n", p));
 	} else {
