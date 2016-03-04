@@ -2071,7 +2071,10 @@ ohci_rem_ed(ohci_soft_ed_t *sed, ohci_soft_ed_t *head)
 	for (p = head; p != NULL && p->next != sed; p = p->next)
 		;
 	if (p == NULL)
+	{
 		panic("ohci_rem_ed: ED not found");
+		return;
+	}
 	p->next = sed->next;
 	p->ed.ed_nexted = sed->ed.ed_nexted;
 }
@@ -3551,125 +3554,116 @@ ohci_device_isoc_transfer(usbd_xfer_handle xfer)
 	return (err);
 }
 
-void
-ohci_device_isoc_enter(usbd_xfer_handle xfer)
+/* fixes xfer with large nframes value */
+
+static inline int frnumber_wrap(unsigned int a)
+{
+	return a & 0xffff;
+}
+
+static inline int frnumber_sub(unsigned int a, unsigned int b)
+{
+	a = frnumber_wrap(a);
+	b = frnumber_wrap(b);
+	return 0x8000 - frnumber_wrap(0x8000 - a + b);
+}
+
+void ohci_device_isoc_enter(usbd_xfer_handle xfer)
 {
 	struct ohci_pipe *opipe = (struct ohci_pipe *)xfer->pipe;
 	usbd_device_handle dev = opipe->pipe.device;
 	ohci_softc_t *sc = (ohci_softc_t *)dev->bus;
-	ohci_soft_ed_t *sed = opipe->sed;
 	struct iso *iso = &opipe->u.iso;
-	ohci_soft_itd_t *sitd, *nsitd;
-	ohci_physaddr_t buf, offs, noffs, bp0;
-	int i, ncur, nframes;
-	int s;
-
-	DPRINTFN(1,("ohci_device_isoc_enter: used=%d next=%d xfer=%p "
-		    "nframes=%d\n",
-		    iso->inuse, iso->next, xfer, xfer->nframes));
 
 	if (sc->sc_dying)
 		return;
 
 	if (iso->next == -1) {
-		/* Not in use yet, schedule it a few frames ahead. */
-		iso->next = le32toh(sc->sc_hcca->hcca_frame_number) + 5;
-		DPRINTFN(2,("ohci_device_isoc_enter: start next=%d\n",
-			    iso->next));
+		iso->next = frnumber_wrap(le32toh(sc->sc_hcca->hcca_frame_number) + 16);
+	} else if (frnumber_sub(iso->next, le32toh(sc->sc_hcca->hcca_frame_number)) <= 0) {
+		iso->next = frnumber_wrap(le32toh(sc->sc_hcca->hcca_frame_number) + 1);
 	}
 
-	/* DRE test */
-	if (iso->next < le32toh(sc->sc_hcca->hcca_frame_number) + 1)
-	{
-	    iso->next = le32toh(sc->sc_hcca->hcca_frame_number) + 1;
-	}
-
-	sitd = opipe->tail.itd;
-	buf = DMAADDR(&xfer->dmabuf, 0);
-	bp0 = OHCI_PAGE(buf);
-	offs = OHCI_PAGE_OFFSET(buf);
-	nframes = xfer->nframes;
+	ohci_soft_itd_t* sitd = opipe->tail.itd;
+	ohci_soft_itd_t* nsitd = NULL;
 	xfer->hcpriv = sitd;
-	logprintf ("hcpriv = %p\n", sitd);
-	for (i = ncur = 0; i < nframes; i++, ncur++) {
-		noffs = offs + xfer->frlengths[i];
-		if (ncur == OHCI_ITD_NOFFSET ||	/* all offsets used */
-		    OHCI_PAGE(buf + noffs) > bp0 + OHCI_PAGE_SIZE) { /* too many page crossings */
 
-			/* Allocate next ITD */
-			nsitd = ohci_alloc_sitd(sc);
-			if (nsitd == NULL) {
-				/* XXX what now? */
-                                printf("%s: isoc TD alloc failed\n",
-				       USBDEVNAME(sc->sc_bus.bdev));
-				return;
-			}
+	int nframes = xfer->nframes;
+	if (nframes == 0) return;
 
-			/* Fill current ITD */
-			sitd->itd.itd_flags = htole32(
-				OHCI_ITD_NOCC |
-				OHCI_ITD_SET_SF(iso->next) |
-				OHCI_ITD_SET_DI(6) | /* delay intr a little */
-				OHCI_ITD_SET_FC(ncur));
-			sitd->itd.itd_bp0 = htole32(bp0);
-			sitd->nextitd = nsitd;
-			sitd->itd.itd_nextitd = htole32(nsitd->physaddr);
-			sitd->itd.itd_be = htole32(bp0 + offs - 1);
-			sitd->xfer = xfer;
-			sitd->flags = 0;
+	ohci_physaddr_t buf = DMAADDR(&xfer->dmabuf, 0);
 
-			sitd = nsitd;
-			iso->next = iso->next + ncur;
-			bp0 = OHCI_PAGE(buf + offs);
-			ncur = 0;
+	int quit = 0;
+	int i = 0;
+	while (!quit) {
+		nsitd = ohci_alloc_sitd(sc);
+		if (nsitd == NULL) {
+			/* XXX what now? */
+			return;
 		}
-		sitd->itd.itd_offset[ncur] = htole16(OHCI_ITD_MK_OFFS(offs));
-		offs = noffs;
-	}
-	nsitd = ohci_alloc_sitd(sc);
-	if (nsitd == NULL) {
-		/* XXX what now? */
-                printf("%s: isoc TD alloc failed\n",
-		       USBDEVNAME(sc->sc_bus.bdev));
-		return;
-	}
-	/* Fixup last used ITD */
-	sitd->itd.itd_flags = htole32(
-		OHCI_ITD_NOCC |
-		OHCI_ITD_SET_SF(iso->next) |
-		OHCI_ITD_SET_DI(0) |
-		OHCI_ITD_SET_FC(ncur));
-	sitd->itd.itd_bp0 = htole32(bp0);
-	sitd->nextitd = nsitd;
-	sitd->itd.itd_nextitd = htole32(nsitd->physaddr);
-	sitd->itd.itd_be = htole32(bp0 + offs - 1);
-	sitd->xfer = xfer;
-	sitd->flags = OHCI_CALL_DONE;
 
-	iso->next = iso->next + ncur;
-	 /* DRE test */
-	/*
-	iso->next = le32toh(sc->sc_hcca->hcca_frame_number) + 2;
-	iso->next = -1; */
+		int offs = OHCI_PAGE_OFFSET(buf);
+		int noffs = offs;
+		/* Note: filling of offsets requires first offset to have bit 13 = 0 */
+		for (int ncur = 0; ncur <= OHCI_ITD_NOFFSET; ncur++, i++) {
+			if (noffs >= (OHCI_PAGE_SIZE * 2) ||
+			    ncur == OHCI_ITD_NOFFSET ||
+			    i == nframes) {
+				ohci_physaddr_t bp0 = OHCI_PAGE(buf);
+				buf = bp0;
+				if (noffs > (OHCI_PAGE_SIZE * 2)) {
+					/* couldn't fit last itd offset
+					   so roll it back */
+					buf += offs;
+					i--;
+					ncur--;
+					/* error if ncur == 0 */
+				} else
+					buf += noffs;
+
+				/* Fill current ITD */
+				sitd->itd.itd_flags = htole32(
+					OHCI_ITD_NOCC |
+					OHCI_ITD_SET_SF(iso->next) |
+					OHCI_ITD_SET_DI(0) | /* was 6 delay intr a little */
+					OHCI_ITD_SET_FC(ncur));
+				sitd->itd.itd_bp0 = htole32(bp0);
+				sitd->nextitd = nsitd;
+				sitd->itd.itd_nextitd = htole32(nsitd->physaddr);
+				sitd->itd.itd_be = htole32(buf - 1);
+				sitd->xfer = xfer;
+				sitd->flags = (i == nframes) ? OHCI_CALL_DONE : 0;
+
+				iso->next += ncur;
+				sitd = nsitd;
+
+				if (i == nframes) quit = 1;
+
+				break;
+			}
+			offs = noffs;
+			noffs = offs + xfer->frlengths[i];
+			sitd->itd.itd_offset[ncur] = htole16(OHCI_ITD_MK_OFFS(offs));
+		}
+	}
+
 	iso->inuse += nframes;
-
-	xfer->actlen = offs;	/* XXX pretend we did it all */
-	xfer->actlen = 0; /* what on earth is this meant to do? DRE */
-	DPRINTFN(5, ("actlen set to %d\n", xfer->actlen));
-
+	xfer->actlen = 0; /* no bytes transferred yet */
 	xfer->status = USBD_IN_PROGRESS;
+
+	ohci_soft_ed_t *sed = opipe->sed;
 
 #ifdef OHCI_DEBUG
 	if (ohcidebug > 5) {
 		DPRINTF(("ohci_device_isoc_enter: frame=%d\n",
-			 le32toh(sc->sc_hcca->hcca_frame_number)));
+			le32toh(sc->sc_hcca->hcca_frame_number)));
 		ohci_dump_itds(xfer->hcpriv);
 		ohci_dump_ed(sed);
 	}
 #endif
 
-	s = splusb();
-        sed->ed.ed_tailp = htole32(nsitd->physaddr);
+	int s = splusb();
+	sed->ed.ed_tailp = htole32(nsitd->physaddr);
 	opipe->tail.itd = nsitd;
 	sed->ed.ed_flags &= htole32(~OHCI_ED_SKIP);
 	splx(s);
@@ -3678,11 +3672,12 @@ ohci_device_isoc_enter(usbd_xfer_handle xfer)
 	if (ohcidebug > 5) {
 		delay(150000);
 		DPRINTF(("ohci_device_isoc_enter: after frame=%d\n",
-			 le32toh(sc->sc_hcca->hcca_frame_number)));
+			le32toh(sc->sc_hcca->hcca_frame_number)));
 		ohci_dump_itds(xfer->hcpriv);
 		ohci_dump_ed(sed);
 	}
 #endif
+
 }
 
 usbd_status

@@ -57,6 +57,11 @@
  *
  * 3) Command failures are not recovered correctly.
  */
+ 
+
+#ifdef EHCI_DEBUG
+#define notyet 1==1
+#endif
 
 #ifdef __riscos
 #include <dev/usb/usbhal.h>
@@ -91,6 +96,16 @@
 #include <dev/usb/ehcivar.h>
 #include <dev/usb/usbroothub_subr.h>
 
+static inline int frindex_wrap(const ehci_softc_t* sc, unsigned int a) {
+	return a & (sc->sc_flsize - 1);
+}
+
+static inline int frindex_sub(const ehci_softc_t* sc, unsigned int a, unsigned int b) {
+	a = frindex_wrap(sc, a);
+	b = frindex_wrap(sc, b);
+	return (sc->sc_flsize / 2) - frindex_wrap(sc, (sc->sc_flsize / 2) - a + b);
+}
+
 #ifdef __riscos
 #define printf logprintf
 #define aprint_verbose logprintf
@@ -106,6 +121,17 @@ int ehcidebug = 0;
 #else
 #define DPRINTF(x)
 #define DPRINTFN(n,x)
+#endif
+
+#ifdef EHCI_DEBUG
+#define dprintf_here(...) \
+	do\
+	{\
+		printf("%s(%d)- 0x%x: ",__func__,__LINE__,EOREAD4(sc, EHCI_FRINDEX));\
+		printf(__VA_ARGS__);\
+        } while (0)
+#else
+#define dprintf_here(...) do {} while (0)
 #endif
 
 struct ehci_pipe {
@@ -481,6 +507,7 @@ ehci_init(ehci_softc_t *sc)
 	usb_setup_reserve(sc->sc_dev, &sc->sc_dma_reserve, sc->sc_bus.dmatag,
 	    USB_MEM_RESERVE);
 #endif
+
 	/* Reset the controller */
 	DPRINTF(("%s: resetting\n", USBDEVNAME(sc->sc_bus.bdev)));
 	EOWRITE4(sc, EHCI_USBCMD, 0);	/* Halt controller */
@@ -488,6 +515,7 @@ ehci_init(ehci_softc_t *sc)
         EOREAD4(sc, EHCI_USBCMD);
 #endif	
 	usb_delay_ms(&sc->sc_bus, 1);
+
 	EOWRITE4(sc, EHCI_USBCMD, EHCI_CMD_HCRESET);
 	for (i = 0; i < 100; i++) {
 		usb_delay_ms(&sc->sc_bus, 1);
@@ -499,7 +527,6 @@ ehci_init(ehci_softc_t *sc)
 		logprintf("%s: reset timeout\n", USBDEVNAME(sc->sc_bus.bdev));
 		return (USBD_IOERROR);
 	}
-
 	/*
 	 * If we are doing embedded transaction translation function, force
 	 * the controller to host mode.
@@ -638,13 +665,22 @@ ehci_init(ehci_softc_t *sc)
 
 	mutex_init(&sc->sc_doorbell_lock, MUTEX_DEFAULT, IPL_NONE);
 
-	/* Turn on controller */
+    /* Turn on controller */
+#if 0 /* change this line from */	
 	EOWRITE4(sc, EHCI_USBCMD,
 		 EHCI_CMD_ITC_2 | /* 2 microframes interrupt delay */
 		 (EOREAD4(sc, EHCI_USBCMD) & EHCI_CMD_FLS_M) |
 		 EHCI_CMD_ASE |
 		 EHCI_CMD_PSE |
 		 EHCI_CMD_RS);
+#else /* to */
+	EOWRITE4(sc, EHCI_USBCMD,
+		 EHCI_CMD_ITC_2 | /* 2 microframes interrupt delay */
+		 (EOREAD4(sc, EHCI_USBCMD) & (EHCI_CMD_FLS_M | EHCI_CMD_ASPME | EHCI_CMD_ASPMC)) |
+		 EHCI_CMD_ASE |
+		 EHCI_CMD_PSE |
+		 EHCI_CMD_RS);
+#endif
 
 	/* Take over port ownership */
 	EOWRITE4(sc, EHCI_CONFIGFLAG, EHCI_CONF_CF);
@@ -659,6 +695,24 @@ ehci_init(ehci_softc_t *sc)
 		logprintf("%s: run timeout\n", USBDEVNAME(sc->sc_bus.bdev));
 		return (USBD_IOERROR);
 	}
+
+#if 1 /*  IMX6 ISOCHRONOUS CRACKLE FIX */
+	/*
+	 * Fixes buffer underrun errors which result in glitches in 
+	 * Isochronous transfers and retries in other transfer modes.
+	 * Changing TXFIFOTHRES in EHCI_TXFILLTUNING to 4 fixes this.
+	 * See imx6 errata pdf ERR006308. 
+	 * Default value of TXFIFOTHRES was 2
+	 * Bits 8-12 of EHCI_TXFillTuning contain a health check counter 
+	 * for the scheduler. Setting bits 0-7 to 2 stops health check counts
+	 * occuring
+	 */
+#define EHCI_TXFILLTUNING (EHCI_USBCMD	+ 0x164 - 0x140)
+
+	i = EOREAD4(sc, EHCI_TXFILLTUNING) & ~0x3f00FF;
+	EOWRITE4(sc, EHCI_TXFILLTUNING, (i | 0x40002));
+	
+#endif /* IMX6 ISOCHRONOUS CRACKLE FIX */
 
 	/* Enable interrupts */
 	DPRINTFN(1,("ehci_init: enabling\n"));
@@ -929,7 +983,6 @@ Static void
 ehci_check_itd_intr(ehci_softc_t *sc, struct ehci_xfer *ex) {
 	ehci_soft_itd_t *itd;
 	int i;
-
 	if (&ex->xfer != SIMPLEQ_FIRST(&ex->xfer.pipe->queue))
 		return;
 
@@ -950,22 +1003,25 @@ ehci_check_itd_intr(ehci_softc_t *sc, struct ehci_xfer *ex) {
 	 * check no active transfers in last itd, meaning we're finished
 	 */
 
-	usb_syncmem(&itd->dma, itd->offs + offsetof(ehci_itd_t, itd_ctl),
-		    sizeof(itd->itd.itd_ctl), BUS_DMASYNC_POSTWRITE |
-		    BUS_DMASYNC_POSTREAD);
+	sc = sc;
+
+	if (ex->xfer.device->speed != USB_SPEED_HIGH) {
+		if ((EHCI_SITD_GET_STATUS(itd->td.sitd.sitd_status) & EHCI_SITD_ACTIVE) == 0)
+			goto done;
+		return;
+	}
 
 	for (i = 0; i < EHCI_ITD_NUFRAMES; i++) {
-		if (le32toh(itd->itd.itd_ctl[i]) & EHCI_ITD_ACTIVE)
-			break;
+		u_int32_t s = le32toh(itd->td.itd.itd_ctl[i]);
+                
+		if (s & EHCI_ITD_IOC) {
+			if (s &  EHCI_ITD_ACTIVE) return;
+			goto done;
+		}
 	}
 
-	if (i == EHCI_ITD_NUFRAMES) {
-		goto done; /* All 8 descriptors inactive, it's done */
-	}
-
-	DPRINTFN(12, ("ehci_check_itd_intr: ex %p itd %p still active\n", ex,
-			ex->itdstart));
 	return;
+
 done:
 	DPRINTFN(12, ("ehci_check_itd_intr: ex=%p done\n", ex));
 	callout_stop(&(ex->xfer.timeout_handle));
@@ -1026,6 +1082,25 @@ ehci_idone(struct ehci_xfer *ex)
 		uframes = min(1 << (i - 1), USB_UFRAMES_PER_FRAME);
 
 		for (itd = ex->itdstart; itd != NULL; itd = itd->xfer_next) {
+			if (xfer->device->speed != USB_SPEED_HIGH) {
+#ifdef EHCI_DEBUG
+				if (ehcidebug > 1) ehci_dump_sitd(itd);
+#endif  /* EHCI_DEBUG */              
+				status = le32toh(itd->td.sitd.sitd_status);
+				len    = EHCI_ITD_GET_LEN(status);
+				if (EHCI_SITD_GET_STATUS(status) & EHCI_SITD_STATERRS)
+					len = 0; /*No valid data on error*/
+				else {
+					if (len >  xfer->frlengths[nframes]) len = 0;
+					len = xfer->frlengths[nframes] - len;
+				}
+				xfer->frlengths[nframes++] = len;
+				actlen += len;
+			} else {
+#ifdef EHCI_DEBUG
+				if (ehcidebug > 1) ehci_dump_itd(itd);
+#endif                
+
 			usb_syncmem(&itd->dma,itd->offs + offsetof(ehci_itd_t,itd_ctl),
 			    sizeof(itd->itd.itd_ctl), BUS_DMASYNC_POSTWRITE |
 			    BUS_DMASYNC_POSTREAD);
@@ -1040,7 +1115,7 @@ ehci_idone(struct ehci_xfer *ex)
 				if (nframes >= xfer->nframes)
 					break;
 
-				status = le32toh(itd->itd.itd_ctl[i]);
+				status = le32toh(itd->td.itd.itd_ctl[i]);
 				len = EHCI_ITD_GET_LEN(status);
 				if (EHCI_ITD_GET_STATUS(status) != 0)
 					len = 0; /*No valid data on error*/
@@ -1049,6 +1124,7 @@ ehci_idone(struct ehci_xfer *ex)
 				actlen += len;
 			}
 
+			}
 			if (nframes >= xfer->nframes)
 				break;
 	    	}
@@ -1505,6 +1581,7 @@ ehci_device_clear_toggle(usbd_pipe_handle pipe)
 #endif
 #endif
 	epipe->nexttoggle = 0;
+	pipe->endpoint->datatoggle = 0;
 }
 
 Static void
@@ -1665,37 +1742,85 @@ ehci_dump_sqh(ehci_soft_qh_t *sqh)
 Static void
 ehci_dump_itd(struct ehci_soft_itd *itd)
 {
-	ehci_isoc_trans_t t;
-	ehci_isoc_bufr_ptr_t b, b2, b3;
-	int i;
+	printf("ITD: itd_next=");ehci_dump_link(itd->td.itd.itd_next,1);printf("\n");
 
-	printf("ITD: next phys=%X\n", itd->itd.itd_next);
-
+	u_int32_t i;
 	for (i = 0; i < EHCI_ITD_NUFRAMES; i++) {
-		t = le32toh(itd->itd.itd_ctl[i]);
-		printf("ITDctl %d: stat=%X len=%X ioc=%X pg=%X offs=%X\n", i,
-		    EHCI_ITD_GET_STATUS(t), EHCI_ITD_GET_LEN(t),
-		    EHCI_ITD_GET_IOC(t), EHCI_ITD_GET_PG(t),
-		    EHCI_ITD_GET_OFFS(t));
+		u_int32_t t = le32toh(itd->td.itd.itd_ctl[i]);
+		printf("    itd_ctl[%d]: stat=%X (%s%s%s%s) len=%d ioc=%d pg=%d offs=%X\n",
+			i,
+			EHCI_ITD_GET_STATUS(t),
+			(t & EHCI_ITD_ACTIVE ? "active " : ""),
+			(t & EHCI_ITD_BUF_ERR ? "buf_err " : ""),
+			(t & EHCI_ITD_BABBLE ? "babble " : ""),
+			(t & EHCI_ITD_ERROR ? "error " : ""),
+			EHCI_ITD_GET_LEN(t),
+			EHCI_ITD_GET_IOC(t), 
+			EHCI_ITD_GET_PG(t),
+			EHCI_ITD_GET_OFFS(t)
+			);
 	}
-	printf("ITDbufr: ");
+	printf("    itd_bufr[] ");
 	for (i = 0; i < EHCI_ITD_NBUFFERS; i++)
-		printf("%X,", EHCI_ITD_GET_BPTR(le32toh(itd->itd.itd_bufr[i])));
+	printf("%X,", EHCI_ITD_GET_BPTR(le32toh(itd->td.itd.itd_bufr[i])));
 
-	b = le32toh(itd->itd.itd_bufr[0]);
-	b2 = le32toh(itd->itd.itd_bufr[1]);
-	b3 = le32toh(itd->itd.itd_bufr[2]);
-	printf("\nep=%X daddr=%X dir=%d maxpkt=%X multi=%X\n",
-	    EHCI_ITD_GET_EP(b), EHCI_ITD_GET_DADDR(b), EHCI_ITD_GET_DIR(b2),
-	    EHCI_ITD_GET_MAXPKT(b2), EHCI_ITD_GET_MULTI(b3));
+	u_int32_t b = le32toh(itd->td.itd.itd_bufr[0]);
+	u_int32_t b2 = le32toh(itd->td.itd.itd_bufr[1]);
+	u_int32_t b3 = le32toh(itd->td.itd.itd_bufr[2]);
+	printf("\n    ep=%X daddr=%X dir=%d maxpkt=%d multi=%d\n",
+			EHCI_ITD_GET_EP(b), 
+			EHCI_ITD_GET_DADDR(b), 
+			EHCI_ITD_GET_DIR(b2),
+			EHCI_ITD_GET_MAXPKT(b2), 
+			EHCI_ITD_GET_MULTI(b3)
+			);
 }
 
 Static void
 ehci_dump_sitd(struct ehci_soft_itd *itd)
 {
-	printf("SITD %p next=%p prev=%p xfernext=%p physaddr=%X slot=%d\n",
-			itd, itd->u.frame_list.next, itd->u.frame_list.prev,
-			itd->xfer_next, itd->physaddr, itd->slot);
+	printf("SITD: itd_next=");ehci_dump_link(itd->td.sitd.sitd_next,1);printf("\n");
+
+	u_int32_t i = le32toh(itd->td.sitd.sitd_endp);
+	printf("    sitd_endp addr=%d ep=%d haddr=%d hport=%d io=%d\n",
+		EHCI_SITD_GET_ADDR(i),
+		EHCI_SITD_GET_ENDPT(i),
+		EHCI_SITD_GET_HUBA(i),
+		EHCI_SITD_GET_PORT(i),
+		EHCI_SITD_GET_IO(i)
+		);
+	i = le32toh(itd->td.sitd.sitd_mask);
+	printf("    sitd_mask smask=0x%x cmask=0x%x\n",
+		EHCI_SITD_GET_SMASK(i),
+		EHCI_SITD_GET_CMASK(i)
+		);
+	i = le32toh(itd->td.sitd.sitd_status);
+	printf("    sitd_status status=0x%x (%s%s%s%s%s%s%s) cpmask=0x%x len=%d psel=%d ioc=%d\n",
+		EHCI_SITD_GET_STATUS(i),
+		(i & EHCI_SITD_ACTIVE ? "active " : ""),
+		(i & EHCI_SITD_ERR ? "err " : ""),
+		(i & EHCI_SITD_BUFERR ? "buferr " : ""),
+		(i & EHCI_SITD_BABBLE ? "babble " : ""),
+		(i & EHCI_SITD_XACTERR? "xacterr " : ""),
+		(i & EHCI_SITD_MISSEDMICRO ? "missedmicro " : ""),
+		(i & EHCI_SITD_SPLITXSTATE ? "doCompleteSplit " : ""),
+		EHCI_SITD_GET_CPMASK(i),
+		EHCI_SITD_GET_LEN(i),
+		EHCI_SITD_GET_PSEL(i),
+		EHCI_SITD_GET_IOC(i)
+		);
+	i = le32toh(itd->td.sitd.sitd_buffer[1]);
+	printf("    sitd_buffer[0]=0x%08X sitd_buffer[1]=0x%08X tpos=%d tcnt=%d\n",
+		le32toh(itd->td.sitd.sitd_buffer[0]),
+		(i & ~31),
+		EHCI_SITD_GET_TPOS(i),
+		EHCI_SITD_GET_TCNT(i)
+		);
+	printf("    sitd_back=0x%08x sitd_buffer_hi[]= 0x%x 0x%x\n",
+		le32toh(itd->td.sitd.sitd_back),
+		le32toh(itd->td.sitd.sitd_buffer_hi[0]),
+		le32toh(itd->td.sitd.sitd_buffer_hi[1])
+		);
 }
 #endif
 
@@ -1747,7 +1872,8 @@ ehci_open(usbd_pipe_handle pipe)
 	if (sc->sc_dying)
 		return (USBD_IOERROR);
 
-	epipe->nexttoggle = 0;
+	/* toggle state needed for bulk endpoints */
+	epipe->nexttoggle = pipe->endpoint->datatoggle;
 
 	if (addr == sc->sc_addr) {
 		switch (ed->bEndpointAddress) {
@@ -1771,20 +1897,6 @@ ehci_open(usbd_pipe_handle pipe)
 	case USB_SPEED_FULL: speed = EHCI_QH_SPEED_FULL; break;
 	case USB_SPEED_HIGH: speed = EHCI_QH_SPEED_HIGH; break;
 	default: panic("ehci_open: bad device speed %d", dev->speed);
-	}
-	if (speed != EHCI_QH_SPEED_HIGH && xfertype == UE_ISOCHRONOUS) {
-#ifndef __riscos
-		aprint_error_dev(sc->sc_dev, "error opening low/full speed "
-		    "isoc endpoint.\n");
-		aprint_normal_dev(sc->sc_dev, "a low/full speed device is "
-		    "attached to a USB2 hub, and transaction translations are "
-		    "not yet supported.\n");
-		aprint_normal_dev(sc->sc_dev, "reattach the device to the "
-		    "root hub instead.\n");
-#endif
-		DPRINTFN(1,("ehci_open: hshubaddr=%d hshubport=%d\n",
-			    hshubaddr, hshubport));
-		return USBD_INVAL;
 	}
 
 	/*
@@ -1811,16 +1923,36 @@ ehci_open(usbd_pipe_handle pipe)
 		     EHCI_QH_CTL : 0) |
 		    EHCI_QH_SET_NRL(naks)
 		    );
-		sqh->qh.qh_endphub = htole32(
-		    EHCI_QH_SET_MULT(1) |
-		    EHCI_QH_SET_SMASK(xfertype == UE_INTERRUPT ? 0x02 : 0)
-		    );
-		if (speed != EHCI_QH_SPEED_HIGH)
-			sqh->qh.qh_endphub |= htole32(
-			    EHCI_QH_SET_PORT(hshubport) |
-			    EHCI_QH_SET_HUBA(hshubaddr) |
-			    EHCI_QH_SET_CMASK(0x08) /* XXX */
-			);
+		if (xfertype == UE_INTERRUPT) {
+			if (speed == EHCI_QH_SPEED_HIGH) {
+				unsigned int smask = ed->bInterval;
+				if (smask == 0) smask = 1;
+				if (smask > 4) smask = 4;
+				smask = "\xff\xaa\x11\x01"[smask - 1];
+				sqh->qh.qh_endphub = htole32(
+				EHCI_QH_SET_MULT(1) |
+				EHCI_QH_SET_SMASK(smask));
+			} else {
+				unsigned int cmask = (UE_GET_DIR(ed->bEndpointAddress) == UE_DIR_IN ? 0x1c : 0);
+				sqh->qh.qh_endphub = htole32(
+				EHCI_QH_SET_MULT(1) |
+					EHCI_QH_SET_SMASK(1) |
+					EHCI_QH_SET_PORT(hshubport) |
+					EHCI_QH_SET_HUBA(hshubaddr) |
+					EHCI_QH_SET_CMASK(cmask));
+			}
+		} else {
+			if (speed == EHCI_QH_SPEED_HIGH) {
+				sqh->qh.qh_endphub = htole32(
+					EHCI_QH_SET_MULT(1));
+			} else {
+				sqh->qh.qh_endphub = htole32(
+				EHCI_QH_SET_MULT(1) |
+				EHCI_QH_SET_PORT(hshubport) |
+				EHCI_QH_SET_HUBA(hshubaddr));
+			}
+		}
+
 		sqh->qh.qh_curqtd = EHCI_NULL;
 		/* Fill the overlay qTD */
 		sqh->qh.qh_qtd.qtd_next = EHCI_NULL;
@@ -1888,7 +2020,8 @@ ehci_open(usbd_pipe_handle pipe)
 			err = USBD_INVAL;
 			goto bad;
 		}
-		epipe->u.isoc.next_frame = 0;
+		/* next frame needs to start with an invalid value */
+		epipe->u.isoc.next_frame = -1;
 		epipe->u.isoc.cur_xfers = 0;
 		break;
 	default:
@@ -1944,7 +2077,11 @@ ehci_rem_qh(ehci_softc_t *sc, ehci_soft_qh_t *sqh, ehci_soft_qh_t *head)
 	for (p = head; p != NULL && p->next != sqh; p = p->next)
 		;
 	if (p == NULL)
+	{
 		panic("ehci_rem_qh: ED not found");
+		return;
+	}
+
 	usb_syncmem(&sqh->dma, sqh->offs + offsetof(ehci_qh_t, qh_link),
 	    sizeof(sqh->qh.qh_link), BUS_DMASYNC_POSTWRITE);
 	p->next = sqh->next;
@@ -2037,14 +2174,17 @@ ehci_rem_free_itd_chain(ehci_softc_t *sc, struct ehci_xfer *exfer)
 	prev = NULL;
 
 	if (exfer->itdstart == NULL || exfer->itdend == NULL)
+	{
 		panic("ehci isoc xfer being freed, but with no itd chain\n");
+		return;
+	}
 
 	for (itd = exfer->itdstart; itd != NULL; itd = itd->xfer_next) {
 		prev = itd->u.frame_list.prev;
 		/* Unlink itd from hardware chain, or frame array */
 		if (prev == NULL) { /* We're at the table head */
 			sc->sc_softitds[itd->slot] = itd->u.frame_list.next;
-			sc->sc_flist[itd->slot] = itd->itd.itd_next;
+			sc->sc_flist[itd->slot] = itd->td.itd.itd_next;
 			usb_syncmem(&sc->sc_fldma,
 			    sizeof(ehci_link_t) * itd->slot,
                 	    sizeof(ehci_link_t),
@@ -2054,11 +2194,10 @@ ehci_rem_free_itd_chain(ehci_softc_t *sc, struct ehci_xfer *exfer)
 				itd->u.frame_list.next->u.frame_list.prev = NULL;
 		} else {
 			/* XXX this part is untested... */
-			prev->itd.itd_next = itd->itd.itd_next;
+			prev->td.itd.itd_next = itd->td.itd.itd_next;
 			usb_syncmem(&itd->dma,
 			    itd->offs + offsetof(ehci_itd_t, itd_next),
-                	    sizeof(itd->itd.itd_next), BUS_DMASYNC_PREWRITE);
-
+			    sizeof(itd->td.itd.itd_next), BUS_DMASYNC_PREWRITE);
 			prev->u.frame_list.next = itd->u.frame_list.next;
 			if (itd->u.frame_list.next != NULL)
 				itd->u.frame_list.next->u.frame_list.prev = prev;
@@ -3027,14 +3166,21 @@ ehci_alloc_itd(ehci_softc_t *sc)
 	 * discard itds that were freed before frindex wrapped around
 	 * XXX - can this lead to thrashing? Could fix by enabling wrap-around
 	 *       interrupt and fiddling with list when that happens */
-	frindex = (EOREAD4(sc, EHCI_FRINDEX) + 1) >> 3;
-	previndex = (frindex != 0) ? frindex - 1 : sc->sc_flsize;
+	 
+	/* 
+	 * While the existing method worked on an Iyonix it didn't work properly
+	 * on Beagleboard and Pandaboard. These controllers must keep the internal
+	 * copies of ITD's a bit longer. The code below ensures that an ITD isn't 
+	 * reused soon after it's been freed.
+	 */ 
+	frindex = frindex_wrap(sc,(EOREAD4(sc, EHCI_FRINDEX) >> 3) + 1);
 
 	freeitd = NULL;
 	LIST_FOREACH(itd, &sc->sc_freeitds, u.free_list) {
 		if (itd == NULL)
 			break;
-		if (itd->slot != frindex && itd->slot != previndex) {
+		int diff = frindex_sub(sc, itd->slot, frindex);
+		if (diff < -3 || diff > 0) {
 			freeitd = itd;
 			break;
 		}
@@ -3056,6 +3202,12 @@ ehci_alloc_itd(ehci_softc_t *sc)
 			itd->physaddr = DMAADDR(&dma, offs);
 	 		itd->dma = dma;
 			itd->offs = offs;
+
+			/* 
+			 * itd->slot needs to be an invalid value 
+			 * otherwise it won't be allocated when same as frindex
+			 */
+			itd->slot = -1;
 			LIST_INSERT_HEAD(&sc->sc_freeitds, itd, u.free_list);
 		}
 		freeitd = LIST_FIRST(&sc->sc_freeitds);
@@ -3063,15 +3215,14 @@ ehci_alloc_itd(ehci_softc_t *sc)
 
 	itd = freeitd;
 	LIST_REMOVE(itd, u.free_list);
-	memset(&itd->itd, 0, sizeof(ehci_itd_t));
+	memset(&itd->td.itd, 0, sizeof(ehci_itd_t));
 	usb_syncmem(&itd->dma, itd->offs + offsetof(ehci_itd_t, itd_next),
-                    sizeof(itd->itd.itd_next), BUS_DMASYNC_PREWRITE |
-                    BUS_DMASYNC_PREREAD);
-
+		    sizeof(itd->td.itd.itd_next), BUS_DMASYNC_PREWRITE |
+		    BUS_DMASYNC_PREREAD);
 	itd->u.frame_list.next = NULL;
 	itd->u.frame_list.prev = NULL;
 	itd->xfer_next = NULL;
-	itd->slot = 0;
+	itd->slot = -1;
 	splx(s);
 
 	return itd;
@@ -3081,7 +3232,7 @@ Static void
 ehci_free_itd(ehci_softc_t *sc, ehci_soft_itd_t *itd)
 {
 	int s;
-
+        if (itd == NULL) return;
 	s = splusb();
 	LIST_INSERT_HEAD(&sc->sc_freeitds, itd, u.free_list);
 	splx(s);
@@ -3341,18 +3492,18 @@ ehci_abort_isoc_xfer(usbd_xfer_handle xfer, usbd_status status)
 	for (itd = exfer->itdstart; itd != NULL; itd = itd->xfer_next) {
 		usb_syncmem(&itd->dma,
 		    itd->offs + offsetof(ehci_itd_t, itd_ctl),
-		    sizeof(itd->itd.itd_ctl),
+		    sizeof(itd->td.itd.itd_ctl),
 		    BUS_DMASYNC_POSTWRITE | BUS_DMASYNC_POSTREAD);
 
 		for (i = 0; i < 8; i++) {
-			trans_status = le32toh(itd->itd.itd_ctl[i]);
+			trans_status = le32toh(itd->td.itd.itd_ctl[i]);
 			trans_status &= ~EHCI_ITD_ACTIVE;
-			itd->itd.itd_ctl[i] = htole32(trans_status);
+			itd->td.itd.itd_ctl[i] = htole32(trans_status);
 		}
 
 		usb_syncmem(&itd->dma,
 		    itd->offs + offsetof(ehci_itd_t, itd_ctl),
-		    sizeof(itd->itd.itd_ctl),
+		    sizeof(itd->td.itd.itd_ctl),
 		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 	}
 	splx(s);
@@ -3846,8 +3997,10 @@ Static void
 ehci_device_bulk_close(usbd_pipe_handle pipe)
 {
 	ehci_softc_t *sc = (ehci_softc_t *)pipe->device->bus;
+	struct ehci_pipe *epipe = (struct ehci_pipe *)pipe;
 
 	DPRINTF(("ehci_device_bulk_close: pipe=%p\n", pipe));
+	pipe->endpoint->datatoggle = epipe->nexttoggle;     
 	ehci_close_pipe(pipe, sc->sc_async_head);
 }
 
@@ -4036,10 +4189,11 @@ ehci_device_intr_abort(usbd_xfer_handle xfer)
 Static void
 ehci_device_intr_close(usbd_pipe_handle pipe)
 {
-        ehci_softc_t *sc = (ehci_softc_t *)pipe->device->bus;
+	ehci_softc_t *sc = (ehci_softc_t *)pipe->device->bus;
 	struct ehci_pipe *epipe = (struct ehci_pipe *)pipe;
 	struct ehci_soft_islot *isp;
 
+	pipe->endpoint->datatoggle = epipe->nexttoggle;
 	isp = &sc->sc_islots[epipe->sqh->islot];
 	ehci_close_pipe(pipe, isp->sqh);
 }
@@ -4144,285 +4298,6 @@ ehci_device_isoc_transfer(usbd_xfer_handle xfer)
 	return ehci_device_isoc_start(xfer);
 }
 
-Static usbd_status
-ehci_device_isoc_start(usbd_xfer_handle xfer)
-{
-	struct ehci_pipe *epipe;
-	usbd_device_handle dev;
-	ehci_softc_t *sc;
-	struct ehci_xfer *exfer;
-	ehci_soft_itd_t *itd, *prev, *start, *stop;
-	usb_dma_t *dma_buf;
-	int i, j, k, frames, uframes, ufrperframe;
-	int s, trans_count, offs, total_length;
-	int frindex;
-
-	start = NULL;
-	prev = NULL;
-	itd = NULL;
-	trans_count = 0;
-	total_length = 0;
-	exfer = (struct ehci_xfer *) xfer;
-	sc = (ehci_softc_t *)xfer->pipe->device->bus;
-	dev = xfer->pipe->device;
-	epipe = (struct ehci_pipe *)xfer->pipe;
-
-	/*
-	 * To allow continuous transfers, above we start all transfers
-	 * immediately. However, we're still going to get usbd_start_next call
-	 * this when another xfer completes. So, check if this is already
-	 * in progress or not
-	 */
-
-	if (exfer->itdstart != NULL)
-		return USBD_IN_PROGRESS;
-
-	DPRINTFN(2, ("ehci_device_isoc_start: xfer %p len %d flags %d\n",
-			xfer, xfer->length, xfer->flags));
-
-	if (sc->sc_dying)
-		return USBD_IOERROR;
-
-	/*
-	 * To avoid complication, don't allow a request right now that'll span
-	 * the entire frame table. To within 4 frames, to allow some leeway
-	 * on either side of where the hc currently is.
-	 */
-	if ((1 << (epipe->pipe.endpoint->edesc->bInterval)) *
-			xfer->nframes >= (sc->sc_flsize - 4) * 8) {
-		printf("ehci: isoc descriptor requested that spans the entire frametable, too many frames\n");
-		return USBD_INVAL;
-	}
-
-#ifdef DIAGNOSTIC
-	if (xfer->rqflags & URQ_REQUEST)
-		panic("ehci_device_isoc_start: request\n");
-
-	if (!exfer->isdone)
-		printf("ehci_device_isoc_start: not done, ex = %p\n", exfer);
-	exfer->isdone = 0;
-#endif
-
-	/*
-	 * Step 1: Allocate and initialize itds, how many do we need?
-	 * One per transfer if interval >= 8 microframes, fewer if we use
-	 * multiple microframes per frame.
-	 */
-
-	i = epipe->pipe.endpoint->edesc->bInterval;
-	if (i > 16 || i == 0) {
-		/* Spec page 271 says intervals > 16 are invalid */
-		DPRINTF(("ehci_device_isoc_start: bInvertal %d invalid\n", i));
-		return USBD_INVAL;
-	}
-
-	ufrperframe = max(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
-	frames = (xfer->nframes + (ufrperframe - 1)) / ufrperframe;
-	uframes = USB_UFRAMES_PER_FRAME / ufrperframe;
-
-	if (frames == 0) {
-		DPRINTF(("ehci_device_isoc_start: frames == 0\n"));
-		return USBD_INVAL;
-	}
-
-	dma_buf = &xfer->dmabuf;
-	offs = 0;
-
-	for (i = 0; i < frames; i++) {
-		int froffs = offs;
-		itd = ehci_alloc_itd(sc);
-
-		if (prev != NULL) {
-			prev->itd.itd_next =
-			    htole32(itd->physaddr | EHCI_LINK_ITD);
-			usb_syncmem(&itd->dma,
-			    itd->offs + offsetof(ehci_itd_t, itd_next),
-                	    sizeof(itd->itd.itd_next), BUS_DMASYNC_POSTWRITE);
-
-			prev->xfer_next = itd;
-	    	} else {
-			start = itd;
-		}
-
-		/*
-		 * Step 1.5, initialize uframes
-		 */
-		for (j = 0; j < EHCI_ITD_NUFRAMES; j += uframes) {
-			/* Calculate which page in the list this starts in */
-			int addr = DMAADDR(dma_buf, froffs);
-			addr = EHCI_PAGE_OFFSET(addr);
-			addr += (offs - froffs);
-			addr = EHCI_PAGE(addr);
-			addr /= EHCI_PAGE_SIZE;
-
-			/* This gets the initial offset into the first page,
-			 * looks how far further along the current uframe
-			 * offset is. Works out how many pages that is.
-			 */
-
-			itd->itd.itd_ctl[j] = htole32 ( EHCI_ITD_ACTIVE |
-			    EHCI_ITD_SET_LEN(xfer->frlengths[trans_count]) | 
-			    EHCI_ITD_SET_PG(addr) |
-			    EHCI_ITD_SET_OFFS(EHCI_PAGE_OFFSET(DMAADDR(dma_buf,offs))));
-
-			total_length += xfer->frlengths[trans_count];
-			offs += xfer->frlengths[trans_count];
-			trans_count++;
-
-			if (trans_count >= xfer->nframes) { /*Set IOC*/
-				itd->itd.itd_ctl[j] |= htole32(EHCI_ITD_IOC);
-				break;
-			}
-		}	
-
-		/* Step 1.75, set buffer pointers. To simplify matters, all
-		 * pointers are filled out for the next 7 hardware pages in
-		 * the dma block, so no need to worry what pages to cover
-		 * and what to not.
-		 */
-
-		for (j = 0; j < EHCI_ITD_NBUFFERS; j++) {
-			/*
-			 * Don't try to lookup a page that's past the end
-			 * of buffer
-			 */
-			int page_offs = EHCI_PAGE(froffs + (EHCI_PAGE_SIZE * j));
-#ifdef __riscos
-			if (page_offs >= xfer->length) /* I think this is correct! */
-#else
-			if (page_offs >= dma_buf->block->size)
-#endif
-				break;
-
-			long long page = DMAADDR(dma_buf, page_offs);
-			page = EHCI_PAGE(page);
-			itd->itd.itd_bufr[j] =
-			    htole32(EHCI_ITD_SET_BPTR(page));
-			itd->itd.itd_bufr_hi[j] =
-			    htole32(page >> 32);
-		}
-
-		/*
-		 * Other special values
-		 */
-
-		k = epipe->pipe.endpoint->edesc->bEndpointAddress;
-		itd->itd.itd_bufr[0] |= htole32(EHCI_ITD_SET_EP(UE_GET_ADDR(k)) |
-		    EHCI_ITD_SET_DADDR(epipe->pipe.device->address));
-
-		k = (UE_GET_DIR(epipe->pipe.endpoint->edesc->bEndpointAddress))
-		    ? 1 : 0;
-		j = UGETW(epipe->pipe.endpoint->edesc->wMaxPacketSize);
-		itd->itd.itd_bufr[1] |= htole32(EHCI_ITD_SET_DIR(k) |
-		    EHCI_ITD_SET_MAXPKT(UE_GET_SIZE(j)));
-
-		/* FIXME: handle invalid trans */
-		itd->itd.itd_bufr[2] |= 
-		    htole32(EHCI_ITD_SET_MULTI(UE_GET_TRANS(j)+1));
-
-		usb_syncmem(&itd->dma,
-		    itd->offs + offsetof(ehci_itd_t, itd_next),
-                    sizeof(ehci_itd_t),
-		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
-
-		prev = itd;
-	} /* End of frame */
-
-	stop = itd;
-	stop->xfer_next = NULL;
-	exfer->isoc_len = total_length;
-
-	usb_syncmem(&exfer->xfer.dmabuf, 0, total_length,
-		BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
-
-	/*
-	 * Part 2: Transfer descriptors have now been set up, now they must
-	 * be scheduled into the period frame list. Erk. Not wanting to
-	 * complicate matters, transfer is denied if the transfer spans
-	 * more than the period frame list.
-	 */
-
-	s = splusb();
-
-	/* Start inserting frames */
-	if (epipe->u.isoc.cur_xfers > 0) {
-		frindex = epipe->u.isoc.next_frame;
-	} else {
-		frindex = EOREAD4(sc, EHCI_FRINDEX);
-		frindex = frindex >> 3; /* Erase microframe index */
-		frindex += 2;
-	}
-
-	if (frindex >= sc->sc_flsize)
-		frindex &= (sc->sc_flsize - 1);
-
-	/* What's the frame interval? */
-	i = (1 << (epipe->pipe.endpoint->edesc->bInterval - 1));
-	if (i / USB_UFRAMES_PER_FRAME == 0)
-		i = 1;
-	else
-		i /= USB_UFRAMES_PER_FRAME;
-
-	itd = start;
-	for (j = 0; j < frames; j++) {
-		if (itd == NULL)
-			panic("ehci: unexpectedly ran out of isoc itds, isoc_start\n");
-
-		itd->itd.itd_next = sc->sc_flist[frindex];
-		if (itd->itd.itd_next == 0)
-			/* FIXME: frindex table gets initialized to NULL
-			 * or EHCI_NULL? */
-			itd->itd.itd_next = EHCI_NULL;
-
-		usb_syncmem(&itd->dma,
-		    itd->offs + offsetof(ehci_itd_t, itd_next),
-                    sizeof(itd->itd.itd_next),
-		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
-
-		sc->sc_flist[frindex] = htole32(EHCI_LINK_ITD | itd->physaddr);
-
-		usb_syncmem(&sc->sc_fldma,
-		    sizeof(ehci_link_t) * frindex,
-                    sizeof(ehci_link_t),
-		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
-
-		itd->u.frame_list.next = sc->sc_softitds[frindex];
-		sc->sc_softitds[frindex] = itd;
-		if (itd->u.frame_list.next != NULL)
-			itd->u.frame_list.next->u.frame_list.prev = itd;
-		itd->slot = frindex;
-		itd->u.frame_list.prev = NULL;
-
-		frindex += i;
-		if (frindex >= sc->sc_flsize)
-			frindex -= sc->sc_flsize;
-
-		itd = itd->xfer_next;
-	}
-
-	epipe->u.isoc.cur_xfers++;
-	epipe->u.isoc.next_frame = frindex;
-
-	exfer->itdstart = start;
-	exfer->itdend = stop;
-	exfer->sqtdstart = NULL;
-	exfer->sqtdstart = NULL;
-
-	mutex_enter(&sc->sc_intrhead_lock);
-	ehci_add_intr_list(sc, exfer);
-	mutex_exit(&sc->sc_intrhead_lock);
-	xfer->status = USBD_IN_PROGRESS;
-	xfer->done = 0;
-	splx(s);
-
-	if (sc->sc_bus.use_polling) {
-		printf("Starting ehci isoc xfer with polling. Bad idea?\n");
-		ehci_waitintr(sc, xfer);
-	}
-
-	return USBD_IN_PROGRESS;
-}
-
 Static void
 ehci_device_isoc_abort(usbd_xfer_handle xfer)
 {
@@ -4461,4 +4336,277 @@ ehci_device_isoc_done(usbd_xfer_handle xfer)
 	usb_syncmem(&xfer->dmabuf, 0, xfer->length, BUS_DMASYNC_POSTWRITE |
                     BUS_DMASYNC_POSTREAD);
 
+}
+
+static usbd_status alloc_itd_failed(ehci_softc_t *sc, ehci_soft_itd_t* start)
+{
+	ehci_soft_itd_t* next;
+	for (; start != NULL;start = next) {
+		next = start->xfer_next;
+		ehci_free_itd(sc, start);
+	}
+	return USBD_NOMEM;
+}
+
+static usbd_status ehci_insert_itds_in_framelist(struct ehci_xfer* exfer, ehci_soft_itd_t* start, 
+							unsigned int interval, unsigned int itd_type)
+{
+	struct ehci_pipe* epipe = (struct ehci_pipe*) exfer->xfer.pipe ;
+	ehci_softc_t* sc = (ehci_softc_t*) exfer->xfer.pipe->device->bus;
+
+	/* index in frames - not microframes */
+	unsigned int frindex = (EOREAD4(sc, EHCI_FRINDEX) >> 3);
+	if (epipe->u.isoc.next_frame == -1)
+		frindex = frindex_wrap(sc,frindex + 16);
+	else if (frindex_sub(sc, frindex, epipe->u.isoc.next_frame) >= 0)
+		frindex = frindex_wrap(sc, frindex + 1);
+	else
+		frindex = epipe->u.isoc.next_frame;
+
+	int s = splusb();
+
+	ehci_soft_itd_t* stop = start;
+	for (ehci_soft_itd_t* itd = start; itd; itd = itd->xfer_next) {
+		stop = itd;
+
+		/* insert into physical frame list */
+
+		itd->td.itd.itd_next = sc->sc_flist[frindex];
+
+		/* if this happens then something else has gone wrong */
+		if (itd->td.itd.itd_next == 0)
+			itd->td.itd.itd_next = EHCI_NULL;
+
+		sc->sc_flist[frindex] = htole32(itd_type | itd->physaddr);
+
+
+		/* insert into logical frame list */
+
+		itd->u.frame_list.next = sc->sc_softitds[frindex];
+		sc->sc_softitds[frindex] = itd;
+		if (itd->u.frame_list.next != NULL)
+			itd->u.frame_list.next->u.frame_list.prev = itd;
+		itd->slot = frindex;
+		itd->u.frame_list.prev = NULL;
+
+
+		frindex = frindex_wrap(sc, frindex + interval);
+	}
+	epipe->u.isoc.cur_xfers++;
+	epipe->u.isoc.next_frame = frindex;
+
+	exfer->itdstart = start;
+	exfer->itdend = stop;
+	exfer->sqtdstart = NULL;
+	exfer->sqtdend = NULL
+
+	mutex_enter(&sc->sc_intrhead_lock);
+	ehci_add_intr_list(sc, exfer);
+	mutex_exit(&sc->sc_intrhead_lock);
+
+	exfer->xfer.status = USBD_IN_PROGRESS;
+	exfer->xfer.done = 0;
+
+	splx(s);
+        
+	if (sc->sc_bus.use_polling) {
+		printf("Starting ehci isoc xfer with polling. Bad idea?\n");
+		ehci_waitintr(sc, &exfer->xfer);
+	}
+
+	return USBD_IN_PROGRESS;
+}
+
+static usbd_status ehci_device_split_isoc_start(usbd_xfer_handle xfer)
+{               
+	struct ehci_xfer* exfer = (struct ehci_xfer *) xfer;
+	ehci_softc_t *sc = (ehci_softc_t *) xfer->pipe->device->bus;
+	struct ehci_pipe *epipe = (struct ehci_pipe *)xfer->pipe;
+
+	if (exfer->itdstart != NULL)
+		return USBD_IN_PROGRESS;
+
+	unsigned int interval = epipe->pipe.endpoint->edesc->bInterval - 1;
+
+	if (interval > 15)
+		return USBD_INVAL;
+
+	interval = (1 << interval); /* interval in frames */
+
+	/* Can't cope with insertions into frame list >= (sc->sc_flsize / 2) */
+	if (interval * xfer->nframes >= (sc->sc_flsize / 2))
+		return USBD_INVAL;
+
+
+	/* Create a list of sitd blocks for the xfer */
+        
+	ehci_soft_itd_t* itd = NULL;
+	ehci_soft_itd_t* start = NULL;
+	ehci_physaddr_t buf = DMAADDR(&xfer->dmabuf, 0);
+	exfer->isoc_len = 0;
+	for (int ncur = 0;ncur < xfer->nframes;) {
+		ehci_soft_itd_t* prev = itd;
+		itd = ehci_alloc_itd(sc);
+		if (itd == NULL) return  alloc_itd_failed(sc,start);
+
+		if (prev != NULL) 
+			prev->xfer_next = itd;
+		else 
+			start = itd;
+
+		u_int32_t ep = epipe->pipe.endpoint->edesc->bEndpointAddress;
+		u_int32_t dir = (UE_GET_DIR(ep)) ? 1 : 0;
+		ep = UE_GET_ADDR(ep);
+
+		itd->td.sitd.sitd_endp = htole32(
+		EHCI_SITD_SET_ADDR(xfer->pipe->device->address) |
+			EHCI_SITD_SET_ENDPT(ep) |
+			EHCI_SITD_SET_IO(dir)   |
+			EHCI_SITD_SET_HUBA(xfer->pipe->device->myhsport->parent->address) |
+			EHCI_SITD_SET_PORT(xfer->pipe->device->myhsport->portno));
+
+		int len = xfer->frlengths[ncur++];
+
+		int splitcount = 1;
+		for (int i = 188; i < len; i += 188) splitcount++; 
+
+		/* 
+		 * Poor mans split transaction scheduling.
+		 * Would be better to schedule when the pipe opens
+		 * taking into account other open FS/LS endpoints on the
+		 * same transaction translator.
+		 */
+		if (dir == 1) { /* IN */
+			u_int32_t mask;
+			/* In transfers schedule 2 extra complete splits */
+			splitcount += 2;
+			if (splitcount >= 6) 
+				mask = 0xbf;
+			else
+				mask = (0xff >> (8 - splitcount)) << 2;
+
+			itd->td.sitd.sitd_mask = htole32(
+				EHCI_SITD_SET_SMASK(1) |
+				EHCI_SITD_SET_CMASK(mask));
+		} else {
+			/* lump small transfers together in microframe 0 */
+			itd->td.sitd.sitd_mask = htole32(
+			EHCI_SITD_SET_SMASK((0xff >> (8 - splitcount))  << (len>16 ? 1 :0)));
+		}
+
+		itd->td.sitd.sitd_status = htole32(
+			EHCI_SITD_SET_STATUS(EHCI_SITD_ACTIVE) |
+			EHCI_SITD_SET_LEN(len) |
+			EHCI_SITD_SET_IOC(ncur == xfer->nframes ? 1 : 0));
+
+		itd->td.sitd.sitd_buffer[0] = htole32(buf);
+		itd->td.sitd.sitd_buffer[1] = htole32(          
+			EHCI_PAGE(buf + EHCI_PAGE_SIZE) |
+			EHCI_SITD_SET_TPOS((len <= 188 || dir == 1) ? 
+				EHCI_SITD_TPOS_ALL : EHCI_SITD_TPOS_BEGIN) |
+			EHCI_SITD_GET_TCNT(dir == 1 ? 1 : splitcount));
+
+		itd->td.sitd.sitd_back = EHCI_NULL; 
+
+		itd->td.sitd.sitd_buffer_hi[0] = 0;
+		itd->td.sitd.sitd_buffer_hi[1] = 0;
+
+		exfer->isoc_len += len;
+		buf += len;
+	}
+        
+	return ehci_insert_itds_in_framelist(exfer, start, interval, EHCI_LINK_SITD);
+}
+
+Static usbd_status ehci_device_isoc_start(usbd_xfer_handle xfer)
+{
+	if (xfer->device->speed != USB_SPEED_HIGH)
+		return ehci_device_split_isoc_start(xfer);
+
+	struct ehci_xfer* exfer = (struct ehci_xfer *) xfer;
+	ehci_softc_t *sc = (ehci_softc_t *) xfer->pipe->device->bus;
+	struct ehci_pipe *epipe = (struct ehci_pipe *)xfer->pipe;
+
+	if (exfer->itdstart != NULL)
+		return USBD_IN_PROGRESS;
+
+	unsigned int interval = epipe->pipe.endpoint->edesc->bInterval - 1;
+
+	if (interval > 15)
+		return USBD_INVAL;
+        
+	/* don't accept insertions into frame list >= (sc->sc_flsize / 2) */
+	if ( ( ((interval <= 3) ? 1 :(1 << (interval - 3))) * xfer->nframes) >= (sc->sc_flsize / 2))
+		return USBD_INVAL;
+
+	/* Create a list of itd blocks for the xfer */
+
+	interval = (1 << interval); /* interval in microframes */
+
+	ehci_soft_itd_t* itd = NULL;
+	ehci_soft_itd_t* start = NULL;
+	ehci_physaddr_t buf = DMAADDR(&xfer->dmabuf, 0);
+	exfer->isoc_len = 0;
+	int quit = 0;
+	int ncur = 0;
+	int offs = 0;
+	while (!quit) {
+		ehci_soft_itd_t* prev = itd;
+		itd = ehci_alloc_itd(sc);
+		if (itd == NULL) return  alloc_itd_failed(sc,start);
+
+		if (prev != NULL) 
+			prev->xfer_next = itd;
+		else 
+			start = itd;
+
+		buf += offs;    
+		offs = EHCI_PAGE_OFFSET(buf);
+		buf = EHCI_PAGE(buf);
+		for (int i = 0;; i += interval) {
+			int pg = offs / EHCI_PAGE_SIZE;
+			itd->td.itd.itd_bufr[pg] = htole32(
+				EHCI_ITD_SET_BPTR(EHCI_PAGE(buf+offs)));
+			itd->td.itd.itd_bufr_hi[pg] = 0;
+
+			if (ncur == xfer->nframes || i >= EHCI_ITD_NUFRAMES) {
+				unsigned int ep = epipe->pipe.endpoint->edesc->bEndpointAddress;
+				itd->td.itd.itd_bufr[0] |= htole32(
+					EHCI_ITD_SET_EP(UE_GET_ADDR(ep)) |
+					EHCI_ITD_SET_DADDR(epipe->pipe.device->address));
+
+				unsigned int mp =  UGETW(epipe->pipe.endpoint->edesc->wMaxPacketSize);
+
+				itd->td.itd.itd_bufr[1] |= htole32(
+					EHCI_ITD_SET_DIR(UE_GET_DIR(ep) ? 1 : 0) |
+					EHCI_ITD_SET_MAXPKT(UE_GET_SIZE(mp)));
+
+				itd->td.itd.itd_bufr[2] |= htole32(
+					EHCI_ITD_SET_MULTI(UE_GET_TRANS(mp) + 1));
+
+				if (ncur == xfer->nframes) {
+					itd->td.itd.itd_ctl[i - interval] |= htole32(
+						EHCI_ITD_IOC);
+					quit = 1;
+				}
+				break;
+			}
+
+			int len = xfer->frlengths[ncur++];
+
+			itd->td.itd.itd_ctl[i] = htole32( 
+				EHCI_ITD_ACTIVE |
+				EHCI_ITD_SET_LEN(len) |
+				offs);
+
+			exfer->isoc_len += len;
+			offs += len;
+		}
+	}
+
+	interval >>= 3; 
+	if (interval == 0) interval = 1;
+	/* interval now in frames */
+
+	return ehci_insert_itds_in_framelist(exfer, start, interval, EHCI_LINK_ITD);
 }

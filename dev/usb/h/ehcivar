@@ -77,7 +77,10 @@ typedef struct ehci_soft_qh {
 #define EHCI_SQH_CHUNK (EHCI_SMALL_PAGE_SIZE / EHCI_SQH_SIZE)
 
 typedef struct ehci_soft_itd {
-	ehci_itd_t itd;
+	union {
+		ehci_itd_t itd;
+		ehci_sitd_t sitd;
+	}td;
 	union {
 		struct {
 			/* soft_itds links in a periodic frame*/

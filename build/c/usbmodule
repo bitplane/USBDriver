@@ -53,6 +53,29 @@
 #include "usbkboard.h"
 #include "USBDevFS.h"
 
+/* UISOC_MAXNFRAMES  must be multiple of 8 */
+#define UISOC_MAXNFRAMES        16
+#define UISOC_NUM_XFERS         4
+#define UISOC_XFER_MS           2
+#define UISOC_NUM_XFERS_FB      4
+#define UISOC_XFER_FB_MS        1
+
+static unsigned int isoc_get_nframes(usbd_pipe_handle pipe, unsigned int ms) 
+{
+    if (pipe->endpoint->edesc->bInterval == 0) return 1;
+    
+    unsigned int nframes = 2 * 8 * ms;
+    if (pipe->device->speed < 3) nframes /= 8;
+    nframes >>= pipe->endpoint->edesc->bInterval;
+    if (nframes > UISOC_MAXNFRAMES) nframes = UISOC_MAXNFRAMES;
+    return (nframes == 0) ? 1 : nframes;
+}
+
+static inline unsigned int isoc_get_maxfrlength(usbd_pipe_handle pipe)
+{
+    unsigned int maxpacket = UGETW(pipe->endpoint->edesc->wMaxPacketSize);
+    return (maxpacket & 0x7ff) * ((maxpacket >> 11) + 1);
+}
 
 /*---------------------------------------------------------------------------*/
 /* structure definitions                                                     */
@@ -60,13 +83,9 @@
 
 struct ugen_softc;
 
-#define UAUDIO_NFRAMES 4
-
 struct isoc_buffer {
-    usbd_xfer_handle xfer;
-    uint16_t sizes[UAUDIO_NFRAMES];
-    uint16_t offsets[UAUDIO_NFRAMES];
-    int size;
+    usbd_xfer_handle xfer;                 
+    uint16_t         frlengths[UISOC_MAXNFRAMES];
 };
 
 typedef enum {
@@ -105,6 +124,14 @@ struct devstream {
 #define FLAG_SHORT 2
 #define FLAG_VALIDMASK 3 /* Which bits can be modified */
     struct isoc_buffer * isoc;
+    int                  isoc_count;        /* number of isoc_buffers */
+    struct {
+        uint32_t          samples_per_frame;  /* Samples per frame 16.16 fixed point format */                              
+        uint32_t          samplesize;         /* size of audio frame eg PCM 2 channel 16bit = 4 */
+        uint32_t          error;              /* accumulation of fractional error */
+        usbd_pipe_handle  feedback_pipe;
+        struct isoc_buffer feedback[UISOC_NUM_XFERS_FB];
+    } isoc_data;
     bool xfer_busy;
     bool delayed_read; /* Gets set if a read has been queued by RxWakeUp but hasn't actually been started yet (e.g. due to previous read still being in progress) */
     int nextcount; /* How long the next (i.e. delayed) read should be */
@@ -430,7 +457,7 @@ static _kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
         driver_entry,
         softc,
         private_word,
-        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/Nnopad/Sshort/S",
+        "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/Nnopad/Sshort/Ssamplerate/Nsamplesize/N",
 #ifdef DEVICEFSISBROKEN
         INT_MAX, // should be -1, but that doesn't seem to work
         INT_MAX,
@@ -1679,17 +1706,41 @@ void usb_needs_explore_callback (void* h) {
 
 /*---------------------------------------------------------------------------*/
 
-void bufrem (void* dma, void* priv_id, int size)
+/* bufrem is now passes a usbd_xfer_handle in x */
+
+void bufrem (void* dma, void* x, int size)
 {
-    if (priv_id == NULL)
+    usbd_xfer_handle xfer = x;
+
+    if (x == NULL || xfer->buffer == 0)
     {
         dprintf (("", "Stream has been closed\n"));
         return;
     }
 
+    if ((xfer->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+    {   
+        _kernel_swi_regs r;
+        r.r[0] = BM_RemoveBlock;
+        r.r[1] = (int) xfer->buffer;
+        r.r[2] = (int) dma;
+        r.r[3] = size;
+        CallBufMan (&r);
+        int sz = r.r[3];
+        if (sz != 0 && sz <= size)
+        {
+            /*
+             * required to produce silence
+             * when the buffer is empty.
+             */
+            memset((void*)r.r[2],0,sz);
+        }
+        return;
+    }  
+
     _kernel_swi_regs r;
     r.r[0] = BM_ExamineBlock;
-    r.r[1] = (int) priv_id;
+    r.r[1] = (int) xfer->buffer;
     r.r[2] = (int) dma;
     r.r[3] = size;
     CallBufMan (&r);
@@ -1730,6 +1781,26 @@ void bufins (void* dma, void* x)
     }
 
     str->count += actlen;
+
+    if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+    {         
+        unsigned int maxfrlength = isoc_get_maxfrlength(str->pipe);
+        unsigned char* mem  = dma;
+        for (int i = 0 ; i < xfer->nframes; i++, mem += maxfrlength)
+        {
+            if (xfer->frlengths[i] != 0)
+            {
+                _kernel_swi_regs r;
+                r.r[0] = BM_InsertBlock;
+                r.r[1] = (int) str->buffer_id;
+                r.r[2] = (int) mem;
+                r.r[3] = xfer->frlengths[i];
+                CallBufMan (&r);
+            }
+        }
+        return;
+    }
+
 //    dprintf (("", "inserting %d bytes, total %d\n",
 //        actlen, str->count));
 
@@ -1846,6 +1917,8 @@ typedef struct device_valid {
     uint32_t    size;
     uint32_t    nopad;
     uint32_t    shortflag;
+    uint32_t    samplerate;
+    uint32_t    samplesize;
 } device_valid;
 
 static void find_interface_and_endpoint
@@ -1917,6 +1990,310 @@ static void find_interface_and_endpoint
     *alternate_return = (int) 0xdeaddead;
     *endpoint_return = (int) 0xdeaddead;
     return;
+}
+
+/*---------------------------------------------------------------------------*/
+
+static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv, usbd_status status);
+static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv, usbd_status status);
+
+static void Isoc_in_feedback_cb(usbd_xfer_handle xfer, usbd_private_handle priv, usbd_status status)
+{
+    struct devstream* str = (struct devstream*) priv;
+
+    if (status != USBD_NORMAL_COMPLETION)
+    {
+        return;
+    }
+    uint8_t* buf = KERNADDR(&xfer->dmabuf, 0);
+    uint32_t maxfrlength = isoc_get_maxfrlength(xfer->pipe);
+    for (int i = 0; i < xfer->nframes; i++)
+    {
+        if (xfer->frlengths[i] == maxfrlength)
+        {
+            uint32_t samples_per_frame = 0;
+            switch (maxfrlength)
+            {
+                case 3: /* USB 1 */
+                        samples_per_frame = ((buf[0] + (buf[1] << 8) + (buf[2] << 16)) << 2);
+                        break;
+                case 4:
+                        samples_per_frame = *(uint32_t*)buf;
+                        break;
+            }
+            
+            if (samples_per_frame > str->isoc_data.samples_per_frame - 0x20000 && 
+                samples_per_frame < str->isoc_data.samples_per_frame + 0x20000)
+                str->isoc_data.samples_per_frame = samples_per_frame;
+        }
+        xfer->frlengths[i] = maxfrlength;
+        buf += maxfrlength;
+    }
+
+    xfer->actlen = 0;
+    status = usbd_transfer(xfer);
+}
+
+/*---------------------------------------------------------------------------*/
+
+static void Isoc_destroy(struct devstream* str)
+{
+    if (str == NULL) return;
+
+    if (str->isoc != NULL)
+    {
+        /* 
+         * str->xfer just used as a current pointer
+         */
+        for (int i = 0; i < str->isoc_count; i++)
+        {
+            if (str->isoc[i].xfer != NULL) usbd_free_xfer(str->isoc[i].xfer);// buffer destroyed with xfer
+            str->isoc[i].xfer = NULL;
+        }
+        free(str->isoc);
+        str->isoc = NULL;
+        str->xfer = NULL;
+    }
+
+    if (str->isoc_data.feedback_pipe != NULL )
+    {
+        usbd_status s = usbd_abort_pipe(str->isoc_data.feedback_pipe);
+        s = usbd_close_pipe(str->isoc_data.feedback_pipe);        
+        str->isoc_data.feedback_pipe = NULL;
+    }
+
+    for (int i = 0; i < UISOC_NUM_XFERS_FB; i++)
+    {
+        if (str->isoc_data.feedback[i].xfer != NULL) usbd_free_xfer(str->isoc_data.feedback[i].xfer);
+        str->isoc_data.feedback[i].xfer = NULL;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+
+static _kernel_oserror* Isoc_construct(struct devstream* str, device_valid* valid)
+{
+    dprintf(("","Isoc_construct\n"));
+    
+    usb_endpoint_descriptor_t* ed = usbd_get_endpoint_descriptor(str->iface,str->ep);
+    if (ed == NULL || ed->bInterval == 0) return uerror(E_BadXfer);
+    
+    if (valid->samplerate == 0xdeaddead || 
+        valid->samplerate < 1 ||
+        valid->samplesize == 0xdeaddead ||
+        valid->samplesize < 1 ) return uerror(E_BadXfer);
+        
+    memset(&str->isoc_data,0,sizeof(str->isoc_data));
+    str->isoc_data.samplesize   = valid->samplesize;
+    uint32_t samples_per_frame  = valid->samplerate;
+    
+
+    unsigned int base = str->pipe->device->speed >= USB_SPEED_HIGH  ? 8000 : 1000;
+    base = (base * 2) >> ed->bInterval;
+    if (base == 0) return uerror(E_BadXfer);
+    
+    samples_per_frame    = ((samples_per_frame / base) << 16) +
+                                   (((samples_per_frame % base) << 16) / base);
+
+
+    str->isoc_data.samples_per_frame    = samples_per_frame;
+    str->isoc_count = UISOC_NUM_XFERS;
+
+
+    if (((str->isoc_data.samples_per_frame + 0xFFFF) >> 16) * str->isoc_data.samplesize >
+        isoc_get_maxfrlength(str->pipe)) return uerror(E_BadXfer);
+
+    str->isoc = calloc (sizeof *str->isoc, str->isoc_count);
+    if (str->isoc == NULL) return uerror(E_NoMem);
+    for (int i = 0; i < str->isoc_count; i++)
+    {
+        str->isoc[i].xfer = usbd_alloc_xfer (str->ugen->sc_udev);
+        if (str->isoc[i].xfer == NULL) return uerror(E_BadXfer);
+    }
+    str->xfer = str->isoc[0].xfer;
+
+    if (UE_GET_ISO_TYPE(ed->bmAttributes) == UE_ISO_ASYNC &&
+        UE_GET_DIR(ed->bEndpointAddress) == UE_DIR_OUT &&
+        str->iface->idesc->bNumEndpoints == 2)
+        
+    {
+        /* default feedback endpoint to same endpoint number in opposite direction */
+        uint8_t feed_ep = str->ep ^ UE_DIR_IN;
+        if (ed->bLength == 9 &&
+            str->iface->idesc->bInterfaceClass == 1 &&  /* Audio Class */
+            str->iface->idesc->bInterfaceSubClass == 2)    /* Audio Streaming */
+        {
+            feed_ep = ((uint8_t*)ed)[8]; /* ed->bSynchAddress */
+            /* fix for bSynchAddress not setting direction */ feed_ep |= 0x80;
+            
+            dprintf(("","Audio Class "));
+        }
+        ed = usbd_get_endpoint_descriptor(str->iface,feed_ep);
+
+        if (ed == NULL || UE_GET_XFERTYPE(ed->bmAttributes) != UE_ISOCHRONOUS) return 0;
+        
+        usbd_status status = usbd_open_pipe(str->iface, ed->bEndpointAddress, 0, &str->isoc_data.feedback_pipe);
+
+        if (status != USBD_NORMAL_COMPLETION) return uerror(E_BadPipe);
+        
+        for (int i = 0; i < UISOC_NUM_XFERS_FB; i++)
+        {
+            struct isoc_buffer* feedback = &str->isoc_data.feedback[i];
+            feedback->xfer = usbd_alloc_xfer (str->ugen->sc_udev);
+            if (feedback->xfer == NULL) return uerror(E_BadXfer);
+            feedback->xfer->nframes = isoc_get_nframes(str->isoc_data.feedback_pipe, UISOC_XFER_FB_MS);
+
+            usbd_setup_isoc_xfer
+            (
+                feedback->xfer,
+                str->isoc_data.feedback_pipe,
+                str,
+                &feedback->frlengths[0],
+                feedback->xfer->nframes,
+                USBD_NO_COPY | USBD_SHORT_XFER_OK,      /* flags */
+                Isoc_in_feedback_cb
+            );
+            
+            feedback->xfer->length = feedback->xfer->nframes * isoc_get_maxfrlength(str->isoc_data.feedback_pipe);
+            
+            if (usbd_alloc_buffer(feedback->xfer, feedback->xfer->length) == NULL)
+            {
+                return uerror(E_BadXfer);
+            }
+            
+            /*
+             * set frlengths to 0. Set by calling callback.
+             * Setting to 0 avoids them being read initially.
+             */
+            for (int j = 0; j < feedback->xfer->nframes; j++)
+                feedback->frlengths[j] = 0;
+        }
+    }
+
+    return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+
+static void Isoc_fill_xfer_write(struct devstream* str, usbd_xfer_handle xfer)
+{
+    str->xfer = xfer;
+    struct isoc_buffer* buf = NULL;
+    
+    for (int i = 0; i <str->isoc_count; i++)
+    {
+        if (str->xfer == str->isoc[i].xfer) {buf = &str->isoc[i]; break;}
+    }
+    
+    if (buf == NULL) return;
+    
+    int length = 0;
+    for (int i = 0; i < buf->xfer->nframes; i++)
+    {
+        str->isoc_data.error += (str->isoc_data.samples_per_frame & 0xffff);
+        uint32_t size         = (str->isoc_data.samples_per_frame >> 16) +
+                                (str->isoc_data.error >> 16);
+        str->isoc_data.error &= ~0x10000;
+
+        size                 *=  str->isoc_data.samplesize;
+        buf->frlengths[i]     = size;
+        length               += size;
+    }
+   
+    usbd_setup_isoc_xfer(
+            buf->xfer,
+            str->pipe,
+            str,
+            &buf->frlengths[0],     /* sizes */
+            buf->xfer->nframes,     /* n frames */
+            USBD_SHORT_XFER_OK | (str->flags & FLAG_SHORT?USBD_FORCE_SHORT_XFER:0),
+            write_cb);
+
+    buf->xfer->buffer   = (void*) str->buffer_id;
+    buf->xfer->length   = length;
+    buf->xfer->rqflags |= URQ_RISCOS_BUF;
+}
+
+/*---------------------------------------------------------------------------*/
+
+static void Isoc_start_write(struct devstream* str)
+{
+    if (str == NULL) return;
+
+    if (str->isoc_data.feedback_pipe != NULL)
+    {
+        for (int i = 0; i < UISOC_NUM_XFERS_FB; i++)
+        {
+            Isoc_in_feedback_cb(str->isoc_data.feedback[i].xfer,str,USBD_NORMAL_COMPLETION);
+        }
+    }
+    
+    /*
+     * Don't care what is in the buffer were starting the transfer
+     * if you haven't put in enough bytes tough.
+     */
+     
+
+    str->xfer_busy = true;
+    
+    for (int i = 0; i < str->isoc_count; i++)
+    { 
+        Isoc_fill_xfer_write(str, str->isoc[i].xfer);
+        str->xfer->status = usbd_transfer(str->xfer);    
+        
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+
+static void Isoc_fill_xfer_read(struct devstream* str, usbd_xfer_handle xfer)
+{
+    str->xfer = xfer; 
+    struct isoc_buffer* buf = NULL;
+    for (int i = 0; i <str->isoc_count; i++)
+    {
+        if (str->xfer == str->isoc[i].xfer) {buf = &str->isoc[i]; break;}
+    }
+    if (buf == NULL) return;
+    
+    uint16_t frlength = isoc_get_maxfrlength(str->pipe);
+
+    for (int i = 0; i < buf->xfer->nframes; i++)
+    {
+        /*
+         * frlengths will be changed by controller driver
+         */
+        buf->frlengths[i]  = frlength;
+    }
+
+    usbd_setup_isoc_xfer(
+            buf->xfer,
+            str->pipe,
+            str,
+            &buf->frlengths[0],     /* sizes */
+            buf->xfer->nframes,     /* n frames */
+            USBD_SHORT_XFER_OK,
+            read_cb);
+
+    buf->xfer->buffer   = (void*) str->buffer_id;
+    buf->xfer->length   = frlength * buf->xfer->nframes;
+    buf->xfer->rqflags |= URQ_RISCOS_BUF;
+}
+
+static  void free_xfer(struct devstream* str)
+{
+    if (str == NULL) return;
+
+    if (str->isoc != NULL)
+    {
+        Isoc_destroy(str);
+    }
+    else
+    {
+        if (str->xfer != NULL) usbd_free_xfer(str->xfer);
+        str->xfer = NULL;
+    }
+    dprintf(("","free_xfer: xfer data freed\n"));
 }
 
 /*---------------------------------------------------------------------------*/
@@ -2071,10 +2448,8 @@ detach_done:
     {
         if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
         {
-            str->isoc = calloc (sizeof *str->isoc, 2);
-            str->isoc[0].xfer = usbd_alloc_xfer (ugen->sc_udev);
-            str->isoc[1].xfer = usbd_alloc_xfer (ugen->sc_udev);
-            str->xfer = str->isoc[0].xfer;
+            e = Isoc_construct(str,valid);
+            if (e) goto error;
         }
         else
         {
@@ -2100,18 +2475,7 @@ detach_done:
     ugen->str[index] = str;
     return NULL;
 error:
-    if (str->pipe)
-        usbd_close_pipe (str->pipe);
-    if (str->xfer)
-        usbd_free_xfer (str->xfer);
-    if (str->isoc != NULL)
-    {
-        if (str->isoc[1].xfer)
-        {
-            usbd_free_xfer (str->isoc[1].xfer);
-        }
-        free (str->isoc);
-    }
+    free_xfer(str);
     free (str);
     return e;
 }
@@ -2139,6 +2503,19 @@ static void write_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
     if (str->fs_stream == 0)
     {
         dprintf (("", "Stream has been closed\n"));
+        return;
+    }
+
+    if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+    {
+        str->xfer_busy = true;      /* isochronous always busy */
+
+        /*
+         * Start next send regardless of what is in buffer.
+         * Keep one xfer filling while the other is transfering
+         */
+        Isoc_fill_xfer_write(str, xfer);
+        xfer->status = usbd_transfer(str->xfer);        
         return;
     }
 
@@ -2181,6 +2558,12 @@ void start_write (struct devstream* str)
     }
 
     str->xfer_busy = true;
+
+    if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+    {
+        Isoc_start_write(str);
+        goto end;
+    }
 
 #ifdef DMA_FROM_BUFFER
     _kernel_swi_regs r;
@@ -2266,6 +2649,16 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
         return;
     }
 
+    if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+    {
+        /*
+         *  Always ReadStatus_busy
+         */
+        Isoc_fill_xfer_read(str, xfer);
+        xfer->status = usbd_transfer(str->xfer);
+        return;
+    }
+    
     if((str->flags & FLAG_NOPAD) || (str->count == str->totalcount))
     {
         str->read_status = ReadStatus_Complete;
@@ -2320,22 +2713,6 @@ static void read_cb(usbd_xfer_handle xfer, usbd_private_handle priv,
 }
 
 /*---------------------------------------------------------------------------*/
-
-void fill_isoc_xfer (struct devstream* str, int maxpacket)
-{
-    str->size = maxpacket;
-    str->xfer->actlen = 0;
-    usbd_setup_isoc_xfer(
-        str->xfer,
-        str->pipe,
-        str,
-        (u_int16_t*) &str->size,         /* sizes */
-        1,                  /* n frames */
-        USBD_SHORT_XFER_OK,
-        read_cb);
-    str->xfer->buffer = (void*) str->buffer_id;
-    str->xfer->length = maxpacket;
-}
 
 void start_read (struct devstream* str)
 {
@@ -2412,6 +2789,11 @@ void start_read (struct devstream* str)
 #endif
     int actlen = r.r[2];
     int maxpacket = UGETW(str->pipe->endpoint->edesc->wMaxPacketSize);
+    
+    /* for high speed isochronous devices wMaxPacketSize != max size of packet */
+    if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+            maxpacket = isoc_get_maxfrlength(str->pipe);                          
+
     if (actlen >= maxpacket)
     {
         switch (str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE)
@@ -2428,7 +2810,15 @@ void start_read (struct devstream* str)
 
             /* truncate at length requested */
             if (str->totalcount && actlen > str->totalcount - str->count)
-                actlen = str->totalcount - str->count;
+            {
+                /*
+                 * Force fetches of multiple of maxpacket even if remainder is < maxpacket.
+                 * This stops IOERRORs (Overflow) on short fetches.
+                 */
+                actlen = str->totalcount - str->count + maxpacket - 1;
+                actlen -= actlen % maxpacket;
+            }
+
             if (actlen <= 0)
             {
                 str->xfer_busy = false;
@@ -2465,15 +2855,28 @@ void start_read (struct devstream* str)
                 actlen));
             break;
         case UE_ISOCHRONOUS:
-            fill_isoc_xfer (str, maxpacket);
             dprintf (("", "starting (isoc) transfer of %d bytes\n", str->size));
             break;
         }
 
         str->xfer->rqflags |= URQ_RISCOS_BUF;
 #endif
-        str->xfer->status = usbd_transfer (str->xfer);
 
+        if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
+        {
+             /*
+              * Isochronous starts by starting multiple transfers so that one can
+              * be processed while the other waits for more data.
+              */
+             for (int i = 0; i < str->isoc_count; i++)
+             {
+                Isoc_fill_xfer_read (str, str->isoc[i].xfer);
+                str->isoc[i].xfer->status = usbd_transfer(str->isoc[i].xfer);
+             }
+        }
+        else
+            str->xfer->status = usbd_transfer (str->xfer);
+            
         str->xfer_busy = (str->xfer->status == USBD_IN_PROGRESS);
 
         /* this can either return in progress, or normal completion (if
@@ -2526,9 +2929,12 @@ void terminate_stream (struct ugen_softc* ugen, struct devstream * str, int kill
             dprintf (("", "status1: %s\n", ccodes[status]));
             status = usbd_close_pipe(str->pipe);
             dprintf (("", "status2: %s\n", ccodes[status]));
-//            usbd_free_buffer (str->xfer);    /* done in usbd_free_xfer
-            status = usbd_free_xfer(str->xfer);
-            dprintf (("", "status3: %s\n", ccodes[status]));
+
+            /*
+             * Note usbd_abort_pipe causes any outstanding transfer callbacks to
+             * happen before we reach here.
+             */
+            free_xfer(str);
             ugen->str[index] = NULL;
         }
         else
@@ -2605,10 +3011,14 @@ _kernel_oserror* create_buffer
 
     if ((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS)
     {
-        p = usbd_alloc_buffer (str->isoc[0].xfer, *size / 2);
-        if (p == NULL) return uerror (E_NoMem);
-        p = usbd_alloc_buffer (str->isoc[1].xfer, *size / 2);
-        if (p == NULL) return uerror (E_NoMem);
+        unsigned int nframes = isoc_get_nframes(str->pipe, UISOC_XFER_MS);
+        unsigned int bufsize = nframes * isoc_get_maxfrlength(str->pipe);
+        for (int i = 0; i < str->isoc_count; i++)
+        {
+            p = usbd_alloc_buffer(str->isoc[i].xfer, bufsize); 
+            if (p == NULL) return uerror(E_NoMem);
+            str->isoc[i].xfer->nframes = nframes;
+        }
     }
     else
     {
@@ -2897,6 +3307,21 @@ _kernel_oserror* driver (_kernel_swi_regs* r, void* pw)
         else start_write (str);
         break;
     case DeviceCall_EndOfData:
+        if (((str->pipe->endpoint->edesc->bmAttributes & UE_XFERTYPE) == UE_ISOCHRONOUS) &&
+            (UE_GET_DIR(str->ep) == UE_DIR_OUT))
+        {
+           /*
+            * Isochronous is always busy so the choice is 1) return EOF if the
+            * buffer is empty or 2) always return EOF.
+            * option 1 causes Close to block until the buffer is empty
+            * option 2 causes Close to abort the transfer and close.
+            * Use option 2 for now.
+            * 
+            * always signify EOF - do nothing
+            */
+           break;
+        }
+        
         /* this was to try and make bulk transfers finish neatly, but doesn't
            seem to achieve the desired effect */
         if (str->xfer->status == USBD_IN_PROGRESS)
