@@ -382,7 +382,7 @@ int vtophys (void* v)
         int     physical;
     } block;
     block.logical = v;
-    _swix (OS_Memory, _INR (0, 2), (1<<9) + (1<<13) + (2<<14), &block, 1);
+    _swix (OS_Memory, _INR (0, 2), (1<<9) + (1<<13), &block, 1);
 
     return block.physical;
 #else
