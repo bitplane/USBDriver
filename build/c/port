@@ -184,7 +184,7 @@ callout_init (struct callout* c,int ignored)
 #ifdef USB_DEBUG0
     if (usbdebug > 15) dprintf (("Port", "callout init %p\n", c));
 #endif
-    memset (c, 0, sizeof c);
+    memset (c, 0, sizeof (*c));
 }
 
 _kernel_oserror*
