@@ -49,6 +49,7 @@ extern void HALHeap_InitHeap(void *heap,uint32_t size);
 extern uint32_t HAL_CounterRead(void);
 extern uint32_t HAL_CounterPeriod(void);
 extern int HAL_TimerDevice(int timer);
+extern void HAL_TimerIRQClear(int timer);
 extern int HAL_IRQEnable(int device);
 extern int HAL_IRQDisable(int device);
 extern int HAL_IRQSource(void);
@@ -350,6 +351,7 @@ int USBHAL_KbdScanInterrupt(int irq)
     if(irq == HAL_TimerDevice(0))
     {
         /* Timer interrupt */
+        HAL_TimerIRQClear(0);
         HAL_IRQClear(irq);
         USBHALWS->monotonictime++;
         while(USBHALWS->callouts && (USBHALWS->monotonictime >= USBHALWS->callouts->c_time))
