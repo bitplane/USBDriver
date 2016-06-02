@@ -1254,18 +1254,6 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 	if (up->parent)
 		usbd_reset_port(up->parent, port, &ps);
 
-	/* Pick a free address on this bus segment */
-	if (bus->methods->new_device_addr != NULL)
-		addr = bus->methods->new_device_addr(dev); /* Also sets MPS for EP0 */
-	else
-		addr = usbd_getnewaddr(bus);
-	if (addr < 0) {
-		printf("%s: No free USB addresses, new device ignored.\n",
-		       USBDEVNAME(bus->bdev));
-		usbd_remove_device(dev, up);
-		return (USBD_NO_ADDR);
-	}
-
 	if (speed == USB_SPEED_HIGH) {
 		/* Max packet size must be 64 (sec 5.5.3). */
 		if (dd->bMaxPacketSize != USB_2_MAX_CTRL_PACKET) {
@@ -1305,6 +1293,18 @@ usbd_new_device(device_ptr_t parent, usbd_bus_handle bus, int depth,
 		USETW(dev->def_ep_desc.wMaxPacketSize, dd->bMaxPacketSize);
 	DPRINTFN(5, ("bMaxPacketSize %u", dd->bMaxPacketSize));
 	USETW(dev->def_ep_desc.wMaxPacketSize, dd->bMaxPacketSize);
+
+	/* Pick a free address on this bus segment */
+	if (bus->methods->new_device_addr != NULL)
+		addr = bus->methods->new_device_addr(dev); /* Also sets MPS for EP0 */
+	else
+		addr = usbd_getnewaddr(bus);
+	if (addr < 0) {
+		printf("%s: No free USB addresses, new device ignored.\n",
+		       USBDEVNAME(bus->bdev));
+		usbd_remove_device(dev, up);
+		return (USBD_NO_ADDR);
+	}
 
 	/* Re-establish the default pipe with the new MPS. */
 	usbd_kill_pipe(dev->default_pipe);
