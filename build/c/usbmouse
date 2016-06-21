@@ -143,7 +143,6 @@ struct ums_softc {
 #define UMS_REVZ	0x04	/* Z-axis is reversed */
 #define UMS_W		0x08	/* w direction/tilt available */
 #define UMS_ABS		0x10	/* absolute position, touchpanel */
-#define UMS_NO_REPID	0x20	/* broken device that doesn't prefix the report ID */
 
 	int nbuttons;
 
@@ -221,6 +220,37 @@ static int match_mouse (struct usb_attach_arg *uaa)
 	return (ret);
 }
 
+/* Report descriptor for a mouse in boot protocol mode, from the USB HID spec */
+static const char boot_descriptor[] =
+{
+	0x05, 0x01,
+	0x09, 0x02,
+	0xa1, 0x01,
+	0x09, 0x01,
+	0xa1, 0x00,
+	0x05, 0x09,
+	0x19, 0x01,
+	0x29, 0x03,
+	0x15, 0x00,
+	0x25, 0x01,
+	0x95, 0x03,
+	0x75, 0x01,
+	0x81, 0x02,
+	0x95, 0x01,
+	0x75, 0x05,
+	0x81, 0x01,
+	0x05, 0x01,
+	0x09, 0x30,
+	0x09, 0x31,
+	0x15, 0x81,
+	0x25, 0x7f,
+	0x75, 0x08,
+	0x95, 0x02,
+	0x81, 0x06,
+	0xc0,
+	0xc0
+};
+
 static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 {
 	usbd_interface_handle iface = uaa->iface;
@@ -276,9 +306,27 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 	if (quirks & UQ_SPUR_BUT_UP)
 		sc->flags |= UMS_SPUR_BUT_UP;
 
-	err = usbd_read_report_desc(uaa->iface, &desc, &size, M_USBDEV);
-	if (err)
-		USB_ATTACH_ERROR_RETURN;
+	/*
+	 * Deal with the broken behaviour of the touchpad of the TouchBook
+	 * keyboard. Despite sending out a report descriptor containing
+	 * multiple report IDs, the device only sends out data in a form that's
+	 * consistent with the Boot report protocol. This is despite the fact
+	 * that we explicitly switch devices into report protocol mode as part
+	 * of our initialisation sequence (and the device happily accepts the
+	 * command; in fact, sending a command to switch the device into Boot
+	 * mode will fail). 
+	 * So to cope with this we pretend the device returns a descriptor
+	 * which is consistent with a boot mode mouse.
+	 */
+	if((uaa->vendor == USB_VENDOR_ALWAYSINNOVATING) &&
+	   (uaa->product == USB_PRODUCT_ALWAYSINNOVATING_USBKBDTPAD)) {
+		desc = (void *) boot_descriptor;
+		size = sizeof(boot_descriptor);
+	} else {
+		err = usbd_read_report_desc(uaa->iface, &desc, &size, M_USBDEV);
+		if (err)
+			USB_ATTACH_ERROR_RETURN;
+	}
 
 	nrepid = uhidev_maxrepid(desc, size);
 
@@ -466,21 +514,9 @@ static void do_attach_mouse (struct ums_softc* sc, struct usb_attach_arg *uaa)
 	}
 
 	sc->sc_ep_addr = ed->bEndpointAddress;
-	free(desc);
-
-	/*
-	 * Deal with the broken behaviour of the touchpad of the TouchBook
-	 * keyboard. Despite sending out a report descriptor containing
-	 * multiple report IDs, the device fails to prepend the report ID to
-	 * the reports it sends out for touchpad events. Furthermore the device
-	 * refuses to switch to the Boot report protocol, for which the data it
-	 * sends would actually be valid. So just flag that it's broken and
-	 * that we shouldn't bother looking for a report ID.
-	 */
-	if((uaa->vendor == USB_VENDOR_ALWAYSINNOVATING) &&
-	   (uaa->product == USB_PRODUCT_ALWAYSINNOVATING_USBKBDTPAD))
-		sc->flags |= UMS_NO_REPID;
-
+	if (desc != boot_descriptor) {
+		free(desc);
+	}
 #ifdef USB_DEBUG
 	DPRINTF(("ums_attach: sc=%p flags=%x\n", sc, sc->flags));
 	DPRINTF(("ums_attach: X\t%d/%d\n",
@@ -752,7 +788,7 @@ void ums_intr
 	}
 
 	/* only respond to our report, and skip the report number */
-	if (sc->sc_iid && !(sc->flags & UMS_NO_REPID) && *ibuf++ != sc->sc_iid)
+	if (sc->sc_iid && *ibuf++ != sc->sc_iid)
 		return;
 
 	dx =  hid_get_data(ibuf, &sc->sc_loc_x);
