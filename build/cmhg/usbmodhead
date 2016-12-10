@@ -77,7 +77,7 @@ swi-handler-code:   	module_swis
 
 swi-decoding-table: 	USBDriver,
                         RegisterBus,
-                        DeRegisterBus,
+                        DeregisterBus,
                         InsertTransfer,
                         TransferComplete,
                         ScheduleSoftInterrupt,

@@ -22,7 +22,7 @@ SWIClass        SETS    USBDriverSWI_Name
         ^       USBDriverSWI_Base
 
         AddSWI  USBDriver_RegisterBus
-        AddSWI  USBDriver_DeRegisterBus
+        AddSWI  USBDriver_DeregisterBus
         AddSWI  USBDriver_InsertTransfer
         AddSWI  USBDriver_TransferComplete
         AddSWI  USBDriver_ScheduleSoftInterrupt

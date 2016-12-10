@@ -620,7 +620,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     dprintf (("", "OHCIDriver finalising\n"));
 
     if (usb_soft != NULL)
-        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+        _swix (USBDriver_DeregisterBus, _IN(0), usb_soft);
 
 #ifdef OHCI_DEBUG
     module_commands (0, 0, CMD_OHCIEDS, pw);

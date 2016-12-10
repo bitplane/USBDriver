@@ -1064,7 +1064,7 @@ _kernel_oserror *module_swis(int swi_offset, _kernel_swi_regs *r, void *pw)
         r->r[0] = (int) register_bus ((device_ptr_t) r->r[0]);
         break;
 
-    case USBDriver_DeRegisterBus - USBDriver_00:
+    case USBDriver_DeregisterBus - USBDriver_00:
         deregister_bus ((device_ptr_t) r->r[0]);
         break;
     case USBDriver_InsertTransfer - USBDriver_00:

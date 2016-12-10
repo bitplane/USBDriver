@@ -398,7 +398,7 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     if (usb_soft != NULL)
     {
-        _swix (USBDriver_DeRegisterBus, _IN(0), usb_soft);
+        _swix (USBDriver_DeregisterBus, _IN(0), usb_soft);
         usb_soft=NULL;
     }
 // need to stop the controller
