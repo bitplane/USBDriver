@@ -43,6 +43,7 @@ ifeq ("${COMPONENT}","EHCIDriver")
 CMHGFILE        = ehcimodhead
 CMHGDEPENDS     = ehcimodule
 MSGS_ORIGIN     = LocalRes:EHCIMessages
+MSGS_DEST       = Resources.EHCIDriver.Messages
 OBJS            = ehcimodule ehci port call_veneer \
                   triggercbs usbroothub_subr
 OBJS_HAL        = o_hal.ehci o_hal.usbroothub_subr o_hal.ehcihal o_hal.ehcihalasm
@@ -52,6 +53,7 @@ ifeq ("${COMPONENT}","OHCIDriver")
 CMHGFILE        = ohcimodhead
 CMHGDEPENDS     = ohcimodule
 MSGS_ORIGIN     = LocalRes:OHCIMessages
+MSGS_DEST       = Resources.OHCIDriver.Messages
 OBJS            = ohcimodule ohci port call_veneer \
                   triggercbs
 OBJS_HAL        = o_hal.ohci
@@ -61,6 +63,7 @@ ifeq ("${COMPONENT}","USBDriver")
 CMHGFILE        = usbmodhead
 CMHGDEPENDS     = usbmouse usbmodule usbkboard
 MSGS_ORIGIN     = LocalRes:USBMessages
+MSGS_DEST       = Resources.USBDriver.Messages
 OBJS            = usbmodule port usb usbdi usb_subr \
                   usbdi_util usb_quirks uhub usbmouse usbkboard \
                   hid bufman triggercbs call_veneer
@@ -188,6 +191,6 @@ ${MERGEDRDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
         ${CP} ${MSGS_ORIGIN} $@ ${CPFLAGS}
 
 o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDRDIR}.${COMPONENT}Msgs ${DIRS}
-        ${RESGEN} ${RES_AREA} $@ ${MERGEDRDIR}.${COMPONENT}Msgs ${RES_PATH}
+        ${RESGEN} ${RES_AREA} $@ ${MERGEDRDIR}.${COMPONENT}Msgs ${MSGS_DEST}
 
 # Dynamic dependencies:

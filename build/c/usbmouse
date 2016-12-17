@@ -664,7 +664,6 @@ int pointerv (_kernel_swi_regs* r, void* pw)
 			}
 		break;
 
-#define RECORD "\x0\x0\x0\x0\x0\x0\x0\x0\x7USB Mouse"
 	case PointerReason_Identify:
 	{
 		struct pointer_device {

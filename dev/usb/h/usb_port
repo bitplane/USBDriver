@@ -244,6 +244,9 @@ int __CONCAT(dname,_detach)(struct device *self, int flags)
 #ifndef max
 #define max(a,b) ((a)>(b)?(a):(b))
 #endif
+#ifndef min
+#define min(a,b) ((a)<(b)?(a):(b))
+#endif
 
 
 //#define UMATCH_GENERIC 1

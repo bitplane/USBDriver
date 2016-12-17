@@ -418,13 +418,7 @@ void free_contig (void **mem)
 char*
 device_get_nameunit (void)
 {
-    return "OHCI USB device";
-}
-
-int min (int a, int b)
-{
-    if (a < b) return a;
-    return b;
+    return "Root device";
 }
 
 #ifdef logprintf

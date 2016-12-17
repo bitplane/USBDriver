@@ -20,8 +20,7 @@ initialisation-code:	module_init
 
 finalisation-code:  	module_final
 
-service-call-handler:	module_services Service_ResourceFSStarted,
-                                        Service_ResourceFSStarting,
+service-call-handler:	module_services Service_ResourceFSStarting,
                                         Service_USB,
                                         Service_PreReset,
                                         Service_PCI

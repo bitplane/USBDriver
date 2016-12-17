@@ -44,13 +44,16 @@
 #include "DebugLib/DebugLib.h"
 #include "USBDevFS.h"
 
-#define OHCIEmulator_GetRegisters 0x54a80
-#define OHCIEmulator_ClaimDeviceVector  0x054a81
-#define OHCIEmulator_ReleaseDeviceVector  0x054a82
-#define OHCIEmulator_ReadWord           0x054a83
-#define OHCIEmulator_WriteWord          0x054a84
-
-#define OHCIVendorUnknownRootName       "Built-in"
+#define ErrorBase_OHCIDriver 0x820A00
+#define ErrorBlock_OHCI_NoReinit    { (ErrorBase_OHCIDriver+0), "NumParm" }
+#define ErrorBlock_OHCI_NoOHCI      { (ErrorBase_OHCIDriver+1), "E01"     }
+#define ErrorBlock_OHCI_ClaimVeneer { (ErrorBase_OHCIDriver+2), "E02"     }
+#define ErrorBlock_OHCI_USBTooOld   { (ErrorBase_OHCIDriver+3), "E03"     }
+typedef struct
+{
+    int  errnum;
+    char errtok[8];
+} _kernel_tokerror;
 
 /* for debugging */
 #ifdef OHCI_DEBUG
@@ -96,7 +99,9 @@ int instance = 0;
 int device_number;
 static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
 
-/* Port power controls - only used by HAL devices */
+/*---------------------------------------------------------------------------*/
+/* Port power controls - only used by HAL devices                            */
+/*---------------------------------------------------------------------------*/
 void (*ohci_ppower)(int port, int state);
 int  (*ohci_error)(int port); /* Never gets used? */
 void (*ohci_pirqclear)(int port);
@@ -118,40 +123,6 @@ typedef struct p_err_chk
     } state;
 } p_err_chk;
 static p_err_chk pchk;
-
-void build_veneer (int* vn, int* st, size_t sz)
-{
-    int i;
-    dprintf (("", "writing veneer from %p at %p\n", st, vn));
-    int* entry_table = vn + sz / sizeof (void*);
-    for (i = 0; i < sz / sizeof (void*); ++i) {
-        int* entry = entry_table + 2 * i;
-
-        /* if the method isn't implemented, don't veneer it */
-        if (st[i] == NULL) continue;
-
-        /* copy function pointer into veneer */
-        vn[i] = st[i];
-
-        /* copy new pointer into structure */
-        st[i] = (int) entry;
-
-        /* LDR ip, function[i] */
-        entry[0] = 0xe51fC000       /* LDR ip, [pc, #-0] */
-                  + 8               /* go back to current instruction */
-                  + i * 8           /* go back to beginning of veneers */
-                  + sz              /* go back to beginning of struct */
-                  - i * 4;          /* go to func pointer */
-
-        /* B common */
-        entry[1] = 0xea000000       /* B here + 8 */
-                  | ((magic - entry - 1) & 0x00ffffff);
-                                    /* branch to diff */
-    }
-    _swix(OS_SynchroniseCodeAreas, _INR(0,2), 1,
-                                   entry_table,
-                                   entry_table + 2 * (sz / sizeof (void*)) - 1);
-}
 
 /* Read overcurrent state of port (1's based numbering).
  * Returns 0 if OK, non-0 if overcurrent
@@ -303,6 +274,43 @@ int usb_overcurrent_handler(_kernel_swi_regs *r, void *pw)
     return 1;
 }
 
+/*---------------------------------------------------------------------------*/
+/* Driver instance creation                                                  */
+/*---------------------------------------------------------------------------*/
+void build_veneer (int* vn, int* st, size_t sz)
+{
+    int i;
+    dprintf (("", "writing veneer from %p at %p\n", st, vn));
+    int* entry_table = vn + sz / sizeof (void*);
+    for (i = 0; i < sz / sizeof (void*); ++i) {
+        int* entry = entry_table + 2 * i;
+
+        /* if the method isn't implemented, don't veneer it */
+        if (st[i] == NULL) continue;
+
+        /* copy function pointer into veneer */
+        vn[i] = st[i];
+
+        /* copy new pointer into structure */
+        st[i] = (int) entry;
+
+        /* LDR ip, function[i] */
+        entry[0] = 0xe51fC000       /* LDR ip, [pc, #-0] */
+                  + 8               /* go back to current instruction */
+                  + i * 8           /* go back to beginning of veneers */
+                  + sz              /* go back to beginning of struct */
+                  - i * 4;          /* go to func pointer */
+
+        /* B common */
+        entry[1] = 0xea000000       /* B here + 8 */
+                  | ((magic - entry - 1) & 0x00ffffff);
+                                    /* branch to diff */
+    }
+    _swix(OS_SynchroniseCodeAreas, _INR(0,2), 1,
+                                   entry_table,
+                                   entry_table + 2 * (sz / sizeof (void*)) - 1);
+}
+
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
     *out = NULL;
@@ -312,7 +320,13 @@ _kernel_oserror* register_bus(void *in,struct device **out)
     if(e)
         return e;
     if(version < RISCOS_USBDRIVER_API_VERSION)
-        return (_kernel_oserror*)"\0\0\0\0USBDriver too old";
+    {
+        static const _kernel_tokerror err_usbtooold = ErrorBlock_OHCI_USBTooOld;
+    
+        return _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                      &err_usbtooold, &mod_messages, 0 /* Internal buffer */);
+    }
+
     /* Now attempt to register */
     registering = true;
     e = _swix(USBDriver_RegisterBus, _INR(0,1)|_OUT(0),in,RISCOS_USBDRIVER_API_VERSION,out);
@@ -321,10 +335,29 @@ _kernel_oserror* register_bus(void *in,struct device **out)
     return e;
 }
 
+static void name_root_hub(int pcidevice)
+{
+    if (pci_device == -1)
+    {
+        _kernel_oserror *e;
+
+        e = _swix (MessageTrans_Lookup, _INR(0,3),
+                   &mod_messages, "UkRoot", ohci_soft.sc_vendor, sizeof(ohci_soft.sc_vendor));
+        if (e) strcpy(ohci_soft.sc_vendor, " ");
+    }
+    else
+    {
+        char *v = NULL;
+    
+        _swix (PCI_ReadInfo, _INR(0,3), PCI_ReadInfo_Vendor, &v, sizeof(v), pci_device);
+        if (v == NULL) v = " ";
+        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
+    }
+}
+
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 {
     _kernel_oserror * e;
-    char* v=NULL;
 
     (void) r;
     (void) pw;
@@ -332,18 +365,10 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
 
     /* fill in the device name in the callback so that our service call handler
        is threaded and there to respond to PCI calls */
-    if (pci_device == -1)
-    {
-        strncpy (ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
-    }
-    else
-    {
-        _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
-        if (v == 0) v = (char *)" ";
-        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
-    }
-    /* now we know the root hub info, register it with USBDriver */
-    dprintf (("", "Init-Registering with USB driver\n"));
+    name_root_hub(pci_device);
+
+    /* register with the usbdriver module if it's already resident */
+    dprintf (("", "Registering with USB driver\n"));
     e = register_bus(&ohci_soft, &usb_soft);
     if (e)
     {
@@ -368,9 +393,9 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     return NULL;
 }
 
-
-
-
+/*---------------------------------------------------------------------------*/
+/* CMHG module initialisation                                                */
+/*---------------------------------------------------------------------------*/
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     size_t i;
     _kernel_oserror *e;
@@ -423,14 +448,17 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
             hal_device = (int) strtol (endptr+1, NULL, 0);
         else
         {
-            return (_kernel_oserror*)
-                "\1\0\0\0"Module_Title" can't be reinitialised";
+            static const _kernel_tokerror err_noreinit = ErrorBlock_OHCI_NoReinit;
+
+            return _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                          &err_noreinit, 0 /* Global messages */, 0 /* Internal buffer */);
         }
     }
     else
     {
         pci_device = 0;
 #ifdef STANDALONE
+        /* Only first instance registers the messages in ResourceFS */
         e = _swix (ResourceFS_RegisterFiles, _IN (0), resource_files ());
         if (e != NULL) return e;
 #endif
@@ -440,10 +468,9 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
         &mod_messages,
         Module_MessagesFile,
         0);
-    if (e) return e;
+    if (e) goto error_dereg;
 
-    /* see if there are any more USB OHCI controllers */
-
+    /* find the next possible controller */
     if(pci_device >= 0)
     {
         /* Looking for PCI device */
@@ -510,10 +537,16 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
                     ohci_error = do_ohci_perror;
                     ohci_pirqclear = do_ohci_pirqclear;
                 }
+                break;
             }
             else if(e || !usbinfolen)
             {
-                return (_kernel_oserror*) "\0\0\0\0No OHCI devices found";
+                /* Reached end of list */
+                static const _kernel_tokerror err_noohci = ErrorBlock_OHCI_NoOHCI;
+            
+                e = _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                           &err_noohci, &mod_messages, 0 /* Internal buffer */);
+                goto error;
             }
         } while(1);
     }
@@ -546,21 +579,8 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
     ohci_soft.sc_irqdevno = device_number;
-
-
-    if (pci_device == -1)
-    {
-        strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
-    }
-    else
-    {
-        char *v = NULL;
-
-        _swix (PCI_ReadInfo, _INR(0,3), PCI_ReadInfo_Vendor, &v, sizeof(v), pci_device);
-        if (v == NULL) v = (char *)" ";
-        strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
-    }
-
+    dprintf (("Main_0", "interrupt device %d\n", device_number));
+    dprintf (("Main_0", "hardware address %p\n", ohci_base));
 
     private_word = pw;
 
@@ -568,22 +588,26 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     const char *c = getenv("ohcidebug");
     usbdebug = ohcidebug = (c?atoi(c):0);
 #endif
+
+    if ((magic = init_veneer ()) == NULL)
+    {
+        static const _kernel_tokerror err_claimveneer = ErrorBlock_OHCI_ClaimVeneer;
+    
+        e = _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                   &err_claimveneer, &mod_messages, 0 /* Internal buffer */);
+        goto error;
+    }
+    dprintf (("", "magic at %p", magic));
+
     _swix (OS_ClaimDeviceVector, _INR(0,2),
         device_number | ((pci_device == -1)?0:(1u<<31)),
         usb_irq_entry, pw);
     _swix (OS_Hardware, _IN(0) | _INR(8,9),
         device_number, OSHW_CallHAL, EntryNo_HAL_IRQEnable);
 
-    if ((magic = init_veneer ()) == NULL)
-    {
-        return (_kernel_oserror*) "\0\0\0\0Couldn't claim magic";
-    }
-    dprintf (("", "magic at %p", magic));
-
     /* for the L7205, clocks need to be started */
     /* in BSD this is called from sys/pci/ohci_pci.c */
     ohci_init (&ohci_soft);
-    ohci_soft.sc_vendor[0]='\0'; // flag no svce_PCI yet
 
     dprintf (("", "Finished module initialisation\n"));
 
@@ -604,14 +628,21 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
 
     callx_add_callback (new_instance, 0);
 
-    return 0;
+    return NULL;
 
 error:
     dprintf (("Failed initialisation: %s\n", e->errmess));
+    _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
+error_dereg:
+#ifdef STANDALONE
+    if (podule_base == 0) _swix (ResourceFS_DeregisterFiles, _IN(0), resource_files ());
+#endif
     return e;
 }
 
-
+/*---------------------------------------------------------------------------*/
+/* CMHG module finalisation                                                  */
+/*---------------------------------------------------------------------------*/
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
     int v;
@@ -620,7 +651,10 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     dprintf (("", "OHCIDriver finalising\n"));
 
     if (usb_soft != NULL)
+    {
         _swix (USBDriver_DeregisterBus, _IN(0), usb_soft);
+        usb_soft=NULL;
+    }
 
 #ifdef OHCI_DEBUG
     module_commands (0, 0, CMD_OHCIEDS, pw);
@@ -684,6 +718,9 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     return NULL;
 }
 
+/*---------------------------------------------------------------------------*/
+/* CMHG module service calls                                                 */
+/*---------------------------------------------------------------------------*/
 static void service_pci (_kernel_swi_regs* r)
 {
     dprintf (("", "Service PCI, r0 = %x, r1 = %x, r2 = %x\n",
@@ -724,7 +761,6 @@ static void service_pci (_kernel_swi_regs* r)
 
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
-    char* v = "";
     switch (service_number) {
     case Service_PCI:
         service_pci (r);
@@ -758,18 +794,15 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         case Service_USB_USBDriverStarting:
             if ((usb_soft == NULL) && !registering)
             {
-                if(ohci_soft.sc_vendor[0]!='\0') // (means svce_PCI has happened)
-                {   /* we're here in callback.. so foo we go */
-                    dprintf (("", "Registering with USB driver from svcecall\n"));
-                    _kernel_oserror *e = register_bus(&ohci_soft,&usb_soft);
-                    if(e)
-                    {
-                        dprintf (("", "Failed to register: %s\n", e->errmess));
-                    }
-                    else
-                    {
-                        dprintf (("", "Registering with USB driver from svcecall-done\n"));
-                    }
+                dprintf (("", "Registering with USB driver from svcecall\n"));
+                _kernel_oserror *e = register_bus(&ohci_soft,&usb_soft);
+                if(e)
+                {
+                    dprintf (("", "Failed to register: %s\n", e->errmess));
+                }
+                else
+                {
+                    dprintf (("", "Registering with USB driver from svcecall-done\n"));
                 }
             }
             break;
@@ -780,26 +813,28 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
             usb_soft = NULL;
             memset (&ohci_soft, 0, sizeof ohci_soft);
             sprintf (ohci_soft.sc_bus.bdev.dv_xname, "OHCI%d", instance);
-            if (pci_device == -1)
-                strncpy(ohci_soft.sc_vendor, OHCIVendorUnknownRootName, sizeof ohci_soft.sc_vendor-1);
-            else
-            {
-                _swix (PCI_ReadInfo, _INR(0,3), (1<<16), &v, 4, pci_device);
-                if (v == 0) v = (char *)" ";
-                strncpy (ohci_soft.sc_vendor, v, sizeof ohci_soft.sc_vendor-1);
-            }
+            name_root_hub (pci_device);
             ohci_init (&ohci_soft);
             break;
         }
         break;
+#ifdef STANDALONE
+    case Service_ResourceFSStarting:
+        /* Re-register the messages */
+        (*(void (*)(void *, void *, void *, void *))r->r[2]) (resource_files (), 0, 0, (void *)r->r[3]);
+        break;
+#endif
     }
 }
 
-#define OREAD(o) ohci_base[o/4]
-
 #ifdef OHCI_DEBUG
+/*---------------------------------------------------------------------------*/
+/* CMHG module commands - only used for debugging                            */
+/*---------------------------------------------------------------------------*/
 _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
 {
+#define OREAD(o) ohci_base[o/4]
+
     switch (cmd_no) {
     case CMD_OHCIRegs:
         printf
@@ -967,6 +1002,9 @@ int vsync(_kernel_swi_regs *r, void *pw)
 }
 #endif
 
+/*---------------------------------------------------------------------------*/
+/* CMHG interrupt veneer handler                                             */
+/*---------------------------------------------------------------------------*/
 int usb_irq_handler(_kernel_swi_regs *r, void *pw)
 {
     int ret;
@@ -1011,6 +1049,9 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
     return ret;
 }
 
+/*---------------------------------------------------------------------------*/
+/* Leaf functions                                                            */
+/*---------------------------------------------------------------------------*/
 void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
 {
 #ifdef OHCI_DEBUG

@@ -12,12 +12,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "ehcimodhead.h"
-#include "swis.h"
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <machine/bus.h>
+#include "swis.h"
 
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -35,19 +34,26 @@
 #include "Interface/PCI.h"
 #include "Interface/USBDriver.h"
 #include "callx/callx.h"
+#include "toolbox.h"
 
 /* Have to avoid including stdio as there's a clash with the BSD stuff */
 #define __stdio_h
 
+#include "ehcimodhead.h"
 #include "DebugLib/DebugLib.h"
 #include "USBDevFS.h"
 
+#define ErrorBase_EHCIDriver 0x820A40
+#define ErrorBlock_EHCI_NoReinit    { (ErrorBase_EHCIDriver+0), "NumParm" }
+#define ErrorBlock_EHCI_NoEHCI      { (ErrorBase_EHCIDriver+1), "E01"     }
+#define ErrorBlock_EHCI_ClaimVeneer { (ErrorBase_EHCIDriver+2), "E02"     }
+#define ErrorBlock_EHCI_USBTooOld   { (ErrorBase_EHCIDriver+3), "E03"     }
+typedef struct
+{
+    int  errnum;
+    char errtok[8];
+} _kernel_tokerror;
 
-
-
-
-
-extern uint64_t gettime (void);
 /* for debugging */
 #ifdef EHCI_DEBUG
 extern int ehcidebug;
@@ -58,48 +64,34 @@ int irq_device;
 char debugname[16];
 #endif
 
-void* private_word;
-
-volatile int* ehci_base;
-
-ehci_softc_t ehci_soft;
-struct device * usb_soft = NULL;
 extern int * init_veneer (void);
-//extern void* resource_files (void);
+extern void* resource_files (void);
 #ifdef EHCI_DEBUG
+extern uint64_t gettime (void);
 extern void ehci_dump_regs (ehci_softc_t *);
 //extern void ehci_dump_ed (ehci_soft_ed_t*);
 #endif
 extern void ehci_abort_xfer (void*, int);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+void* private_word;
+MessagesFD mod_messages;
+volatile int* ehci_base;
+ehci_softc_t ehci_soft;
+struct device * usb_soft = NULL;
 
 int* magic = NULL;
+int pci_device = -1;
+int hal_device = -1;
+int instance = 0;
+int device_number;
+int unhandled_irqs;
+int registers_32bit=0;
+static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
+static bool hal_portpower = false; /* Whether to use HAL_PortPower to control the port */
 
+/*---------------------------------------------------------------------------*/
+/* Driver instance creation                                                  */
+/*---------------------------------------------------------------------------*/
 void build_veneer (int* vn, int* st, size_t sz)
 {
     int i;
@@ -134,15 +126,6 @@ void build_veneer (int* vn, int* st, size_t sz)
                                    entry_table + 2 * (sz / sizeof (void*)) - 1);
 }
 
-int pci_device = -1;
-int hal_device = -1;
-int instance = 0;
-int device_number;
-int unhandled_irqs;
-int registers_32bit=0;
-static bool registering=false; /* True/false for whether we're in the middle of registering. Avoids nested registration attempt during ROM init. */
-static bool hal_portpower = false; /* Whether to use HAL_PortPower to control the port */
-
 _kernel_oserror* register_bus(void *in,struct device **out)
 {
     *out = NULL;
@@ -152,13 +135,39 @@ _kernel_oserror* register_bus(void *in,struct device **out)
     if(e)
         return e;
     if(version < RISCOS_USBDRIVER_API_VERSION)
-        return (_kernel_oserror*)"\0\0\0\0USBDriver too old";
+    {
+        static const _kernel_tokerror err_usbtooold = ErrorBlock_EHCI_USBTooOld;
+    
+        return _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                      &err_usbtooold, &mod_messages, 0 /* Internal buffer */);
+    }
+
     /* Now attempt to register */
     registering = true;
     e = _swix(USBDriver_RegisterBus, _INR(0,1)|_OUT(0),in,RISCOS_USBDRIVER_API_VERSION,out);
     if(e) *out = NULL;
     registering = false;
     return e;
+}
+
+static void name_root_hub(int pcidevice)
+{
+    if (pci_device == -1)
+    {
+        _kernel_oserror *e;
+
+        e = _swix (MessageTrans_Lookup, _INR(0,3),
+                   &mod_messages, "UkRoot", ehci_soft.sc_vendor, sizeof(ehci_soft.sc_vendor));
+        if (e) strcpy(ehci_soft.sc_vendor, " ");
+    }
+    else
+    {
+        char *v = NULL;
+    
+        _swix (PCI_ReadInfo, _INR(0,3), PCI_ReadInfo_Vendor, &v, sizeof(v), pci_device);
+        if (v == NULL) v = " ";
+        strncpy (ehci_soft.sc_vendor, v, sizeof ehci_soft.sc_vendor-1);
+    }
 }
 
 _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
@@ -168,8 +177,9 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     (void) r;
     (void) pw;
     
-
-
+    /* fill in the device name in the callback so that our service call handler
+       is threaded and there to respond to PCI calls */
+    name_root_hub(pci_device);
 
     /* register with the usbdriver module if it's already resident */
     dprintf (("", "Registering with USB driver\n"));
@@ -207,8 +217,9 @@ _kernel_oserror* new_instance (_kernel_swi_regs* r, void* pw, void* h)
     return NULL;
 }
 
-
-
+/*---------------------------------------------------------------------------*/
+/* CMHG module initialisation                                                */
+/*---------------------------------------------------------------------------*/
 _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     _kernel_oserror* e = 0;
     bool ettf = false;
@@ -253,18 +264,29 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
             pci_device = (int) strtol (endptr+1, NULL, 0);
         else if(*endptr == 'H')
             hal_device = (int) strtol (endptr+1, NULL, 0);
-        else if(*endptr > 32)
-        {
-            return (_kernel_oserror*)
-                "\1\0\0\0"Module_Title" can't be reinitialised";
-        }
         else
-            pci_device = 0;
+        {
+            static const _kernel_tokerror err_noreinit = ErrorBlock_EHCI_NoReinit;
+
+            return _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                          &err_noreinit, 0 /* Global messages */, 0 /* Internal buffer */);
+        }
     }
     else
     {
         pci_device = 0;
+#ifdef STANDALONE
+        /* Only first instance registers the messages in ResourceFS */
+        e = _swix (ResourceFS_RegisterFiles, _IN (0), resource_files ());
+        if (e != NULL) return e;
+#endif
     }
+
+    e = _swix (MessageTrans_OpenFile, _INR(0,2),
+        &mod_messages,
+        Module_MessagesFile,
+        0);
+    if (e) goto error_dereg;
 
     /* find the next possible controller */
     if(pci_device >= 0)
@@ -334,11 +356,19 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
             else if(e || !usbinfolen)
             {
                 /* Reached end of list */
-                return (_kernel_oserror*) "\0\0\0\0No EHCI devices found";
+                static const _kernel_tokerror err_noehci = ErrorBlock_EHCI_NoEHCI;
+            
+                e = _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                           &err_noehci, &mod_messages, 0 /* Internal buffer */);
+                goto error;
             }
         } while(1);
     }
 
+    memset (&ehci_soft, 0, sizeof ehci_soft);
+
+    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+    ehci_soft.sc_irqdevno = device_number;
     dprintf (("Main_0", "interrupt device %d\n", device_number));
     dprintf (("Main_0", "hardware address %p\n", ehci_base));
 
@@ -350,21 +380,21 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     irq0 = gettime () / 1000;
 #endif
 
-    _swix (OS_ClaimDeviceVector, _INR(0,4),
-        device_number| (1u<<31), usb_irq_entry, pw, 0, 0);
-    _swix (OS_Hardware, _IN(0) | _INR(8,9),
-        device_number, OSHW_CallHAL, EntryNo_HAL_IRQEnable);
-
     if ((magic = init_veneer ()) == NULL)
     {
-        return (_kernel_oserror*) "\0\0\0\0Couldn't claim magic";
+        static const _kernel_tokerror err_claimveneer = ErrorBlock_EHCI_ClaimVeneer;
+    
+        e = _swix (MessageTrans_ErrorLookup, _INR(0,2),
+                   &err_claimveneer, &mod_messages, 0 /* Internal buffer */);
+        goto error;
     }
     dprintf (("", "magic at %p", magic));
 
-    memset (&ehci_soft, 0, sizeof ehci_soft);
-
-    sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
-    ehci_soft.sc_irqdevno = device_number;
+    _swix (OS_ClaimDeviceVector, _INR(0,2),
+        device_number | ((pci_device == -1)?0:(1u<<31)),
+        usb_irq_entry, pw);
+    _swix (OS_Hardware, _IN(0) | _INR(8,9),
+        device_number, OSHW_CallHAL, EntryNo_HAL_IRQEnable);
 
     if (ettf)
     {
@@ -377,22 +407,30 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw) {
     /* in BSD this is called from sys/pci/ehci_pci.c */
     ehci_init (&ehci_soft);
 
-
-
     dprintf (("", "Finished module initialisation\n"));
 
-    /* try and start a new instance to catch any more controllers on the bus */
+    /* try and start a new instance to catch any more controllers on the bus,
+       done in a callback so that this instance is threaded and the instance
+       count goes up */
+    /* also register with the usbdriver module if it's already resident */
 
-     callx_add_callback (new_instance, 0);
+    callx_add_callback (new_instance, 0);
 
-    return 0;
+    return NULL;
 
 error:
     dprintf (("","Failed initialisation: %s\n", e->errmess));
+    _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
+error_dereg:
+#ifdef STANDALONE
+    if (podule_base == 0) _swix (ResourceFS_DeregisterFiles, _IN(0), resource_files ());
+#endif
     return e;
 }
 
-
+/*---------------------------------------------------------------------------*/
+/* CMHG module finalisation                                                  */
+/*---------------------------------------------------------------------------*/
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
 
@@ -413,14 +451,28 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
     callx_remove_all_callbacks ();
     callx_remove_all_callafters ();
     callx_remove_all_calleverys ();
-    _swix (OS_ReleaseDeviceVector, _INR(0,4),
-        device_number | (1u<<31), usb_irq_entry, pw, 0, 0);
+    _swix (OS_ReleaseDeviceVector, _INR(0,2),
+        device_number | ((pci_device == -1)?0:(1u<<31)),
+        usb_irq_entry, pw);
 
     if (magic) _swix (OS_Module, _IN(0)|_IN(2), 7, magic);
+
+    _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
+
+#ifdef STANDALONE
+    /* only remove files for last instantiation */
+    if (podule == 0)
+    {
+        _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
+    }
+#endif
 
     return NULL;
 }
 
+/*---------------------------------------------------------------------------*/
+/* CMHG module service calls                                                 */
+/*---------------------------------------------------------------------------*/
 void module_services(int service_number, _kernel_swi_regs *r, void *pw)
 {
     dprintf (("", "svce %x reason %x\n",service_number,r->r[0]));
@@ -447,11 +499,13 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
            case Service_USB_USBDriverDying:
              dprintf (("", "Deregistering with USB driver\n"));
              /* USBDriver will do the deregistering at this point, since
-                it's SWIs are not active anymore */
+                its SWIs are not active anymore */
              ehci_detach(&ehci_soft,0);
              ehci_shutdown(&ehci_soft);
              usb_soft = NULL;
              memset (&ehci_soft, 0, sizeof ehci_soft);
+             sprintf (ehci_soft.sc_bus.bdev.dv_xname, "EHCI%d", instance);
+             name_root_hub (pci_device);
              ehci_init (&ehci_soft);
              break;
            default:break;
@@ -466,16 +520,23 @@ void module_services(int service_number, _kernel_swi_regs *r, void *pw)
         callx_remove_all_callbacks ();
         callx_remove_all_callafters ();
         callx_remove_all_calleverys ();
-        _swix (OS_ReleaseDeviceVector, _INR(0,4),
-            device_number | (1u<<31), usb_irq_entry, pw, 0, 0);
+        _swix (OS_ReleaseDeviceVector, _INR(0,2),
+            device_number | ((pci_device == -1)?0:(1u<<31)),
+            usb_irq_entry, pw);
         break;
-      default:break;
+#ifdef STANDALONE
+      case Service_ResourceFSStarting:
+        /* Re-register the messages */
+        (*(void (*)(void *, void *, void *, void *))r->r[2]) (resource_files (), 0, 0, (void *)r->r[3]);
+        break;
+#endif
     }
 }
 
-#define OREAD(o) ehci_base[o/4]
-
 #ifdef EHCI_DEBUG
+/*---------------------------------------------------------------------------*/
+/* CMHG module commands - only used for debugging                            */
+/*---------------------------------------------------------------------------*/
 _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, void *pw)
 {
     ehci_softc_t* sc = &ehci_soft;
@@ -571,16 +632,9 @@ _kernel_oserror *module_commands(const char *arg_string, int argc, int cmd_no, v
 }
 #endif
 
-
-
-
-
-
-
-
-
-
-
+/*---------------------------------------------------------------------------*/
+/* CMHG interrupt veneer handler                                             */
+/*---------------------------------------------------------------------------*/
 int usb_irq_handler(_kernel_swi_regs *r, void *pw)
 {
     int ret;
@@ -617,6 +671,9 @@ int usb_irq_handler(_kernel_swi_regs *r, void *pw)
     return ret;
 }
 
+/*---------------------------------------------------------------------------*/
+/* Leaf functions                                                            */
+/*---------------------------------------------------------------------------*/
 void bus_space_write_4 (bus_space_tag_t iot, bus_space_handle_t ioh, int o, int x)
 {
 #ifdef EHCI_DEBUG0
@@ -754,35 +811,6 @@ riscos_abort_pipe (void* v)
 {
     callx_add_callback (_riscos_abort_pipe, v);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 void
 usb_schedsoftintr (struct usbd_bus* sc)
