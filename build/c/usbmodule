@@ -741,7 +741,7 @@ static _kernel_oserror* command_dev_info (int n)
     printf ("'%s'\n", ltrim (string));
 
     sprintf (speed, "Spd%d", udev->speed);
-    strcpy (string, lookupmsg (speed, NULL));             formatpair ("DISpd", width, string);
+    sprintf (string, "%s\n", lookupmsg (speed, NULL));    formatpair ("DISpd", width, string);
 
     return NULL;
 }
