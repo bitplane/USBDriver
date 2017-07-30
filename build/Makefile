@@ -18,7 +18,6 @@
 UNAME           = "RISC_OS"
 VPATH           = ^.build ^.dev.usb
 DEVICELIST      = Resources.<Locale>.USBDevs
-CUSTOMRES       = custom
 CUSTOMEXP       = custom
 COMPONENT      ?= NetBSD
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:,C:USB
@@ -39,31 +38,22 @@ endif
 #
 # Generate USBDriver and the controller drivers by choosing the list of objects
 #
-ifeq ("${COMPONENT}","EHCIDriver")
-CMHGFILE        = ehcimodhead
-CMHGDEPENDS     = ehcimodule
-MSGS_ORIGIN     = LocalRes:EHCIMessages
-MSGS_DEST       = Resources.EHCIDriver.Messages
+ifeq ("${COMPONENT}","EHCIHALLib")
 OBJS            = ehcimodule ehci port call_veneer \
                   triggercbs usbroothub_subr
 OBJS_HAL        = o_hal.ehci o_hal.usbroothub_subr o_hal.ehcihal o_hal.ehcihalasm
 endif
 
-ifeq ("${COMPONENT}","OHCIDriver")
-CMHGFILE        = ohcimodhead
-CMHGDEPENDS     = ohcimodule
-MSGS_ORIGIN     = LocalRes:OHCIMessages
-MSGS_DEST       = Resources.OHCIDriver.Messages
+ifeq ("${COMPONENT}","OHCIHALLib")
 OBJS            = ohcimodule ohci port call_veneer \
                   triggercbs
 OBJS_HAL        = o_hal.ohci
 endif
 
 ifeq ("${COMPONENT}","USBDriver")
-CMHGFILE        = usbmodhead
 CMHGDEPENDS     = usbmouse usbmodule usbkboard
-MSGS_ORIGIN     = LocalRes:USBMessages
-MSGS_DEST       = Resources.USBDriver.Messages
+INSTRES_FILES   = USBDevs
+INSTRES_DEPENDS = ${DEVICELIST}
 OBJS            = usbmodule port usb usbdi usb_subr \
                   usbdi_util usb_quirks uhub usbmouse usbkboard \
                   hid bufman triggercbs call_veneer
@@ -71,9 +61,6 @@ OBJS_HAL        = o_hal.usb o_hal.usbdi o_hal.usb_subr o_hal.usbdi_util \
                   o_hal.usb_quirks o_hal.uhub o_hal.porthal o_hal.halheap \
                   o_hal.usbhal
 endif
-
-SA_OBJS         = ${OBJS} ${COMPONENT}Res
-DBG_OBJS        = ${OBJS} ${COMPONENT}Res
 
 include CModule
 
@@ -105,9 +92,6 @@ clean::
         ${XWIPE} o_hal ${WFLAGS}
         ${XWIPE} maps  ${WFLAGS}
         ${XWIPE} bin   ${WFLAGS}
-        ${RM}    h.ehcimodhead
-        ${RM}    h.ohcimodhead
-        ${RM}    h.usbmodhead
         ${RM}    ${DEVICELIST}
         ${RM}    ^.dev.usb.h.usbdevs
         ${RM}    ^.dev.usb.h.usbdevs_data
@@ -151,29 +135,8 @@ export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${FAPPEND} ${C_EXP_HDR}.USBDriver ${C_EXP_HDR}.USBDriver o._h_USBDriver
         @${ECHO} ${COMPONENT}: header export complete
 
-export_hdrs_EHCIDriver export_hdrs_OHCIDriver:
+export_hdrs_EHCIHALLib export_hdrs_OHCIHALLib:
         @${ECHO} ${COMPONENT}: header export complete
-
-resources: resources_${COMPONENT}
-
-resources_OHCIDriver: LocalRes:OHCIMessages
-        ${MKDIR} ${RESFSDIR}
-        ${TOKENCHECK} LocalRes:OHCIMessages
-        ${CP} LocalRes:OHCIMessages ${RESFSDIR}.Messages ${CPFLAGS}
-        @${ECHO} ${COMPONENT}: resources copied to Messages module
-
-resources_EHCIDriver: LocalRes:EHCIMessages
-        ${MKDIR} ${RESFSDIR}
-        ${TOKENCHECK} LocalRes:EHCIMessages
-        ${CP} LocalRes:EHCIMessages ${RESFSDIR}.Messages ${CPFLAGS}
-        @${ECHO} ${COMPONENT}: resources copied to Messages module
-
-resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
-        ${MKDIR} ${RESFSDIR}
-        ${TOKENCHECK} LocalRes:USBMessages
-        ${CP} LocalRes:USBMessages ${RESFSDIR}.Messages ${CPFLAGS}
-        ${CP} ${DEVICELIST} ${RESFSDIR}.USBDevs ${CPFLAGS}
-        @${ECHO} ${COMPONENT}: resources copied to Messages module
 
 #
 # Static dependencies
@@ -184,13 +147,5 @@ resources_USBDriver: LocalRes:USBDriver ${DEVICELIST}
 ${EXPLIBDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
         ${MKDIR} ${EXPLIBDIR}.o
         ${AR} ${ARFLAGS} $@ ${OBJS_HAL}
-
-${MERGEDRDIR}.${COMPONENT}Msgs: ${MSGS_ORIGIN}
-        ${MKDIR} ${MERGEDRDIR}
-        ${TOKENCHECK} ${MSGS_ORIGIN}
-        ${CP} ${MSGS_ORIGIN} $@ ${CPFLAGS}
-
-o.${COMPONENT}Res od.${COMPONENT}Res: ${MERGEDRDIR}.${COMPONENT}Msgs ${DIRS}
-        ${RESGEN} ${RES_AREA} $@ ${MERGEDRDIR}.${COMPONENT}Msgs ${MSGS_DEST}
 
 # Dynamic dependencies:

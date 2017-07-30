@@ -22,7 +22,7 @@
 #include "Global/Pointer.h"
 #include "callx/callx.h"
 
-#include "usbmodhead.h"
+#include "USBDriverHdr.h"
 #include "swis.h"
 #include "debuglib/debuglib.h"
 

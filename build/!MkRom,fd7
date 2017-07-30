@@ -14,5 +14,3 @@
 |
 dir <obey$dir>
 amu_machine rom COMPONENT=USBDriver  THROWBACK=-throwback
-amu_machine rom COMPONENT=OHCIDriver THROWBACK=-throwback
-amu_machine rom COMPONENT=EHCIDriver THROWBACK=-throwback

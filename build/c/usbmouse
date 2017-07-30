@@ -53,7 +53,7 @@
 #include "Global/Pointer.h"
 #include "Global/VduExt.h"
 
-#include "usbmodhead.h"
+#include "USBDriverHdr.h"
 #include "swis.h"
 #include "debuglib/debuglib.h"
 #include "callx/callx.h"
@@ -71,8 +71,10 @@
 #include <dev/usb/usb_quirks.h>
 #include <dev/usb/hid.h>
 
+#ifndef __riscos
 #include <dev/wscons/wsconsio.h>
 #include <dev/wscons/wsmousevar.h>
+#endif
 
 #include "usbmouse.h"
 
@@ -876,13 +878,6 @@ void ums_intr
 				(buttons & 8)? KeyV_KeyDown: KeyV_KeyUp, KeyNo_CentreMouse, KEYV);
 		}
 	}
-}
-
-int wsmousedevprint (void * v, const char * c)
-{
-	(void) v;
-	(void) c;
-	return 0;
 }
 
 int

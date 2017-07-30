@@ -14,5 +14,3 @@
 |
 dir <obey$dir>
 amu_machine debug gpa_debug COMPONENT=USBDriver  DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback
-amu_machine debug gpa_debug COMPONENT=OHCIDriver DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback
-amu_machine debug gpa_debug COMPONENT=EHCIDriver DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback

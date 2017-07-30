@@ -15,7 +15,7 @@
 Dir <Obey$Dir>
 amu_machine export PHASE=hdrs COMPONENT=USBDriver  THROWBACK=-throwback
 amu_machine export PHASE=libs COMPONENT=USBDriver  THROWBACK=-throwback
-amu_machine export PHASE=hdrs COMPONENT=OHCIDriver THROWBACK=-throwback
-amu_machine export PHASE=libs COMPONENT=OHCIDriver THROWBACK=-throwback
-amu_machine export PHASE=hdrs COMPONENT=EHCIDriver THROWBACK=-throwback
-amu_machine export PHASE=libs COMPONENT=EHCIDriver THROWBACK=-throwback
+amu_machine export PHASE=hdrs COMPONENT=OHCIHALLib THROWBACK=-throwback
+amu_machine export PHASE=libs COMPONENT=OHCIHALLib THROWBACK=-throwback
+amu_machine export PHASE=hdrs COMPONENT=EHCIHALLib THROWBACK=-throwback
+amu_machine export PHASE=libs COMPONENT=EHCIHALLib THROWBACK=-throwback

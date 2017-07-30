@@ -12,8 +12,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* Changed 17.02.2010 TM DeviceCall_USB_TransferInfo and notation of padded bytes. */
-#include "usbmodhead.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -39,6 +37,7 @@
 #include "dev/usb/usbhid.h"
 #include "dev/usb/usb_quirks.h"
 
+#include "USBDriverHdr.h"
 #include "swis.h"
 #include "debuglib/debuglib.h"
 #include "callx/callx.h"

@@ -175,7 +175,6 @@ psignal(unsigned sig, const char *s) {
  * Callouts
  */
 extern int private_word;
-extern void callout_veneer (void);
 
 void
 callout_init (struct callout* c,int ignored)
@@ -210,7 +209,6 @@ callout_reset (struct callout *c, int i, void (*f)(void *), void *v) {
     if (i <= 0) i = 1;
     c->c_arg = v;
     c->c_func = f;
-    c->c_next = (void*) private_word; /* hacky thing to get handler to work */
 #ifdef USB_DEBUG0
     if (usbdebug > 15) dprintf (("Port", "callout %p reset %dms\n", c, i));
 #endif

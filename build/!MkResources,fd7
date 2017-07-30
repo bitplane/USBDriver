@@ -13,7 +13,5 @@
 | limitations under the License.
 |
 dir <obey$dir>
-amu_machine resources RESDIR=null:$ COMPONENT=OHCIdriver
 amu_machine resources RESDIR=null:$ COMPONENT=USBDriver
-amu_machine resources RESDIR=null:$ COMPONENT=EHCIDriver
 

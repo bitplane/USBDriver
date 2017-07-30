@@ -14,5 +14,3 @@
 |
 dir <obey$dir>
 amu_machine standalone COMPONENT=USBDriver  CDEFINES="-DSTANDALONE" THROWBACK=-throwback
-amu_machine standalone COMPONENT=OHCIDriver CDEFINES="-DSTANDALONE" THROWBACK=-throwback
-amu_machine standalone COMPONENT=EHCIDriver CDEFINES="-DSTANDALONE" THROWBACK=-throwback
