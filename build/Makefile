@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Make file for RISC OS port of NetBSD USB code
+# Makefile for USBDriver
 # 
 
+COMPONENT      ?= USBDriver
 UNAME           = "RISC_OS"
 VPATH           = ^.build ^.dev.usb
 DEVICELIST      = Resources.<Locale>.USBDevs
 CUSTOMEXP       = custom
-COMPONENT      ?= NetBSD
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:,C:USB
 CDEFINES       += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
 RES_AREA        = resource_files
@@ -121,11 +121,13 @@ export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${CP} ^.dev.usb.h.usbdi    ${EXPLIBDIR}.dev.usb.h.usbdi    ${CPFLAGS}
         ${CP} ^.dev.usb.h.usbdivar ${EXPLIBDIR}.dev.usb.h.usbdivar ${CPFLAGS}
         ${CP} ^.dev.usb.h.usb_port ${EXPLIBDIR}.dev.usb.h.usb_port ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbroothub_subr ${EXPLIBDIR}.dev.usb.h.usbroothub_subr ${CPFLAGS}
         ${CP} ^.sys.h.device       ${EXPLIBDIR}.sys.h.device       ${CPFLAGS}
         ${CP} ^.machine.h.bus      ${EXPLIBDIR}.machine.h.bus      ${CPFLAGS}
         ${CP} ^.VersionNum         ${EXPLIBDIR}.LibVersion         ${CPFLAGS}
         # Workspace size for HAL allocation (only)
         ${CP} Hdr.usbhal           ${EXPLIBDIR}.Hdr.usbhal         ${CPFLAGS}
+        ${CP} ^.dev.usb.h.usbhal   ${EXPLIBDIR}.dev.usb.h.usbhal   ${CPFLAGS}
         # Conversion of the USB device database
         ${CP} ^.dev.usb.h.usbdevs  ${EXPLIBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
         # Equivalent of ASMHDRS and ASMCHDRS and CMHGAUTOHDR

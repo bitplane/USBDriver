@@ -15,7 +15,6 @@
 /*	RISC OS port options
  */
 
-#include "opt_usbverbose.h"
 #include "sys/device.h"
 #include "errno.h"
 #include <sys/ioccom.h>
