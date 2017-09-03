@@ -4,10 +4,13 @@ USB API
 This API details the programming interface through which device drivers
 can communicate with devices via the USB bus. 
 
+
 Versions
 --------
 
 Version  Date       Author   Change
+0.95     20/8/2017  RPS      Tidy up sections, change IYONIX specifics to
+                             refer to RISC OS 5 generically
 0.94     30/5/2013  RPS      Clarify availability of R6 options for
                              call device 'USB Control Request'
 0.93     18/7/2010  JL       Updated for USBDriver 0.49
@@ -28,19 +31,24 @@ Introduction
 
 Sections: 
  - DeviceFS interface
- - DeviceFS calls 
- - Service calls 
- - Alias matching 
+ - DeviceFS calls
+ - Command completion status
+ - Service calls
+ - SWIs
+ - Aliases and alias matching
  - Commands
+ - DeviceFS issues
+ - Acknowledgement
 
 The Universal Serial Bus (USB) is a simple interconnect system widely
 standardised and for which a large range of devices is available. For use
-on RISCOS specific drivers will (always) need to be adapted or written.
-It is useful, however, to provide a relatively simple programming interface(API) that will permit developers of device drivers to create
+on RISC OS specific drivers will (always) need to be adapted or written.
+It is useful, however, to provide a relatively simple programming
+interface (API) that will permit developers of device drivers to create
 drivers that will operate on a variety of different USB host adaptor
-cards within the RISCOS environment. This document describes such an
-API which is compatible with both RISCOS 5 as shipped on the IYONIX pc,
-and version 0.90 and later of Castle's 4 port USB podule.
+cards within the RISC OS environment. This document describes such an
+API which is compatible with both RISC OS 5 and version 0.90 and later
+of Castle's 4 port USB podule.
 
 No attempt is made to describe how to control devices over the USB bus
 using USB protocols. It merely describes the low level interface through
@@ -51,13 +59,13 @@ The naming convention used for devices is USBxxnnn, where all device
 names start USB, followed by 0 or more vendor specific characters (nn)
 and a number (nnn) in the range 0 to 999.
 
-The IYONIX pc uses "USBnnn" e.g. "USB2".
+RISC OS 5 uses "USBnnn" e.g. "USB2".
 Castle's USB podule uses "USBDnnn" e.g. "USBD2".
 Examples given in this document use "USBD" as the driver name.
 
 
 DeviceFS interface
------------------
+------------------
 
 Device specific drivers communicate with the low level USB host driver,
 and thence the USB hardware and attached devices, via FileSwitch and
@@ -66,7 +74,7 @@ special fields to define requirements.
 
 The special field can have some or all of the following:
 
-Value         Meaning                                                        IYONIX?  Podule?        
+Value         Meaning                                                        OS 5?    Podule?    
 interface/N   Interface to use. Defaults to the first suitable one.          Yes      Yes            
 alternate/N   Interface alternate to use. Defaults to the first suitable     Yes      Yes            
               one.                                                                                   
@@ -103,7 +111,7 @@ there is no prefix then it is decimal.
 Two special fields have been added that are acted on by later versions of
 DeviceFS. The same functionality is also available via an IOCTL call.
 
-Value      IOCTL  Action                                                       IYONIX?  Podule?    
+Value      IOCTL  Action                                                       OS 5?    Podule?    
 Nosleep    4      true/false. Any DeviceFS stream, if opened with the special  Yes      No         
 sleep/S           field entry 'sleep' will issue OS_UpCall 6 when it would                                 
                   otherwise block thus allowing Taskwindows to continue                                  
@@ -130,12 +138,12 @@ To open a bulk (by default) in connection from USBD3 endpoint 1 from BASIC:
 in% = OPENIN"devices#endpoint1:usbd3"
  
 
-DeviceFS_CallDevice
--------------------
+DeviceFS calls
+--------------
 
-There are 9 extension calls into the DeviceFS driver which are passed directly to the USB driver and are shown in the table below.
+There are 9 extension calls into the DeviceFS driver which are passed directly to the USB driver via DeviceFS_CallDevice, these are shown in the table below.
 
-Register  Value       Entry                                                   IYONIX?  Podule?    
+Register  Value       Entry                                                   OS 5?    Podule?    
 USB Control Request                                                           Yes      Yes        
 R0        1<<31 + 0   Send request to a device's default control pipe and                         
                       return the reply.                                                           
@@ -229,7 +237,8 @@ Returns:R4            New flags value
 
 Note: The "Check Buffer Space" call has been added to enable users to code simple drivers in higher level languages such as BASIC. On RISC OS 4 and earlier, commands such as BGET of BPUT will not return if there is no data or space in the stream's buffer. With this call the user can only make such blocking calls when they wont be blocked.
 
-Note: The 'USB Control Request' can optionally be polled or called back (see below). The common operation for both IYONIX and podule versions is to use R6=0.
+Note: The 'USB Control Request' can optionally be polled or called back (see below). The most compatible operation for both RISC OS 5 and podule versions is to use R6=0.
+
 
 Command completion status 
 -------------------------
@@ -285,13 +294,8 @@ R0        1      Report connected devices. Issued with R2 set to zero.
                  chunk of RMA, with its link pointer set to NULL. It
                  is the responsibility of the issuer of this service
                  call to free the memory chunks returned.
-R0        2      Device has gone. (not used) R2 is a pointer to a
-                 structure of type USBServiceCall, such as would
-                 have been issued when the device was originally
-                 announced using reason code 0 - New device connected.
-                 This call announces the fact that the device is no
-                 longer available for use. Note that this call is
-                 not used. Since each USB device is a unique DeviceFS
+R0        2      Device has gone. (not used)
+                 Since each USB device is a unique DeviceFS
                  device, the DeviceFS_DeviceDead service call will
                  provide this information.
 R0        3      USB driver module starting.
@@ -310,7 +314,7 @@ SWI USBDriver_Version (0x54a45)
     This SWI is only available in USBDriver version 0.49 and above.
 
 
-Aliases and Alias Matching
+Aliases and alias matching
 --------------------------
 
 A powerful Alias matching system is employed to provide a system for locating and launching specific applications and tools when relevant USB devices become available.
@@ -339,57 +343,58 @@ RRRR  release number  -1                    product release number             
 nnn   device number   usb device number     usb device number                  
 
  
-When first created this is set to the number nnn. The second time around it has 3 numbers: nnn interface alternate. In the descriptions and examples below device USBDnnn is used. This is correct for the podule. IYONIX uses USBnnn. 
+When first created this alias is set to the number nnn.
+The second time around it has 3 numbers:           nnn interface alternate.
 
 Aliases are searched in accordance with the USB Common Class Specification (revision 1.0). This means that the following searches shall be done:
 
-Alias@USBD$Device_*_*_*_V_P___R
-Alias@USBD$Device_*_*_*_V_P___*
-Alias@USBD$Device_L_S_T_V_*___*
-Alias@USBD$Device_L_S_*_V_*___*
-Alias@USBD$Device_L_S_T_*_*___*
-Alias@USBD$Device_L_S_*_*_*___*
+Alias$@USBDevice_*_*_*_V_P___R
+Alias$@USBDevice_*_*_*_V_P___*
+Alias$@USBDevice_L_S_T_V_*___*
+Alias$@USBDevice_L_S_*_V_*___*
+Alias$@USBDevice_L_S_T_*_*___*
+Alias$@USBDevice_L_S_*_*_*___*
 
 If a driver is found at that stage then it can participate in choosing the configuration for the driver. Otherwise the system software chooses an appropriate configuration and the search is proceeded using the following, taking each interface in turn, taking the class and subclass data from the interface descriptor:
 
-Alias$@USBD$Device_*_*_*_V_P_C_I_R
-Alias$@USBD$Device_*_*_*_V_P_C_I_*
-Alias$@USBD$Device_L_S_T_V_*_*_*_*
-Alias$@USBD$Device_L_S_*_V_*_*_*_*
-Alias$@USBD$Device_L_S_T_*_*_*_*_*
-Alias$@USBD$Device_L_S_*_*_*_*_*_*
+Alias$@USBDevice_*_*_*_V_P_C_I_R
+Alias$@USBDevice_*_*_*_V_P_C_I_*
+Alias$@USBDevice_L_S_T_V_*_*_*_*
+Alias$@USBDevice_L_S_*_V_*_*_*_*
+Alias$@USBDevice_L_S_T_*_*_*_*_*
+Alias$@USBDevice_L_S_*_*_*_*_*_*
 
 If a match is made, the alias will be executed. This permits (e.g.) an obey file to be created containing lines such as:
    
-Alias @USBDDevice____03F0_0417____ Do Path HPLJ1220
- USBD%%0#usbtimeout10000;size16384:|mUSBDSetInterface %%0 0 1|m||%%*0
+Alias @USBDevice____03F0_0417____ Do Path HPLJ1220 USB%%0#usbtimeout10000;size16384:|mUSBSetInterface %%0 0 1|M||%%*0
 
-If "<USBD$Device_*_*_*_03F0_0417_*_*_*_*>" <> "" Then Do
- @usbddevice____03F0_0417____ <USBD$Device_*_*_*_03F0_0417_*_*_*_*>
-  
-Note that though each command appears to take 2 or more lines, each is one line only.
-The first line sets up an alias for a device (vendor)03F0 and (product)0417 (which is an HPLJ1220C printer) which will create a path variable "HPLJ1220:" and choose interface 0 alternate 1 as the desired interface to use. The second line will execute the alias if it is already set up when the obey file is run.
+Which sets up an alias for a device (vendor) 03F0 and (product) 0417 (which is an HPLJ1220C printer) which will create a path variable "HPLJ1220:" and choose interface 0 alternate 1 as the desired interface to use.
+
+This second example will execute the alias if it is already set up when the obey file is run:
+
+If "<USB$Device_*_*_*_03F0_0417_*_*_*_*>" <> "" Then Do @USBDevice____03F0_0417____ <USB$Device_*_*_*_03F0_0417_*_*_*_*>
 
 
 Commands
--------
+--------
 
-Command                     Usage                                             IYONIX?  Podule?   
-USBDBuses                   Displays a list of available USB buses            Yes      No        
-USBBuses                                                                                         
-USBDDevices                 Displays a list of available USB devices          Yes      No        
-USBDevices                                                                                       
-USBDDevInfo <n>             Displays device information on device <n>         Yes      No        
-USBdevInfo                                                                                       
-USBDConfInfo <n>            Displays configuration information on device <n>  Yes      No        
-USBConfInfo                                                                                       
-USBDSetConfig <n><m>        Set configuration value for device <n> to         Yes      Yes       
-USBSetConfig                configuration <m>                                                    
-USBDSetInterface <n><m><p>  Set device <n> to interface <m>                   Yes      Yes       
-USBSetInterface             and alternate <p>                                                    
-USBDReset <n>               Force device <n> to be reset and                  Yes      No        
-USBReset                    "enumerated" again.                                                  
-
+Command                        Usage                                             OS 5?    Podule?
+USBDBuses                      Displays a list of available USB buses            Yes      No        
+USBBuses                                                                                            
+USBDDevices                    Displays a list of available USB devices          Yes      No        
+USBDevices                                                                                          
+USBDDevInfo <n>                Displays device information on device <n>         Yes      No        
+USBdevInfo                                                                                          
+USBDConfInfo <n>               Displays configuration information on device <n>  Yes      No        
+USBConfInfo                                                                                          
+USBDSetConfig <n><m>           Set configuration value for device <n> to         Yes      Yes       
+USBSetConfig                   configuration <m>                                                    
+USBDSetInterface <n><m><p>     Set device <n> to interface <m>                   Yes      Yes       
+USBSetInterface                and alternate <p>                                                    
+USBDReset <n>                  Force device <n> to be reset and                  Yes      No        
+USBReset                       "enumerated" again.                                                  
+USBDQuirk <A|R|L> <v><p><d><f> Apply workaround flags <f> to the vendor <v>      Yes      ???
+USBQuirk                       product <v> device <d>
 
 
 DeviceFS issues
@@ -397,45 +402,8 @@ DeviceFS issues
 
 This is for others intending to provide a DeviceFS interface to their USB cards. When writing a DeviceFS driver the DeviceFS driver entry 0 (initialise) is missing a vital parameter on versions of DeviceFS prior to that shipped with RISC OS 4. The RISC OS 4 (or 5) entry provides the fileswitch stream handle in R4. For earlier DeviceFS versions, this handle may be found as a 32 bit value at offset 44 from the pointer supplied in R2.
 
-Licence:
---------
 
-The USB stack (OHCIDriver and USBDriver modules) on the IYONIX pc is Copyright (C) Castle Technology Ltd except for those portions covered by the notice below:
+Acknowledgement
+---------------
 
-/*
- * Copyright (c) 1998 The NetBSD Foundation, Inc.
- * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
- * Carlstedt Research & Technology.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *        This product includes software developed by the NetBSD
- *        Foundation, Inc. and its contributors.
- * 4. Neither the name of The NetBSD Foundation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
-
+This product includes software developed by the NetBSD Foundation, Inc. and its contributors.

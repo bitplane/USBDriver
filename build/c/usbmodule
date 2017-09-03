@@ -1572,7 +1572,7 @@ static int launch_system_variable (struct usb_attach_arg* aux, int unit)
                     break;
                 case 1:
                     sprintf (str, "%s*_*_*_%04X_%04X_%02d_%02d_*_*",
-                        alias, vendor, product, interface, release);
+                        alias, vendor, product, config, interface);
                     break;
                 case 2:
                     sprintf (str, "%s%02X_%02X_%02X_%04X_*_*_*_*_*",
@@ -1613,13 +1613,12 @@ match:
     struct sysvar_callback* sc =
         malloc (sizeof *sc + len + strlen (val));
 
-    sprintf (sc->com, "%.*s %s",
-        len,
-        name + sizeof "Alias$" - 1,
-        val);
-
-    sc->next = sysvar_head;
-    sysvar_head = sc;
+    if (sc != NULL)
+    {
+        sprintf (sc->com, "%.*s %s", len, name + sizeof "Alias$" - 1, val);
+        sc->next = sysvar_head;
+        sysvar_head = sc;
+    }
 
     return 0;
 }
