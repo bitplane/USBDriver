@@ -12,11 +12,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-/* This is the module version of port.c
-   For the HAL version, see usbhal.c and porthal.s
-*/
-
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>

@@ -15,99 +15,59 @@
 # Makefile for USBDriver
 # 
 
-COMPONENT      ?= USBDriver
+COMPONENT       = USBDriver
 UNAME           = "RISC_OS"
 VPATH           = ^.build ^.dev.usb
+EXPLIBDIR       = <Lib$Dir>.USB
 DEVICELIST      = Resources.<Locale>.USBDevs
 CUSTOMEXP       = custom
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:,C:USB
 CDEFINES       += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
 RES_AREA        = resource_files
 LIBS            = ${CALLXLIB} ${ASMUTILS}
-
-#
-# Debug switch
-#
-DEBUG ?= FALSE
-ifeq (${DEBUG},TRUE)
-CFLAGS         += -DDEBUGLIB -DUSB_DEBUG -DOHCI_DEBUG -DEHCI_DEBUG
-CMHGDEFINES    += -DUSB_DEBUG -DOHCI_DEBUG -DEHCI_DEBUG
-LIBS           += ${DEBUGLIBS} ${NET5LIBS}
-endif
-
-#
-# Generate USBDriver and the controller drivers by choosing the list of objects
-#
-ifeq ("${COMPONENT}","EHCIHALLib")
-OBJS            = ehcimodule ehci port call_veneer \
-                  triggercbs usbroothub_subr
-OBJS_HAL        = o_hal.ehci o_hal.usbroothub_subr o_hal.ehcihal o_hal.ehcihalasm
-endif
-
-ifeq ("${COMPONENT}","OHCIHALLib")
-OBJS            = ohcimodule ohci port call_veneer \
-                  triggercbs
-OBJS_HAL        = o_hal.ohci
-endif
-
-ifeq ("${COMPONENT}","USBDriver")
 CMHGDEPENDS     = usbmouse usbmodule usbkboard
 INSTRES_FILES   = USBDevs
 INSTRES_DEPENDS = ${DEVICELIST}
 OBJS            = usbmodule port usb usbdi usb_subr \
                   usbdi_util usb_quirks uhub usbmouse usbkboard \
                   hid bufman triggercbs call_veneer
-OBJS_HAL        = o_hal.usb o_hal.usbdi o_hal.usb_subr o_hal.usbdi_util \
-                  o_hal.usb_quirks o_hal.uhub o_hal.porthal o_hal.halheap \
-                  o_hal.usbhal
+
+#
+# Debug switch
+#
+DEBUG ?= FALSE
+ifeq (${DEBUG},TRUE)
+CFLAGS         += -DUSB_DEBUG -DDEBUGLIB
+CMHGDEFINES    += -DUSB_DEBUG
+LIBS           += ${DEBUGLIBS} ${NET5LIBS}
 endif
 
 include CModule
 
 CFLAGS         += -wp -wc
-LDFLAGS        += -LIST maps.${TARGET} -MAP -Xref -Symbols rm.sym${TARGET}
-DBG_LIBS       += ${NET5LIBS}
-EXPLIBDIR       = <Lib$Dir>.USB
-
-#
-# HAL library rules
-#
-.SUFFIXES: .o_hal
-.c.o_hal:; ${CC} -APCS 3/nofp/noswst -wp -ff -DUSBHAL -c -depend !Depend -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED ${CINCLUDES} ${THROWBACK} -o $@ $<
-.s.o_hal:; ${AS} ${ASFLAGS} -APCS 3/nofp/noswst -o $@ $<
 
 #
 # Produce the devices list
 #
-bin.makedevs: c.makedevs ${DIRS}
+makedevs: c.makedevs ${DIRS}
         ${MAKE} -f makedevs/mk COMPONENT=makedevs THROWBACK=${THROWBACK}
 
-${DEVICELIST}: bin.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
-        ${RUN}bin.makedevs > $@
+${DEVICELIST}: makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
+        ${RUN}makedevs > $@
 
 #
 # Supplemented or overridden targets
 #
 clean::
-        ${XWIPE} o_hal ${WFLAGS}
-        ${XWIPE} maps  ${WFLAGS}
-        ${XWIPE} bin   ${WFLAGS}
-        ${RM}    ${DEVICELIST}
-        ${RM}    ^.dev.usb.h.usbdevs
-        ${RM}    ^.dev.usb.h.usbdevs_data
+        ${RM} ${DEVICELIST}
+        ${RM} makedevs
+        ${RM} ^.dev.usb.h.usbdevs
+        ${RM} ^.dev.usb.h.usbdevs_data
 
-${DIRS}::
-        ${MKDIR} o_hal
-        ${MKDIR} maps
-        ${MKDIR} bin
-
-export: export_${PHASE}_${COMPONENT}
+export: export_${PHASE}
         @${NOP}
 
-export_libs_${COMPONENT}: ${EXPLIBDIR}.o.${COMPONENT}
-        @${ECHO} ${COMPONENT}: library export complete
-
-export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
+export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${MKDIR} o
         ${MKDIR} ${EXPLIBDIR}.dev.usb.h
         ${MKDIR} ${EXPLIBDIR}.sys.h
@@ -121,13 +81,9 @@ export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${CP} ^.dev.usb.h.usbdi    ${EXPLIBDIR}.dev.usb.h.usbdi    ${CPFLAGS}
         ${CP} ^.dev.usb.h.usbdivar ${EXPLIBDIR}.dev.usb.h.usbdivar ${CPFLAGS}
         ${CP} ^.dev.usb.h.usb_port ${EXPLIBDIR}.dev.usb.h.usb_port ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbroothub_subr ${EXPLIBDIR}.dev.usb.h.usbroothub_subr ${CPFLAGS}
         ${CP} ^.sys.h.device       ${EXPLIBDIR}.sys.h.device       ${CPFLAGS}
         ${CP} ^.machine.h.bus      ${EXPLIBDIR}.machine.h.bus      ${CPFLAGS}
         ${CP} ^.VersionNum         ${EXPLIBDIR}.LibVersion         ${CPFLAGS}
-        # Workspace size for HAL allocation (only)
-        ${CP} Hdr.usbhal           ${EXPLIBDIR}.Hdr.usbhal         ${CPFLAGS}
-        ${CP} ^.dev.usb.h.usbhal   ${EXPLIBDIR}.dev.usb.h.usbhal   ${CPFLAGS}
         # Conversion of the USB device database
         ${CP} ^.dev.usb.h.usbdevs  ${EXPLIBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
         # Equivalent of ASMHDRS and ASMCHDRS and CMHGAUTOHDR
@@ -137,17 +93,13 @@ export_hdrs_USBDriver: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${FAPPEND} ${C_EXP_HDR}.USBDriver ${C_EXP_HDR}.USBDriver o._h_USBDriver
         @${ECHO} ${COMPONENT}: header export complete
 
-export_hdrs_EHCIHALLib export_hdrs_OHCIHALLib:
-        @${ECHO} ${COMPONENT}: header export complete
+export_libs:
+        @${ECHO} ${COMPONENT}: no exported libraries
 
 #
 # Static dependencies
 #
 ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data: ^.dev.usb.usbdevs ^.dev.usb.devlist2h/awk
         ${GAWK} -v os="${UNAME} -s" -f ^.dev.usb.devlist2h/awk ^.dev.usb.usbdevs
-
-${EXPLIBDIR}.o.${COMPONENT}: ${OBJS_HAL} ${DIRS}
-        ${MKDIR} ${EXPLIBDIR}.o
-        ${AR} ${ARFLAGS} $@ ${OBJS_HAL}
 
 # Dynamic dependencies:

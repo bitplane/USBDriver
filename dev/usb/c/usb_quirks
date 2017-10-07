@@ -31,10 +31,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef __riscos
-#include <dev/usb/usbhal.h>
-#define printf  logprintf
-#endif
 #include <sys/cdefs.h>
 #ifndef __riscos
 __KERNEL_RCSID(0, "$NetBSD: usb_quirks.c,v 1.81 2014/09/12 16:40:38 skrll Exp $");
@@ -187,7 +183,7 @@ const struct usbd_quirks usbd_no_quirk = { 0 };
 const struct usbd_quirks *
 usbd_find_quirk(usb_device_descriptor_t *d)
 {
-#if defined(__riscos) && !defined(USBHAL)
+#ifdef __riscos
 	const struct usbd_quirks *q;
 	if (extra_quirks) {
 		q = usbd_find_builtin_quirk(d, extra_quirks);
@@ -206,7 +202,7 @@ usbd_find_builtin_quirk(usb_device_descriptor_t *d, const struct usbd_quirk_entr
 	u_int16_t product = UGETW(d->idProduct);
 	u_int16_t revision = UGETW(d->bcdDevice);
 
-#if defined(__riscos) && !defined(USBHAL)
+#ifdef __riscos
 	for (; t->idVendor != 0; t++) {
 #else
 	for (t = usb_quirks; t->idVendor != 0; t++) {

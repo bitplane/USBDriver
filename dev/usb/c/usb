@@ -43,9 +43,6 @@
  * http://www.usb.org/developers/devclass_docs/
  */
 
-#ifdef __riscos
-#include <dev/usb/usbhal.h>
-#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.81 2005/01/24 01:30:38 joff Exp $");
 //#include "ohci.h"
@@ -937,11 +934,3 @@ usb_detach(device_ptr_t self, int flags)
 
 	return (0);
 }
-
-#ifdef USBHAL
-struct usbd_bus *usb_getbus(device_ptr_t self)
-{
-	struct usb_softc *sc = (struct usb_softc *)self;
-	return sc->sc_bus;
-}
-#endif

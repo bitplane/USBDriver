@@ -14,7 +14,7 @@
 #
 # Makefile for makedevs
 
-TARGET    = bin.makedevs
+TARGET    = makedevs
 OBJS      = makedevs
 CINCLUDES = -I^.
 

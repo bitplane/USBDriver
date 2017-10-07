@@ -31,9 +31,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef __riscos
-#include <dev/usb/usbhal.h>
-#endif
 #include <sys/cdefs.h>
 #ifndef __riscos
 __KERNEL_RCSID(0, "$NetBSD: hid.c,v 1.30 2010/05/14 17:32:57 plunky Exp $");

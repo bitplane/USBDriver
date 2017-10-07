@@ -13,4 +13,4 @@
 | limitations under the License.
 |
 dir <obey$dir>
-amu_machine debug gpa_debug COMPONENT=USBDriver  DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback
+amu_machine debug gpa_debug DEBUG=TRUE CDEFINES="-DSTANDALONE" THROWBACK=-throwback

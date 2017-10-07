@@ -13,4 +13,4 @@
 | limitations under the License.
 |
 dir <obey$dir>
-amu_machine rom COMPONENT=USBDriver  THROWBACK=-throwback
+amu_machine rom THROWBACK=-throwback

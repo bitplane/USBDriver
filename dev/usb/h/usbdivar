@@ -78,10 +78,6 @@ struct usbd_bus_methods {
 	int		      (*new_device_addr)(usbd_device_handle);
 	usbd_status	      (*new_device_post)(usbd_device_handle);
 	void		      (*remove_device)(usbd_device_handle);
-#ifdef USBHAL
-	int		      (*do_intr)(struct usbd_bus *,int irqdevno);
-	void		      (*shutdown)(struct usbd_bus *);
-#endif
 };
 
 struct usbd_pipe_methods {
@@ -185,7 +181,7 @@ struct usbd_device {
 	device_ptr_t	       *subdevs;       /* sub-devices, 0 terminated */
 	int			nifaces_claimed; /* number of ifaces in use */
 	void		       *hci_private;
-#if defined(__riscos) && !defined(USBHAL)
+#ifdef __riscos
 	int			dv_unit;       /* underlying RISCOS device num */
 #endif
 };
@@ -249,8 +245,8 @@ struct usbd_xfer {
 #define URQ_REQUEST	0x01
 #define URQ_AUTO_DMABUF	0x10
 #define URQ_DEV_DMABUF	0x20
-#if defined(__riscos) && !defined(USBHAL)
-#define URQ_RISCOS_BUF  0x80
+#ifdef __riscos
+#define URQ_RISCOS_BUF	0x80
 #endif
 
 	SIMPLEQ_ENTRY(usbd_xfer) next;
@@ -300,9 +296,6 @@ void		usb_schedsoftintr(struct usbd_bus *);
 /* useful macros */
 #ifdef __riscos
 /* delay on a device for delay  read from a sysvar (else delay for default) */
-#ifdef USBHAL
-#define QueryDelay(dev, var, default) usbd_delay_ms(dev, default)
-#else
 #define QueryDelay(dev, var, default)                              \
                 {                                                  \
                     char* getenv (const char*);                    \
@@ -311,7 +304,6 @@ void		usb_schedsoftintr(struct usbd_bus *);
                     usbd_delay_ms(dev, del? atoi (del):            \
                         default);                                  \
                 }                                                  
-#endif
 #endif
 
 /*

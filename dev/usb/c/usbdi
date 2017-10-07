@@ -38,9 +38,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef __riscos
-#include <dev/usb/usbhal.h>
-#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.106 2004/10/24 12:52:40 augustss Exp $");
 
@@ -346,7 +343,7 @@ usbd_transfer(usbd_xfer_handle xfer)
 	/* Copy data if going out. */
 	if (!(xfer->flags & USBD_NO_COPY) && size != 0 &&
 	    !usbd_xfer_isread(xfer))
-#if defined(__riscos) && !defined(USBHAL)
+#ifdef __riscos
         {
             /* the buffer pointer is actually a buffermanager private ID */
             if (xfer->rqflags & URQ_RISCOS_BUF)
@@ -354,7 +351,7 @@ usbd_transfer(usbd_xfer_handle xfer)
             else
 #endif
 		memcpy(KERNADDR(dmap, 0), xfer->buffer, size);
-#if defined(__riscos) && !defined(USBHAL)
+#ifdef __riscos
         }
 #endif
 
@@ -921,7 +918,7 @@ usb_transfer_complete(usbd_xfer_handle xfer)
 			xfer->actlen = xfer->length;
 		}
 #endif
-#if defined(__riscos) && !defined(USBHAL)
+#ifdef __riscos
 		/* the buffer pointer is actually a buffermanager private ID,
 		   but this is sorted out in the code */
 		if (xfer->rqflags & URQ_RISCOS_BUF)

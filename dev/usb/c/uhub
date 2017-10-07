@@ -42,9 +42,6 @@
  * USB spec: http://www.usb.org/developers/docs/usbspec.zip
  */
 
-#ifdef __riscos
-#include <dev/usb/usbhal.h>
-#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: uhub.c,v 1.74 2005/03/02 11:37:27 mycroft Exp $");
 
@@ -112,7 +109,7 @@ Static bus_child_detached_t uhub_child_detached;
 USB_DECLARE_DRIVER(uhub);
 #if defined __riscos
 /* Create the driver instance for the hub connected to hub case */
-halconst struct cfattach uhub_uhub_ca = {
+struct cfattach uhub_uhub_ca = {
         sizeof(struct uhub_softc), uhub_match, uhub_attach,
         uhub_detach, uhub_activate
 };

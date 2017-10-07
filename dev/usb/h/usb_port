@@ -62,10 +62,6 @@ struct lock { int a; };
 
 #define device_has_power(a) (true)
 
-#ifdef USBHAL
-/* Dummy macro should be all that we need for now */
-#define usb_syncmem(a,b,c,d) {}
-#else
 /* Module builds use bufferable memory and so may need synchronisation
    However, we only need to synchronise in some situations - use the BUS_DMASYNC
    hints to decide when. In many cases the if() will be optimised out.
@@ -79,7 +75,6 @@ extern barrier_func barriers[3];
 #define BUS_DMASYNC_POSTREAD BARRIER_READ /* Device has finished writing to memory */
 #define BUS_DMASYNC_POSTWRITE 0 /* Device has finished reading from memory */
 #define usb_syncmem(a,b,c,d) do { int barrier = d; if (barrier) barriers[barrier-1](); } while(0)
-#endif
 
 extern int hz;
 
@@ -100,11 +95,8 @@ extern void usb_needs_explore_callback (void*);
 extern int config_detach (struct device*, int);
 extern void* (config_found) (struct device*, void*, int (*) (void*, const char*));
 extern void kill_system_variable (int unit);
-
-#ifndef USBHAL
 extern void riscos_abort_pipe (void*);
 extern void riscos_irqclear (int device);
-#endif
 
 extern int kthread_create (void (*) (void*), void*);
 extern int kthread_create1 (void (*) (void*), void*, void*, char*, char*);
@@ -136,6 +128,7 @@ void softintr_disestablish (void*);
 typedef struct proc *usb_proc_ptr;
 
 typedef struct device *device_ptr_t;
+typedef struct device *device_t;
 #define USBBASEDEVICE struct device
 #define USBDEV(bdev) (&(bdev))
 #define USBDEVNAME(bdev) ((bdev).dv_xname)
@@ -167,21 +160,15 @@ extern void logprintf(char* format, ...);
 #define logprintf(...) 0
 #endif
 
-#ifdef USBHAL
-#define halconst const
-#else
-#define halconst
-#endif
-
 #define USB_DECLARE_DRIVER(dname)  \
 int __CONCAT(dname,_match)(struct device *, struct cfdata *, void *); \
 void __CONCAT(dname,_attach)(struct device *, struct device *, void *); \
 int __CONCAT(dname,_detach)(struct device *, int); \
 int __CONCAT(dname,_activate)(struct device *, enum devact); \
 \
-extern halconst struct cfdriver __CONCAT(dname,_cd); \
+extern struct cfdriver __CONCAT(dname,_cd); \
 \
-halconst struct cfattach __CONCAT(dname,_ca) = { \
+struct cfattach __CONCAT(dname,_ca) = { \
 	sizeof(struct __CONCAT(dname,_softc)), \
 	__CONCAT(dname,_match), \
 	__CONCAT(dname,_attach), \

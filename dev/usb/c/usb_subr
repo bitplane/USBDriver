@@ -38,9 +38,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef __riscos
-#include <dev/usb/usbhal.h>
-#endif
 #include <sys/cdefs.h>
 //__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.122 2005/03/04 05:03:19 mycroft Exp $");
 
@@ -138,7 +135,6 @@ struct usb_product {
 #include <dev/usb/usbdevs_data.h>
 #endif /* USBVERBOSE */
 
-#ifndef USBHAL
 Static const char * const usbd_error_strs[] = {
 	"NORMAL_COMPLETION",
 	"IN_PROGRESS",
@@ -174,14 +170,6 @@ usbd_errstr(usbd_status err)
 		return buffer;
 	}
 }
-#else
-const char *
-usbd_errstr(usbd_status err)
-{
-	/* TODO - Make a suitable version for debug HAL builds */
-	return "XXX";
-}
-#endif
 
 usbd_status
 usbd_get_string_desc(usbd_device_handle dev, int sindex, int langid,
@@ -1590,8 +1578,9 @@ void
 usb_free_device(usbd_device_handle dev)
 {
 	int ifcidx, nifc;
-#if defined(__riscos) && !defined(USBHAL)
-        if(dev->dv_unit)kill_system_variable(dev->dv_unit);
+#ifdef __riscos
+	if (dev->dv_unit)
+		kill_system_variable(dev->dv_unit);
 #endif
 	if (dev->default_pipe != NULL)
 		usbd_kill_pipe(dev->default_pipe);

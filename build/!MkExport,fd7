@@ -13,9 +13,4 @@
 | limitations under the License.
 |
 Dir <Obey$Dir>
-amu_machine export PHASE=hdrs COMPONENT=USBDriver
-amu_machine export PHASE=libs COMPONENT=USBDriver
-amu_machine export PHASE=hdrs COMPONENT=EHCIDriver
-amu_machine export PHASE=libs COMPONENT=EHCIDriver
-amu_machine export PHASE=hdrs COMPONENT=OHCIDriver
-amu_machine export PHASE=libs COMPONENT=OHCIDriver
+amu_machine export PHASE=hdrs

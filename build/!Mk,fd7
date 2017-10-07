@@ -13,4 +13,4 @@
 | limitations under the License.
 |
 dir <obey$dir>
-amu_machine standalone COMPONENT=USBDriver  CDEFINES="-DSTANDALONE" THROWBACK=-throwback
+amu_machine standalone CDEFINES="-DSTANDALONE" THROWBACK=-throwback
