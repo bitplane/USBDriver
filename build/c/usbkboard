@@ -203,11 +203,13 @@ struct device* attach_keyboard (struct device* parent, void* aux)
     ed = usbd_interface2endpoint_descriptor(uaa->iface, 0);
     if (ed == NULL) {
         dprintf(("", "Could not read endpoint descriptor\n"));
+        free(softc);
         return NULL;
     }
 
     if (usbd_set_protocol(uaa->iface, 0)) {
         dprintf(("", "Set protocol failed\n"));
+        free(softc);
         return NULL;
     }
 
