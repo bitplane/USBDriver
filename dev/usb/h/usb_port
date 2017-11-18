@@ -24,7 +24,6 @@
 #ifdef USB_DEBUG
 #define UHID_DEBUG 1
 #define UHIDEV_DEBUG 1
-#define OHCI_DEBUG 1
 #define UGEN_DEBUG 1
 #define UHCI_DEBUG 1
 #define UHUB_DEBUG 1
@@ -233,6 +232,3 @@ int __CONCAT(dname,_detach)(struct device *self, int flags)
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))
 #endif
-
-
-//#define UMATCH_GENERIC 1
