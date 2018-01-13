@@ -613,11 +613,13 @@ usbd_abort_pipe(usbd_pipe_handle pipe)
 usbd_status
 usbd_clear_endpoint_stall(usbd_pipe_handle pipe)
 {
-#ifndef __riscos
+#ifdef __riscos
+	usbd_device_handle dev;
+#else
 	usbd_device_handle dev = pipe->device;
 #endif
 	usb_device_request_t req;
-	usbd_status err = USBD_NORMAL_COMPLETION;
+	usbd_status err;
 
 	DPRINTFN(8, ("usbd_clear_endpoint_stall\n"));
 
@@ -626,9 +628,10 @@ usbd_clear_endpoint_stall(usbd_pipe_handle pipe)
 	 * do the same to the HC toggle.
 	 */
 #ifdef __riscos
-        usbd_device_handle dev ;
-        if(pipe && (dev=pipe->device))
-        {
+	err = USBD_NORMAL_COMPLETION;
+	if (pipe && pipe->device && pipe->endpoint && pipe->methods && pipe->methods->cleartoggle)
+	{
+	dev = pipe->device;
 #endif
 	pipe->methods->cleartoggle(pipe);
 
@@ -638,15 +641,15 @@ usbd_clear_endpoint_stall(usbd_pipe_handle pipe)
 	USETW(req.wIndex, pipe->endpoint->edesc->bEndpointAddress);
 	USETW(req.wLength, 0);
 	err = usbd_do_request(dev, &req, 0);
+#ifdef __riscos
+	}
+#endif
 #if 0
 XXX should we do this?
 	if (!err) {
 		pipe->state = USBD_PIPE_ACTIVE;
 		/* XXX activate pipe */
 	}
-#endif
-#ifdef __riscos
-        }
 #endif
 	return (err);
 }
@@ -655,25 +658,20 @@ usbd_status
 usbd_clear_endpoint_stall_async(usbd_pipe_handle pipe)
 {
 #ifdef __riscos
-	usb_device_request_t req;
-	usbd_status err = USBD_NORMAL_COMPLETION;
-        if(pipe && pipe->device)
-        {
-	usbd_device_handle dev = pipe->device;
+	usbd_device_handle dev;
 #else
 	usbd_device_handle dev = pipe->device;
+#endif
 	usb_device_request_t req;
 	usbd_status err;
-#endif
+
 #ifdef __riscos
-        if(pipe->methods)
-          if(pipe->methods->cleartoggle)
-#else
+	err = USBD_NORMAL_COMPLETION;
+	if (pipe && pipe->device && pipe->endpoint && pipe->methods && pipe->methods->cleartoggle)
+	{
+	dev = pipe->device;
+#endif
 	pipe->methods->cleartoggle(pipe);
-#endif
-#ifdef __riscos
-        if(pipe->endpoint)
-#endif
 
 	req.bmRequestType = UT_WRITE_ENDPOINT;
 	req.bRequest = UR_CLEAR_FEATURE;
@@ -682,7 +680,7 @@ usbd_clear_endpoint_stall_async(usbd_pipe_handle pipe)
 	USETW(req.wLength, 0);
 	err = usbd_do_request_async(dev, &req, 0);
 #ifdef __riscos
-        }
+	}
 #endif
 	return (err);
 }

@@ -418,13 +418,8 @@ static _kernel_oserror* RegisterNewDevice(struct ugen_softc * softc,int no)
         softc,
         private_word,
         "endpoint/Ninterface/Nalternate/Nreport/Ncontrol,isochronous,bulk,interrupt/Susbtimeout/Nsize/Nnopad/Sshort/S",
-#ifdef DEVICEFSISBROKEN
-        INT_MAX, // should be -1, but that doesn't seem to work
-        INT_MAX,
-#else
         -1,
         -1,
-#endif
         &softc->sc_devfs);
     return e;
 }
