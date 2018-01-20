@@ -300,6 +300,7 @@ R0        2      Device has gone. (not used)
                  provide this information.
 R0        3      USB driver module starting.
 R0        4      USB driver module dying.                
+R0        5      USB driver module dead.                
 
 
 SWIs

@@ -318,9 +318,7 @@ struct cfattach ugen_ca = {
 
 _kernel_oserror *module_final(int fatal, int podule, void *pw)
 {
-
-    /* issue a service call to request any running HCDs can object */
-    /* do this first in case other things still need to happen     */
+    /* issue a service call to announce USBDriver is being finalised */
     _swix (OS_ServiceCall, _INR (0, 1),
         Service_USB_USBDriverDying, Service_USB);
 
@@ -330,9 +328,10 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     /* devices will all get removed as buses remove themselves from the
        above service call */
-    struct device* dev;
-    TAILQ_FOREACH(dev, &allbuses, dv_list)
+    struct device *dev, *temp;
+    TAILQ_FOREACH_SAFE(dev, &allbuses, dv_list, temp)
     {
+        TAILQ_REMOVE(&allbuses, dev, dv_list);
         (*usb_ca.ca_detach)(dev, 0);
         free (dev);
     }
@@ -350,11 +349,15 @@ _kernel_oserror *module_final(int fatal, int podule, void *pw)
 
     _swix (MessageTrans_CloseFile, _IN(0), &mod_messages);
     _swix (MessageTrans_CloseFile, _IN(0), &usbdev_messages);
-    if(extra_quirks) free(extra_quirks);
+    if (extra_quirks) free (extra_quirks);
 
 #ifdef STANDALONE
     _swix (ResourceFS_DeregisterFiles, _IN (0), resource_files ());
 #endif
+
+    /* issue a service call to announce USBDriver has gone */
+    _swix (OS_ServiceCall, _INR (0, 1),
+        Service_USB_USBDriverDead, Service_USB);
 
     return NULL;
 }
@@ -1354,13 +1357,14 @@ void* (config_found) (struct device* dev, void* h, int (*f) (void*, const char*)
 
 int config_detach (struct device* dev, int n)
 {
-    dprintf (("", "config detach %p, %d, type %d\n",
-        dev, n, (int) dev->dv_cfdata));
     /* catch case of config_detach called from config_found above */
     if (dev == (void*) 1)
     {
         return 0;
     }
+
+    dprintf (("", "config detach %p, %d, type %d\n",
+        dev, n, (int) dev->dv_cfdata));
 
     /* only remove if a generic device or hub, others match as generic as well
         */
