@@ -24,6 +24,7 @@ CC18:Interrupted
 NoDevice:No such USB device
 NoInterface:Couldn't find interface
 NoEndpoint:Cannot find a valid endpoint
+NoAlternate:Alternate setting could not be selected
 EndpointUsed:Endpoint in use
 BadPipe:Couldn't open pipe
 BadXfer:Couldn't allocate transfer

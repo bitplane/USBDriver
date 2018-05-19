@@ -152,6 +152,7 @@ struct iface_softc {
 #define E_NoSuchQuirk   "\x0D\x90\x81\x80" "NoSuchQuirk"
 #define E_QuirkSlot     "\x0E\x90\x81\x80" "QuirkSlot"
 #define E_XferFailed    "\x20\x90\x81\x00" "XferFailed"
+#define E_NoAlternate   "\x21\x90\x81\x00" "NoAlternate"
 
 #define USBDEV_MESSAGES "Resources:$.Resources.USBDriver.USBDevs"
 
@@ -395,6 +396,54 @@ static void formatpair(const char *token, size_t width, const char *value)
 
     sprintf (fmt, "%%-%ds : %%s", width);
     printf (fmt, lookupmsg (token, NULL), value);
+}
+
+/*---------------------------------------------------------------------------*/
+
+static usbd_status set_interface_by_alternate(usbd_interface_handle iface, int alt)
+{
+    usbd_device_handle device;
+    usb_config_descriptor_t *cdesc;
+    usb_interface_descriptor_t *idesc;
+    const char *p, *end;
+    int altidx = -1;
+    
+    if (iface == NULL)
+        return USBD_INVAL;
+
+    usbd_interface2device_handle(iface, &device);
+    if (device == NULL)
+        return USBD_INVAL;
+    
+    cdesc = usbd_get_config_descriptor(device);
+    idesc = usbd_get_interface_descriptor(iface);
+    if ((cdesc == NULL) || (idesc == NULL))
+        return USBD_INVAL;
+
+    p = (const char *)cdesc;
+    end = p + UGETW(cdesc->wTotalLength);
+    while (p < end)
+    {
+        usb_interface_descriptor_t *d;
+        
+        /* turn the requested alt to an index in the interface's descriptor */
+        d = (usb_interface_descriptor_t *)p;
+        if (p + d->bLength <= end &&
+            d->bDescriptorType == UDESC_INTERFACE &&
+            d->bInterfaceNumber == idesc->bInterfaceNumber)
+        {
+            altidx++;
+            if (d->bAlternateSetting == alt) 
+            {
+                if (altidx == usbd_get_interface_altindex(iface))
+                    return USBD_NORMAL_COMPLETION; /* no change needed */
+                return usbd_set_interface(iface, altidx);
+            }
+        }
+        p += d->bLength;
+    }
+
+    return USBD_INVAL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -941,7 +990,11 @@ static _kernel_oserror* command_set_interface (int device, int ifcn, int alt)
         return uerror (E_NoInterface);
     }
 
-    usbd_set_interface(ifc, alt);
+    err = set_interface_by_alternate (ifc, alt);
+    if (err)
+    {
+        return uerror (E_NoAlternate);
+    }
     return NULL;
 }
 
@@ -2102,10 +2155,13 @@ static _kernel_oserror* device_initialise
         goto error;
     }
 
-    /* force an interface alternate */
-    if (alt != 0)
-        usbd_set_interface(str->iface, alt);
-
+    /* set the interface alternate setting */
+    err = set_interface_by_alternate (str->iface, alt);
+    if (err)
+    {
+        e = uerror (E_NoAlternate);
+        goto error;
+    }
 
     str->ep = ep;
 
