@@ -751,7 +751,9 @@ static _kernel_oserror *zscroll_handler(_kernel_swi_regs *r, void *pw, void *h)
 		}
 		else
 		{     // give it to a wimpscroll module
+#ifndef PointerReason_WheelChange
 #define PointerReason_WheelChange 9
+#endif
 			_swix (OS_CallAVector, _INR(0,3) | _IN(9),
 				PointerReason_WheelChange,	// wheel change reason
 				relz,				// main wheel value
