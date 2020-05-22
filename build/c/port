@@ -366,22 +366,17 @@ ratecheck (void* a, void* b)
 
 void* usbd_print;
 
-int vtophys (void* v)
+paddr_t vtophys (void* v)
 {
-#ifndef EMULATE
     struct {
         int     page;
         void*   logical;
-        int     physical;
+        void*   physical;
     } block;
     block.logical = v;
     _swix (OS_Memory, _INR (0, 2), (1<<9) + (1<<13), &block, 1);
 
-    return block.physical;
-#else
-//    dprintf (("Port", "Converting physical address %p\n", *v));
-    return v; // return actual address for the moment
-#endif
+    return (paddr_t)block.physical;
 }
 
 void* malloc_contig(int len, int alignment)

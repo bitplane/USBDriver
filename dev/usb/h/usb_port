@@ -82,7 +82,8 @@ extern int hz;
 extern int splbio (void);
 extern int spltty (void);
 extern void splx (int);
-extern int vtophys (void*);
+typedef unsigned long paddr_t; /* Physical addresses 32b */
+extern paddr_t vtophys (void*);
 extern void delay (int);
 extern struct device* get_softc (int unit);
 extern void callout_init (struct callout* c,int ignored);

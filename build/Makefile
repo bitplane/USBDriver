@@ -22,7 +22,7 @@ EXPLIBDIR       = <Lib$Dir>.USB
 DEVICELIST      = Resources.<Locale>.USBDevs
 CUSTOMEXP       = custom
 CINCLUDES       = -Itbox:,TCPIPLibs:,^.,OS:,C:USB
-CDEFINES       += ${CDEBUG} -DKERNEL -D_KERNEL -Dpaddr_t=int -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
+CDEFINES       += ${CDEBUG} -DKERNEL -D_KERNEL -D__P(A)=A -DKLD_MODULE -DDISABLE_PACKED
 RES_AREA        = resource_files
 LIBS            = ${CALLXLIB} ${ASMUTILS}
 CMHGDEPENDS     = usbmouse usbmodule usbkboard
