@@ -55,7 +55,7 @@
 
 #include "USBDriverHdr.h"
 #include "swis.h"
-#include "debuglib/debuglib.h"
+#include "DebugLib/DebugLib.h"
 #include "callx/callx.h"
 
 #include <sys/callout.h>

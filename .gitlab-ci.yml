@@ -1,0 +1,6 @@
+variables:
+  COPYRIGHT_WHITELIST: "./dev/usb/h/usbroothub_subr"
+
+include:
+  - project: 'Support/CI'
+    file: '/USBDriver.yml'

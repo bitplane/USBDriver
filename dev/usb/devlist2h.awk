@@ -34,12 +34,15 @@
 #
 BEGIN {
 	nproducts = nvendors = blanklines = 0
-        if (os="RISC_OS") {
-        dfile="^.dev.usb.h.usbdevs_data"
-        hfile="^.dev.usb.h.usbdevs"
-        }else{
-	dfile="usbdevs_data.h"
-	hfile="usbdevs.h"
+	if (os != "RISC_OS") {
+		dfile="usbdevs_data.h"
+		hfile="usbdevs.h"
+	} else if (curdir == "objs") {
+		dfile="dev/usb/usbdevs_data.h"
+		hfile="dev/usb/usbdevs.h"
+	} else {
+		dfile="dev.usb.h.usbdevs_data"
+		hfile="dev.usb.h.usbdevs"
 	}
 }
 NR == 1 {

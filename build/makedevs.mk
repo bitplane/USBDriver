@@ -16,7 +16,7 @@
 
 TARGET    = makedevs
 OBJS      = makedevs
-CINCLUDES = -I^.
+VPATH     = build
 
 include HostApp
 

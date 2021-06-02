@@ -24,7 +24,7 @@
 
 #include "USBDriverHdr.h"
 #include "swis.h"
-#include "debuglib/debuglib.h"
+#include "DebugLib/DebugLib.h"
 
 #include <sys/callout.h>
 #include <sys/ioctl.h>

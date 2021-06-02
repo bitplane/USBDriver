@@ -13,7 +13,7 @@
 ; limitations under the License.
 ;
 #include "Global/Services.h"
-#include "../VersionNum"
+#include "VersionNum"
 
 initialisation-code:    module_init
 
