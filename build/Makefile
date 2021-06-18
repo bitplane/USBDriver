@@ -88,9 +88,9 @@ export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${CP} ^.dev.usb.h.usbdevs  ${EXPLIBDIR}.dev.usb.h.usbdevs  ${CPFLAGS}
         # Equivalent of ASMHDRS and ASMCHDRS and CMHGAUTOHDR
         ${CP} Hdr.USBDriver        ${EXP_HDR}.USBDriver            ${CPFLAGS}
-        ${HDR2H} Hdr.USBDriver ${C_EXP_HDR}.USBDriver
+        ${HDR2H} Hdr.USBDriver ${C_EXP_HDR:.h=}.h.USBDriver
         ${DO} ${AWK} -- "/.ifndef ${CMHGFILE_SWIPREFIX}/,/endif/" h.${CMHGFILE} > o._h_USBDriver
-        ${FAPPEND} ${C_EXP_HDR}.USBDriver ${C_EXP_HDR}.USBDriver o._h_USBDriver
+        ${FAPPEND} ${C_EXP_HDR:.h=}.h.USBDriver ${C_EXP_HDR:.h=}.h.USBDriver o._h_USBDriver
         @${ECHO} ${COMPONENT}: header export complete
 
 export_libs:
