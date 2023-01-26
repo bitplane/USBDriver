@@ -49,10 +49,10 @@ CFLAGS         += -wp -wc
 #
 # Produce the devices list
 #
-makedevs: c.makedevs ${DIRS}
+makedevs: c.makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data ${DIRS}
         ${MAKE} -f makedevs/mk COMPONENT=makedevs THROWBACK=${THROWBACK}
 
-${DEVICELIST}: makedevs ^.dev.usb.h.usbdevs ^.dev.usb.h.usbdevs_data
+${DEVICELIST}: makedevs
         ${RUN}makedevs > $@
 
 #

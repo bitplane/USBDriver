@@ -18,8 +18,6 @@ TARGET    = makedevs
 OBJS      = makedevs
 CINCLUDES = -I^.
 
-include HostTools
-include AppLibs
-include CApp
+include HostApp
 
 # Dynamic dependencies:
