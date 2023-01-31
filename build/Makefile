@@ -64,10 +64,7 @@ clean::
         ${RM} ^.dev.usb.h.usbdevs
         ${RM} ^.dev.usb.h.usbdevs_data
 
-export: export_${PHASE}
-        @${NOP}
-
-export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
+export_hdrs_custom: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${MKDIR} o
         ${MKDIR} ${EXPLIBDIR}.dev.usb.h
         ${MKDIR} ${EXPLIBDIR}.sys.h
@@ -93,7 +90,7 @@ export_hdrs: h.${CMHGFILE} ^.dev.usb.h.usbdevs
         ${FAPPEND} ${C_EXP_HDR:.h=}.h.USBDriver ${C_EXP_HDR:.h=}.h.USBDriver o._h_USBDriver
         @${ECHO} ${COMPONENT}: header export complete
 
-export_libs:
+export_libs_custom:
         @${ECHO} ${COMPONENT}: no exported libraries
 
 #
