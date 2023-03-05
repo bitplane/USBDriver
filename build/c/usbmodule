@@ -894,6 +894,7 @@ static _kernel_oserror* command_conf_info (int n)
                         token = "ECtrl";
                         break;
                     case UE_ISOCHRONOUS:
+                        token = "EIso";
                         switch (UE_GET_ISO_TYPE(d->bmAttributes))
                         {
                             case UE_ISO_ASYNC:

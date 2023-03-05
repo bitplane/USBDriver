@@ -72,6 +72,7 @@ IEndp:Endpoint
 IHidd:Human interface device
 
 ECtrl:Control
+EIso:Isochronous
 EIsoY:Isochronous asynchronous
 EIsoA:Isochronous adaptive
 EIsoS:Isochronous synchronous
