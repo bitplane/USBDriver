@@ -1353,6 +1353,7 @@ usb_desc_iter_next(usbd_desc_iter_t *iter)
         }
         return desc;
 }
+#endif
 
 usbd_status
 usbd_get_string(usbd_device_handle dev, int si, char *buf)
@@ -1400,7 +1401,7 @@ usbd_get_string(usbd_device_handle dev, int si, char *buf)
         *s++ = 0;
         return (USBD_NORMAL_COMPLETION);
 }
-#endif
+
 #if defined(__FreeBSD__)
 int
 usbd_driver_load(module_t mod, int what, void *arg)

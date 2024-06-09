@@ -231,7 +231,6 @@ extern int usbioctl(int devt, u_long cmd, void* data, int flag, void *p);
 
 struct device* get_usbdev (int unit);
 
-extern char* usbd_get_string (usbd_device_handle, size_t, char*);
 extern void microtime (struct timeval* tv);
 extern void triggercbs(void);
 extern uint32_t clock (void); // avoid header clash with sys/types.h
@@ -774,15 +773,12 @@ static _kernel_oserror* command_dev_info (int n)
     sprintf (string, "%04X\n", UGETW(ddesc->bcdDevice));  formatpair ("DIDid", width, string);
     sprintf (string, "%d\n", ddesc->bNumConfigurations);  formatpair ("DICfg", width, string);
 
-    *string = '\0';
     usbd_get_string (udev, ddesc->iManufacturer, string); formatpair ("DIMfg", width, "");
     printf ("'%s'\n", ltrim (string));
 
-    *string = '\0';
     usbd_get_string (udev, ddesc->iProduct, string);      formatpair ("DIPrd", width, "");
     printf ("'%s'\n", ltrim (string));
 
-    *string = '\0';
     usbd_get_string (udev, ddesc->iSerialNumber, string); formatpair ("DISer", width, "");
     printf ("'%s'\n", ltrim (string));
 
@@ -822,7 +818,6 @@ static _kernel_oserror* command_conf_info (int n)
     sprintf (string, "%d\n", cdesc->bConfigurationValue);
     formatpair ("CICfg", width, string);
 
-    *string = '\0';
     usbd_get_string (udev, cdesc->iConfiguration, string);
     formatpair ("CINom", width, "");
     printf ("'%s'\n", ltrim (string));
@@ -870,7 +865,7 @@ static _kernel_oserror* command_conf_info (int n)
             {
                 usb_interface_descriptor_t * d = (usb_interface_descriptor_t *) ptr;
     
-                *string = '\0'; usbd_get_string (udev, d->iInterface, string);
+                usbd_get_string (udev, d->iInterface, string);
                 printf ("\n%s %d.%d ",
                     lookupmsg ("IFace", NULL),
                     d->bInterfaceNumber,
@@ -1921,10 +1916,15 @@ void usbd_devinfo_vp(usbd_device_handle dev, char* v, size_t vl, char* p, size_t
     {
         char string[USB_MAX_STRING_LEN];
 
-        vendor = usbd_get_string(dev, udd->iManufacturer, string);
-        strncpy(v, ltrim(string), vl);
-        product = usbd_get_string(dev, udd->iProduct, string);
-        strncpy(p, ltrim(string), pl);
+        if (!usbd_get_string(dev, udd->iManufacturer, string)) {
+            strncpy(v, ltrim(string), vl);
+            vendor = v;
+        }
+
+        if (!usbd_get_string(dev, udd->iProduct, string)) {
+            strncpy(p, ltrim(string), pl);
+            product = p;
+        }
     }
 
     if (vendor == NULL) {

@@ -178,9 +178,7 @@ usbd_status usbd_reload_device_desc(usbd_device_handle);
 
 int usbd_ratecheck(struct timeval *);
 
-#ifndef __riscos
 usbd_status usbd_get_string(usbd_device_handle dev, int si, char *buf);
-#endif
 
 /* An iterator for descriptors. */
 typedef struct {
