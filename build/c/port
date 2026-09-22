@@ -98,8 +98,6 @@ int splbio (void)
 }
 
 
-char panic_string[255];
-
 void panic (const char* str, ...)
 {
     va_list p;
@@ -107,7 +105,6 @@ void panic (const char* str, ...)
     /* aargh! */
     dprintf (("Port", "panicking:"));
     dvprintf (("Port", str, p));
-    vsnprintf(panic_string, sizeof panic_string, str, p);
     va_end (p);
 }
 
@@ -482,4 +479,3 @@ void barriers_init(void)
         (barriers[BARRIER_READ+BARRIER_WRITE-1])();
     }
 }
-

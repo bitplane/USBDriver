@@ -18,7 +18,7 @@
 COMPONENT       = USBDriver
 UNAME           = "RISC_OS"
 VPATH           = build dev/usb machine sys
-HDRS            = USBDevFS usb usbdi usbdivar usb_port device bus usbdevs
+HDRS            = USBDevFS usb usbdi usbdivar usb_port device bus usbdevs queue uio
 ASMHDRS         = USBDriver
 ASMCHDRS        = USBDriver
 CMHGAUTOHDR     = USBDriver
@@ -38,6 +38,13 @@ OBJS            = usbmodule port usb usbdi usb_subr \
                   usbdi_util usb_quirks uhub usbmouse usbkboard \
                   hid bufman triggercbs call_veneer
 CFLAGS          = ${C_NOWARN_NON_ANSI_INCLUDES}
+
+ifeq (${TOOLCHAIN},GNU)
+CDEFINES       += -D_BSD_SOURCE -D_POSIX_PATH_MAX=1024
+CFLAGS         += -idirafter ${LIBDIR}/TCPIPLibs -include sys/types.h
+BSD_USB_OBJS    = usb usbdi usb_subr usbdi_util usb_quirks uhub usbmouse usbkboard hid bufman triggercbs port
+${BSD_USB_OBJS:%=%.o}: CFLAGS += -I${LIBDIR}/TCPIPLibs -include ../gnu_compat.h -include ${LIBDIR}/TCPIPLibs/sys/param.h -include ${LIBDIR}/TCPIPLibs/sys/signal.h -include ./sys/uio.h
+endif
 
 SOURCES_TO_SYMLINK = $(wildcard build/c/*) $(wildcard build/cmhg/*) $(wildcard build/h/*) build//makedevs.mk $(wildcard build/s/*) $(wildcard dev/usb/c/*) dev/usb//devlist2h.awk $(wildcard dev/usb/h/*) dev/usb//usbdevs $(wildcard machine/h/*) $(wildcard sys/h/*)
 
@@ -107,7 +114,9 @@ create_exp_dirs:
 
 export_hdrs_custom: create_exp_dirs ${EXPORTING_HDRS} ${EXPORTING_ASMHDRS} ${EXPORTING_ASMCHDRS}
 	${CP} ${C_EXP_HDR}/USBDriver.h ${CEXPORTDIR}/Interface/USBDriver.h
+	${GAWK} '$$1 == "RISCOS_USBDRIVER_API_VERSION" && $$2 == "*" { print "#define " $$1 " " $$3 }' ../hdr/USBDriver >> ${CEXPORTDIR}/Interface/USBDriver.h
 	${RM} ${C_EXP_HDR}/USBDriver.h
+	${CP} ../gnu_compat.h ${C_EXP_HDR}/gnu_compat.h
 	${CP} VersionNum ${C_EXP_HDR}/LibVersion
 	@${ECHO} ${COMPONENT}: header export complete
 

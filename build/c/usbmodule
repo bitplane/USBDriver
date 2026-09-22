@@ -937,7 +937,7 @@ static _kernel_oserror* command_conf_info (int n)
                     d = (usb_hid_descriptor_t *) (((char*) d) + 3);
 #else
                     printf ("%s %X, ", lookupmsg ("UHTy", NULL),
-                                       d->descrs[i].bHIDDescriptorType);
+                                       d->descrs[i].bDescriptorType);
                     printf ("%s %d\n", lookupmsg ("ULen", NULL),
                                        UGETW (d->descrs[i].wDescriptorLength));
 #endif
