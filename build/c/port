@@ -241,6 +241,22 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
 
     _kernel_irqs_off ();                       // lets play safe
 
+    for (i = 0; i < nhandles && t_handles[i] && t_handles[i] != ident; ++i);
+
+    if (i == nhandles) {
+        nhandles = i + 1;
+        if (nhandles >= sizeof t_handles / sizeof *t_handles)
+        {
+            if (s == 0) _kernel_irqs_on ();
+            panic ("run out of thread handles...");
+            return 1;
+        }
+    }
+
+    t_handles[i] = ident;
+    t_locks[i] = 0;
+
+    /* A callback may run during a SWI, so install the wait before calling one. */
     t1 = t0 = gettime();
     t1 += ((uint64_t) timo) * 1000000;
 #ifdef USB_DEBUG
@@ -261,21 +277,6 @@ int tsleep (void* ident, int priority, const char* wmesg, int timo, int noblock)
             (uint32_t) (t0 / 1000000000), (uint32_t) (t0 % 1000000000),
             (uint32_t) (t1 / 1000000000), (uint32_t) (t1 % 1000000000)));
 #endif
-
-    for (i = 0; i < nhandles && t_handles[i] && t_handles[i] != ident; ++i);
-
-    if (i == nhandles) {
-        nhandles = i + 1;
-        if (nhandles >= sizeof t_handles / sizeof *t_handles)
-        {
-            if (s == 0) _kernel_irqs_on ();
-            panic ("run out of thread handles...");
-            return 1;
-        }
-    }
-
-    t_handles[i] = ident;
-    t_locks[i] = 0;
 
     /* wait until the lock is free */
     _kernel_irqs_on ();
