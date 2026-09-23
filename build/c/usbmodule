@@ -211,8 +211,8 @@ static int usbdev_no = 1;       /* next number to use  */
 static int maxdev_no = 0;       /* highest number found*/
 
 
-struct devicelist allbuses = TAILQ_HEAD_INITIALIZER(allbuses);
-struct devicelist allusbdevs = TAILQ_HEAD_INITIALIZER(allusbdevs);
+struct devicelist allbuses;
+struct devicelist allusbdevs;
 
 /*---------------------------------------------------------------------------*/
 /* static function declarations                                              */
@@ -260,6 +260,10 @@ _kernel_oserror *module_init(const char *cmd_tail, int podule_base, void *pw)
 {
     _kernel_oserror* e;
     private_word = pw;
+    /* These heads contain pointers into themselves. Initialise them after
+       the module's writable data has been relocated from ROM. */
+    TAILQ_INIT(&allbuses);
+    TAILQ_INIT(&allusbdevs);
     /* set up debugging */
     debug_initialise ("USBDriver", "$.dbUSBD", 0);
 //    debug_set_device(FILE_OUTPUT);
